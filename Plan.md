@@ -36,18 +36,34 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started
 - [x] Request-cached lookup loader (`src/lib/lookups.ts`)
 - [x] Verified: `/` redirects to `/login` unauthenticated, renders the shell with a session
 
-## Phase 3 — Carrier Database 🔨
+## Phase 3 — Carrier Database ✅
 
-- [ ] `listCarriers()` — search, filters, sort allow-list, pagination
-- [ ] Carrier table with sortable headers and status badges
-- [ ] Quick status filter row
-- [ ] Advanced filter panel (12 filters incl. two date ranges)
-- [ ] Global search across name, owner, phone, email, MC, USDOT, address
-- [ ] Column visibility picker (persisted per user)
-- [ ] Saved filters
-- [ ] Preset views: Active, Onboarding, Offboarded, Investigations
+- [x] `listCarriers()` — search, 11 filters, 2 date ranges, sort allow-list, pagination
+- [x] Carrier table: 28 columns, sortable headers, status badges, sticky name column,
+      review-flag markers
+- [x] Quick status filter row (All + 7 statuses)
+- [x] Advanced filter panel
+- [x] Global search across name, owner, phone, email, MC, USDOT, address, serial —
+      matches a phone whether typed formatted or as digits
+- [x] Column visibility picker persisted in a cookie so the server still renders the table
+- [x] Saved filters (create, recall, delete — scoped to the owner)
+- [x] Preset views: Active, Onboarding, Offboarded, Investigations
+- [x] CSV export of the filtered set (32 columns, formula-injection safe) — brought
+      forward from Phase 8 so the toolbar button was never a dead link
+- [x] Tests: 9 CSV parser/serializer edge cases — **17/17 passing overall**
+- [x] Verified against SQL truth: every preset and filter count matches the database
+- [x] `npm run build` clean
 
-## Phase 4 — Carrier Profile ⬜
+### Fixed during this phase
+- DB connected at module evaluation, so `next build`'s 9 workers raced to seed it
+  → connection is now lazy, with `busy_timeout`
+- Index creation ran before column migrations → indexes now run after `migrate()`
+- A Client Component transitively imported the DB layer (caught by `server-only`)
+  → pure types split into `src/lib/carrier-types.ts`
+- `ORDER BY ... DESC COLLATE NOCASE` is invalid SQLite → collation now precedes direction
+- A corrupt column cookie collapsed the table to one column → falls back to defaults
+
+## Phase 4 — Carrier Profile 🔨
 
 - [ ] Profile page: Overview, Contact, Regulatory/Equipment, Onboarding, Commercial
 - [ ] Offboarding section, rendered only when a record exists
@@ -118,4 +134,5 @@ Recorded so "later" is a decision rather than an oversight.
 | Email/SMS notifications | Needs Attention is a queue people check | The team asks to be pushed rather than pull |
 | File attachments (agreements, COIs) | Not in scope | Document storage is requested |
 | Full-text search index | `LIKE` is fast enough at this scale | Search feels slow on the real dataset |
+| Multi-select advanced filters | Single-select covers the daily need; the URL format and query layer already accept multiple ids | Someone asks to see two statuses at once |
 | SSO | Four roles, one office | The company standardizes on an IdP |

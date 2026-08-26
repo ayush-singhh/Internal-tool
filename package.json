@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test \"tests/*.test.ts\""
+    "test": "node --test \"tests/*.test.ts\"",
+    "seed:demo": "node scripts/seed-demo.ts",
+    "dev:demo": "CARRIER_DB_PATH=data/demo.db next dev -p 3001"
   },
   "dependencies": {
     "next": "16.3.3",
