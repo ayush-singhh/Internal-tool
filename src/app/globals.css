@@ -1,26 +1,115 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ── Design tokens ────────────────────────────────────────────────────────────
+   Committed to a single light theme: a dark navigation rail against a light
+   working canvas. Internal ops tools are used all day in bright rooms and dense
+   tables read better on light surfaces, so there is no dark-mode variant.
+   ──────────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* Steel blue — the one saturated colour in the system. Actions, links, focus. */
+  --color-brand-50:  #eff4fb;
+  --color-brand-100: #dbe6f5;
+  --color-brand-200: #bacfea;
+  --color-brand-300: #8dafda;
+  --color-brand-400: #5b88c5;
+  --color-brand-500: #3a67ac;
+  --color-brand-600: #2b4d8b;
+  --color-brand-700: #253f70;
+  --color-brand-800: #21355b;
+  --color-brand-900: #1d2e4c;
+  --color-brand-950: #131e33;
+
+  /* Neutral rail + text. Slightly cool, never pure black. */
+  --color-ink-50:  #f6f7f9;
+  --color-ink-100: #eceef2;
+  --color-ink-200: #dde1e7;
+  --color-ink-300: #c3cad4;
+  --color-ink-400: #8f99a8;
+  --color-ink-500: #6b7585;
+  --color-ink-600: #545d6b;
+  --color-ink-700: #3f4754;
+  --color-ink-800: #232a35;
+  --color-ink-900: #161c25;
+  --color-ink-950: #0e131a;
+
+  --color-canvas: #f4f6f8;
+  --color-surface: #ffffff;
+  --color-line: #e2e6eb;
+  --color-line-strong: #cfd5dd;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-raised: 0 4px 12px -2px rgba(16, 24, 40, 0.08), 0 2px 6px -2px rgba(16, 24, 40, 0.06);
+  --shadow-pop: 0 12px 32px -8px rgba(16, 24, 40, 0.18), 0 4px 10px -4px rgba(16, 24, 40, 0.10);
+
+  --radius-card: 0.625rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
+
+/* Numbers in tiles, tables and reports must align vertically. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Consistent keyboard focus everywhere, including inside dark surfaces. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Form controls: one look, defined once, rather than repeated class soup. */
+.field {
+  width: 100%;
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.875rem;
+  line-height: 1.35rem;
+  color: var(--color-ink-900);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.field::placeholder { color: var(--color-ink-400); }
+.field:hover:not(:disabled) { border-color: var(--color-ink-400); }
+.field:focus {
+  outline: none;
+  border-color: var(--color-brand-500);
+  box-shadow: 0 0 0 3px rgb(58 103 172 / 0.14);
+}
+.field:disabled { background: var(--color-ink-50); color: var(--color-ink-500); }
+.field[aria-invalid="true"] {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgb(220 38 38 / 0.12);
+}
+select.field {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%236b7585' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  padding-right: 2rem;
+}
+.label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-ink-600);
+  margin-bottom: 0.3rem;
+}
+
+/* Thin scrollbars so dense tables don't lose rows to chrome. */
+* { scrollbar-width: thin; scrollbar-color: var(--color-ink-300) transparent; }
