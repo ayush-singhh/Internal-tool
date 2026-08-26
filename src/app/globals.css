@@ -102,6 +102,10 @@ select.field {
   background-position: right 0.6rem center;
   padding-right: 2rem;
 }
+.field-sm {
+  padding: 0.4rem 0.7rem;
+  font-size: 0.82rem;
+}
 .label {
   display: block;
   font-size: 0.75rem;

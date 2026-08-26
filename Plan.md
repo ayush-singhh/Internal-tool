@@ -25,15 +25,18 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started
 - [x] Tests: password round-trip, full permission matrix — **8/8 passing**
 - [x] Design tokens in `globals.css` (moved forward from Phase 2)
 
-## Phase 2 — Application Shell 🔨
+## Phase 2 — Application Shell ✅
 
 - [x] Design tokens in `globals.css` (palette, spacing, shadows, typography)
-- [ ] Dark sidebar with the nine nav sections + active state
-- [ ] Top bar: global search entry, current user, sign out
-- [ ] Responsive: collapsible sidebar / mobile drawer
-- [ ] Shared primitives: `Badge`, `Card`, `StatTile`, `EmptyState`, `PageHeader`
+- [x] Dark sidebar, grouped nav, active state, live count badges per section
+- [x] Top bar: global search, Add Carrier, mobile menu
+- [x] Responsive: fixed rail on desktop, overlay drawer under `lg`
+- [x] Shared primitives: `Badge`, `Card`, `CardHeader`, `PageHeader`, `EmptyState`, `Field`
+- [x] Inline monoline icon set (no icon dependency)
+- [x] Request-cached lookup loader (`src/lib/lookups.ts`)
+- [x] Verified: `/` redirects to `/login` unauthenticated, renders the shell with a session
 
-## Phase 3 — Carrier Database ⬜
+## Phase 3 — Carrier Database 🔨
 
 - [ ] `listCarriers()` — search, filters, sort allow-list, pagination
 - [ ] Carrier table with sortable headers and status badges
