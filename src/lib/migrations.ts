@@ -194,6 +194,109 @@ export const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 5,
+    name: "multi-tenant: organizations and tenant columns",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS organizations (
+          id         INTEGER PRIMARY KEY,
+          name       TEXT NOT NULL,
+          slug       TEXT NOT NULL UNIQUE,
+          status     TEXT NOT NULL DEFAULT 'active',
+          created_at TEXT NOT NULL
+        )`);
+
+      // Production holds one organisation's data, so it maps unambiguously to one tenant.
+      // A database that cannot be attributed to a single organisation is refused rather
+      // than guessed — see assertSingleTenantData.
+      assertSingleTenantData(db);
+
+      const existingName =
+        (db.prepare("SELECT value FROM app_settings WHERE key = 'company_name'").get() as
+          | { value: string }
+          | undefined)?.value ?? "My Organization";
+      const orgName = process.env.MIGRATION_ORG_NAME ?? existingName;
+      const now = new Date().toISOString();
+
+      let orgId =
+        (db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: number } | undefined)?.id;
+      if (orgId === undefined) {
+        db.prepare(
+          "INSERT INTO organizations (name, slug, status, created_at) VALUES (?, ?, 'active', ?)",
+        ).run(orgName, uniqueSlug(db, orgName), now);
+        orgId = (db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+      }
+
+      const tenantTables = [
+        "users", "carriers", "carrier_notes", "carrier_activity",
+        "offboarding_records", "saved_filters", "lookups", "app_settings",
+      ];
+      for (const table of tenantTables) {
+        addColumn(db, table, "organization_id", "INTEGER REFERENCES organizations(id)");
+        db.prepare(`UPDATE ${table} SET organization_id = ? WHERE organization_id IS NULL`).run(orgId);
+      }
+
+      for (const [name, table, cols] of [
+        ["idx_users_org", "users", "organization_id"],
+        ["idx_carriers_org", "carriers", "organization_id"],
+        ["idx_notes_org", "carrier_notes", "organization_id"],
+        ["idx_activity_org", "carrier_activity", "organization_id"],
+        ["idx_offboard_org", "offboarding_records", "organization_id"],
+        ["idx_filters_org", "saved_filters", "organization_id"],
+        ["idx_lookups_org", "lookups", "organization_id"],
+      ] as const) {
+        db.exec(`CREATE INDEX IF NOT EXISTS ${name} ON ${table} (${cols})`);
+      }
+
+      // Email is unique per organisation now, not globally: two companies may each employ
+      // a jane@example.com. SQLite cannot drop a column-level UNIQUE in place, so the
+      // table is rebuilt. Same reasoning for the other two constraint changes.
+      rebuildUsersPerTenant(db);
+      rebuildAppSettingsPerTenant(db);
+      rebuildLookupsPerTenant(db);
+
+      // Sessions predate tenancy and cannot be trusted to carry it — force re-login.
+      db.exec("DELETE FROM sessions");
+    },
+  },
+  {
+    version: 6,
+    name: "multi-tenant: composite foreign keys (Layer 1 isolation)",
+    up: (db) => {
+      // The strongest isolation layer: the database itself refuses a carrier that points
+      // at another tenant's lookup or user. A composite FK (organization_id, x_id) can
+      // only resolve to a row sharing the same organization_id, so even application code
+      // that forgot to scope cannot create a cross-tenant reference.
+      //
+      // SQLite adds foreign keys only at table-creation time, so each table is rebuilt.
+      // All of it runs inside the migration's own transaction (see migrate()), and
+      // foreign_key_check is asserted at the end.
+      if (hasColumn(db, "carriers", "organization_id") === false) {
+        throw new Error("Migration 6 requires migration 5 to have added organization_id.");
+      }
+
+      db.exec("PRAGMA foreign_keys = OFF");
+
+      rebuildCarriersWithCompositeFks(db);
+      rebuildChildWithCompositeFk(db, "carrier_notes");
+      rebuildChildWithCompositeFk(db, "carrier_activity");
+      rebuildOffboardingWithCompositeFks(db);
+
+      // Composite uniqueness: MC/USDOT indexes stay non-unique (duplicates are a warning,
+      // not a constraint), but they gain organization_id so lookups never scan other
+      // tenants' rows.
+      db.exec("CREATE INDEX IF NOT EXISTS idx_carriers_org_mc ON carriers (organization_id, mc_number)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_carriers_org_usdot ON carriers (organization_id, usdot)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_carriers_org_status ON carriers (organization_id, status_id)");
+
+      const violations = db.prepare("PRAGMA foreign_key_check").all();
+      db.exec("PRAGMA foreign_keys = ON");
+      if (violations.length > 0) {
+        throw new Error(`Composite FK rebuild left ${violations.length} violation(s): ${JSON.stringify(violations)}`);
+      }
+    },
+  },
 ];
 
 export function addColumn(
@@ -272,3 +375,261 @@ CREATE INDEX IF NOT EXISTS idx_notes_carrier ON carrier_notes (carrier_id);
 CREATE INDEX IF NOT EXISTS idx_activity_carrier ON carrier_activity (carrier_id);
 CREATE INDEX IF NOT EXISTS idx_activity_created ON carrier_activity (created_at);
 `;
+
+
+/** Slug from a name, made unique against existing organisations. */
+function uniqueSlug(db: DatabaseSync, name: string): string {
+  const base = slugify(name);
+  let slug = base;
+  let n = 2;
+  while (db.prepare("SELECT 1 FROM organizations WHERE slug = ?").get(slug)) {
+    slug = `${base}-${n++}`;
+  }
+  return slug;
+}
+
+export function slugify(name: string): string {
+  const s = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+  return s || "org";
+}
+
+/**
+ * Refuses to tenant-assign a database that plainly holds more than one organisation's
+ * data. This single-tenant schema never produced such a database, so in practice this
+ * always passes — but the requirement is explicit: never invent a tenant assignment, stop
+ * and flag instead. A heuristic can only be conservative here; it errs toward stopping.
+ */
+function assertSingleTenantData(db: DatabaseSync): void {
+  const orgCount =
+    (db.prepare("SELECT COUNT(*) AS n FROM organizations").get() as { n: number }).n;
+  if (orgCount > 1) {
+    throw new Error(
+      "Refusing to migrate: the database already contains multiple organizations, so a " +
+        "single-tenant backfill would be ambiguous. Assign tenants explicitly before rerunning.",
+    );
+  }
+}
+
+/** Rebuilds `users` so email is unique per organisation rather than globally. */
+function rebuildUsersPerTenant(db: DatabaseSync): void {
+  if (hasIndex(db, "users", ["organization_id", "email"])) return;
+  // The old table declared `email TEXT NOT NULL UNIQUE`; its auto-index vanishes with the
+  // table itself, so it is never dropped by hand (SQLite refuses to drop an auto-index).
+  db.exec(`
+    CREATE TABLE users_new (
+      id              INTEGER PRIMARY KEY,
+      organization_id INTEGER NOT NULL REFERENCES organizations(id),
+      name            TEXT NOT NULL,
+      email           TEXT NOT NULL,
+      password_hash   TEXT NOT NULL,
+      role            TEXT NOT NULL,
+      phone           TEXT,
+      active          INTEGER NOT NULL DEFAULT 1,
+      created_at      TEXT NOT NULL,
+      updated_at      TEXT NOT NULL
+    )`);
+  db.exec(`
+    INSERT INTO users_new (id, organization_id, name, email, password_hash, role, phone, active, created_at, updated_at)
+    SELECT id, organization_id, name, email, password_hash, role, phone, active, created_at, updated_at FROM users`);
+  db.exec("DROP TABLE users");
+  db.exec("ALTER TABLE users_new RENAME TO users");
+  db.exec("CREATE UNIQUE INDEX idx_users_org_email ON users (organization_id, email)");
+  db.exec("CREATE INDEX idx_users_org ON users (organization_id)");
+}
+
+/** Rebuilds `app_settings` so its key is (organization_id, key). */
+function rebuildAppSettingsPerTenant(db: DatabaseSync): void {
+  const pk = db.prepare("PRAGMA table_info(app_settings)").all() as { name: string; pk: number }[];
+  const alreadyComposite = pk.filter((c) => c.pk > 0).length > 1;
+  if (alreadyComposite) return;
+  db.exec(`
+    CREATE TABLE app_settings_new (
+      organization_id INTEGER NOT NULL REFERENCES organizations(id),
+      key             TEXT NOT NULL,
+      value           TEXT NOT NULL,
+      PRIMARY KEY (organization_id, key)
+    )`);
+  db.exec(`
+    INSERT INTO app_settings_new (organization_id, key, value)
+    SELECT organization_id, key, value FROM app_settings`);
+  db.exec("DROP TABLE app_settings");
+  db.exec("ALTER TABLE app_settings_new RENAME TO app_settings");
+}
+
+/** Rebuilds `lookups` so value is unique per (organization_id, kind). */
+function rebuildLookupsPerTenant(db: DatabaseSync): void {
+  if (hasIndex(db, "lookups", ["organization_id", "kind", "value"])) return;
+  db.exec(`
+    CREATE TABLE lookups_new (
+      id              INTEGER PRIMARY KEY,
+      organization_id INTEGER NOT NULL REFERENCES organizations(id),
+      kind            TEXT NOT NULL,
+      value           TEXT NOT NULL,
+      label           TEXT NOT NULL,
+      tone            TEXT,
+      sort            INTEGER NOT NULL DEFAULT 0,
+      active          INTEGER NOT NULL DEFAULT 1,
+      UNIQUE (organization_id, kind, value)
+    )`);
+  db.exec(`
+    INSERT INTO lookups_new (id, organization_id, kind, value, label, tone, sort, active)
+    SELECT id, organization_id, kind, value, label, tone, sort, active FROM lookups`);
+  db.exec("DROP TABLE lookups");
+  db.exec("ALTER TABLE lookups_new RENAME TO lookups");
+  db.exec("CREATE INDEX idx_lookups_org ON lookups (organization_id)");
+}
+
+function hasIndex(db: DatabaseSync, table: string, columns: string[]): boolean {
+  const indexes = db.prepare(`PRAGMA index_list(${table})`).all() as { name: string; unique: number }[];
+  for (const idx of indexes) {
+    const cols = (db.prepare(`PRAGMA index_info(${idx.name})`).all() as { name: string }[]).map((c) => c.name);
+    if (cols.length === columns.length && columns.every((c, i) => cols[i] === c)) return true;
+  }
+  return false;
+}
+
+
+function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+    (c) => c.name === column,
+  );
+}
+
+/**
+ * Rebuilds `carriers` with a composite foreign key on every lookup and user reference,
+ * so a carrier can only ever point at rows within its own organisation. This is the
+ * table that makes cross-tenant references impossible at the storage layer.
+ */
+function rebuildCarriersWithCompositeFks(db: DatabaseSync): void {
+  const cols = (db.prepare("PRAGMA table_info(carriers)").all() as { name: string }[]).map((c) => c.name);
+  const list = cols.join(", ");
+
+  db.exec(`
+    CREATE TABLE carriers_new (
+      id                   INTEGER PRIMARY KEY,
+      organization_id      INTEGER NOT NULL REFERENCES organizations(id),
+      serial               TEXT,
+      legal_name           TEXT NOT NULL,
+      owner_name           TEXT,
+      phone                TEXT,
+      phone_digits         TEXT,
+      email                TEXT,
+      address              TEXT,
+      status_id            INTEGER,
+      dispatcher_id        INTEGER,
+      account_manager_id   INTEGER,
+      mc_number            TEXT,
+      usdot                TEXT,
+      trailer_type_id      INTEGER,
+      trailer_size         TEXT,
+      truck_count          INTEGER,
+      born_date            TEXT,
+      onboarding_date      TEXT,
+      first_load_date      TEXT,
+      onboarding_type_id   INTEGER,
+      lead_source_id       INTEGER,
+      plan_id              INTEGER,
+      pricing_type_id      INTEGER,
+      rate                 REAL,
+      percentage           REAL,
+      billing_frequency_id INTEGER,
+      subscription_id      INTEGER,
+      agreement_status_id  INTEGER,
+      invoice_mode_id      INTEGER,
+      status_changed_at    TEXT,
+      review_flags         TEXT,
+      created_at           TEXT NOT NULL,
+      updated_at           TEXT NOT NULL,
+      created_by           INTEGER,
+      updated_by           INTEGER,
+      -- Composite FKs: a referenced lookup/user must share this carrier's organization_id.
+      FOREIGN KEY (organization_id, status_id)            REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, trailer_type_id)      REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, onboarding_type_id)   REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, lead_source_id)       REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, plan_id)              REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, pricing_type_id)      REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, billing_frequency_id) REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, subscription_id)      REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, agreement_status_id)  REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, invoice_mode_id)      REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, dispatcher_id)        REFERENCES users (organization_id, id),
+      FOREIGN KEY (organization_id, account_manager_id)   REFERENCES users (organization_id, id)
+    )`);
+
+  // A composite FK requires a unique index on the parent's referenced columns.
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_lookups_org_id ON lookups (organization_id, id)");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_org_id ON users (organization_id, id)");
+
+  db.exec(`INSERT INTO carriers_new (${list}) SELECT ${list} FROM carriers`);
+  db.exec("DROP TABLE carriers");
+  db.exec("ALTER TABLE carriers_new RENAME TO carriers");
+
+  db.exec("CREATE INDEX idx_carriers_org ON carriers (organization_id)");
+  db.exec("CREATE INDEX idx_carriers_name ON carriers (legal_name)");
+  db.exec("CREATE INDEX idx_carriers_phone ON carriers (phone_digits)");
+}
+
+/** carrier_notes / carrier_activity: composite FK to their carrier within the tenant. */
+function rebuildChildWithCompositeFk(db: DatabaseSync, table: string): void {
+  const cols = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+  const list = cols.join(", ");
+
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_carriers_org_id ON carriers (organization_id, id)");
+
+  const extra =
+    table === "carrier_notes"
+      ? `body TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0,`
+      : `type TEXT NOT NULL, field TEXT, old_value TEXT, new_value TEXT, summary TEXT NOT NULL,`;
+
+  db.exec(`
+    CREATE TABLE ${table}_new (
+      id              INTEGER PRIMARY KEY,
+      organization_id INTEGER NOT NULL REFERENCES organizations(id),
+      carrier_id      INTEGER NOT NULL,
+      user_id         INTEGER,
+      ${extra}
+      created_at      TEXT NOT NULL,
+      FOREIGN KEY (organization_id, carrier_id) REFERENCES carriers (organization_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, user_id)    REFERENCES users (organization_id, id)
+    )`);
+  db.exec(`INSERT INTO ${table}_new (${list}) SELECT ${list} FROM ${table}`);
+  db.exec(`DROP TABLE ${table}`);
+  db.exec(`ALTER TABLE ${table}_new RENAME TO ${table}`);
+  db.exec(`CREATE INDEX idx_${table === "carrier_notes" ? "notes" : "activity"}_carrier ON ${table} (carrier_id)`);
+  db.exec(`CREATE INDEX idx_${table === "carrier_notes" ? "notes" : "activity"}_org ON ${table} (organization_id)`);
+}
+
+/** offboarding_records: composite FK to its carrier and to the lookups it references. */
+function rebuildOffboardingWithCompositeFks(db: DatabaseSync): void {
+  const cols = (db.prepare("PRAGMA table_info(offboarding_records)").all() as { name: string }[]).map((c) => c.name);
+  const list = cols.join(", ");
+
+  db.exec(`
+    CREATE TABLE offboarding_records_new (
+      id                     INTEGER PRIMARY KEY,
+      organization_id        INTEGER NOT NULL REFERENCES organizations(id),
+      carrier_id             INTEGER NOT NULL UNIQUE,
+      offboarded_on          TEXT,
+      reason_id              INTEGER,
+      category_id            INTEGER,
+      final_status_id        INTEGER,
+      handled_by             INTEGER,
+      last_load_date         TEXT,
+      outstanding_balance    REAL,
+      subscription_cancelled INTEGER NOT NULL DEFAULT 0,
+      agreement_closed       INTEGER NOT NULL DEFAULT 0,
+      can_return             INTEGER NOT NULL DEFAULT 1,
+      notes                  TEXT,
+      created_at             TEXT NOT NULL,
+      created_by             INTEGER,
+      FOREIGN KEY (organization_id, carrier_id)      REFERENCES carriers (organization_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, reason_id)       REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, category_id)     REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, final_status_id) REFERENCES lookups (organization_id, id),
+      FOREIGN KEY (organization_id, handled_by)      REFERENCES users (organization_id, id)
+    )`);
+  db.exec(`INSERT INTO offboarding_records_new (${list}) SELECT ${list} FROM offboarding_records`);
+  db.exec("DROP TABLE offboarding_records");
+  db.exec("ALTER TABLE offboarding_records_new RENAME TO offboarding_records");
+}

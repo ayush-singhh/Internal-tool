@@ -28,7 +28,8 @@ const ROLE_OPTIONS = (Object.keys(ROLE_LABELS) as Role[]).map((r, i) => ({
   value: r,
 }));
 
-const ROLE_TONE: Record<Role, "purple" | "blue" | "green" | "slate"> = {
+const ROLE_TONE: Record<Role, "purple" | "blue" | "green" | "slate" | "amber"> = {
+  owner: "amber",
   admin: "purple",
   dispatcher: "blue",
   account_manager: "green",

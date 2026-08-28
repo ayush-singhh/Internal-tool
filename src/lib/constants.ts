@@ -146,6 +146,7 @@ export const LOOKUPS: SeedLookup[] = [
 ];
 
 export const ROLES = {
+  OWNER: "owner",
   ADMIN: "admin",
   DISPATCHER: "dispatcher",
   ACCOUNT_MANAGER: "account_manager",
@@ -155,6 +156,7 @@ export const ROLES = {
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
 export const ROLE_LABELS: Record<Role, string> = {
+  owner: "Owner",
   admin: "Admin",
   dispatcher: "Dispatcher",
   account_manager: "Account Manager",
