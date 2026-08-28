@@ -5,6 +5,7 @@ import {
   createTeamMemberAction, updateTeamMemberAction, toggleTeamMemberAction,
   setPasswordAction, type AdminState,
 } from "@/lib/admin-actions";
+import { issueResetAction, type IssueState } from "@/lib/reset-actions";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { Badge } from "./ui";
 import { Icon } from "./icons";
@@ -237,17 +238,76 @@ function PasswordForm({
   dialogRef: React.RefObject<HTMLDialogElement | null>;
 }) {
   const [state, action, pending] = useActionState<AdminState, FormData>(setPasswordAction, {});
+  const [link, issueAction, issuing] = useActionState<IssueState, FormData>(issueResetAction, {});
+  const [copied, setCopied] = useState(false);
+
+  const fullLink = link.link ? `${window.location.origin}${link.link}` : "";
+
   return (
-    <form action={action} className="space-y-4">
-      <input type="hidden" name="id" value={member.id} />
-      <Banner state={state} />
-      <Text name="password" label="New password" type="password" required hint="At least 8 characters." />
-      <Text name="confirm" label="Confirm password" type="password" required />
-      <p className="text-xs text-ink-500">
-        Every other session signed in as {member.name} will be signed out.
-      </p>
-      <DialogActions dialogRef={dialogRef} pending={pending} label="Set password" />
-    </form>
+    <div className="space-y-5">
+      {/* Preferred route: the administrator never learns the password. */}
+      <form action={issueAction} className="space-y-3">
+        <input type="hidden" name="userId" value={member.id} />
+        <div>
+          <h3 className="text-sm font-semibold text-ink-900">Send a reset link</h3>
+          <p className="mt-0.5 text-xs text-ink-500">
+            {member.name} chooses their own password. You never see it. The link works once
+            and expires in 24 hours.
+          </p>
+        </div>
+        {link.error && (
+          <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {link.error}
+          </p>
+        )}
+        {link.link ? (
+          <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <p className="text-xs font-medium text-emerald-900">
+              One-time link for {link.forName} — copy it now, it is not shown again.
+            </p>
+            <div className="flex gap-2">
+              <input readOnly value={fullLink} className="field field-sm font-mono text-[0.72rem]" />
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(fullLink);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="shrink-0 rounded-lg border border-line-strong bg-surface px-3 text-xs font-semibold text-ink-700 hover:bg-ink-50"
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="submit"
+            disabled={issuing}
+            className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60"
+          >
+            {issuing ? "Generating…" : "Generate reset link"}
+          </button>
+        )}
+      </form>
+
+      <details className="border-t border-line pt-4">
+        <summary className="cursor-pointer text-sm font-semibold text-ink-700">
+          Or set a password directly
+        </summary>
+        <form action={action} className="mt-3 space-y-4">
+          <input type="hidden" name="id" value={member.id} />
+          <Banner state={state} />
+          <Text name="password" label="New password" type="password" required hint="At least 8 characters." />
+          <Text name="confirm" label="Confirm password" type="password" required />
+          <p className="text-xs text-ink-500">
+            You would then have to tell {member.name} what it is. A reset link avoids that.
+            Every other session for this account is signed out either way.
+          </p>
+          <DialogActions dialogRef={dialogRef} pending={pending} label="Set password" />
+        </form>
+      </details>
+    </div>
   );
 }
 

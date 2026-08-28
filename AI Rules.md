@@ -97,7 +97,19 @@ Tests run with `node --conditions=react-server` so `server-only` resolves, and s
 `CARRIER_DB_PATH` to a temp file before importing anything — **tests never touch
 `data/carrier-hub.db`**.
 
-## 9. Keep the docs honest
+## 9. Schema changes
+
+Schema changes are migrations in `src/lib/migrations.ts` — never edits to an existing
+`CREATE TABLE`, and never an ad-hoc `ALTER` at boot. Other companies are running this
+now, so a change has to be ordered, recorded and run exactly once.
+
+- Never edit a migration that has shipped. Add a new one.
+- Never renumber. The version is the identity.
+- Assume the target database already contains real customer records.
+- Destructive steps (dropping or rewriting a column) need a backup taken first and a
+  note in `Plan.md` saying so.
+
+## 10. Keep the docs honest
 
 Finishing a phase means updating `Plan.md` in the same change. If a decision in
 `Architecture.md` stops being true, fix `Architecture.md` — a stale architecture doc is

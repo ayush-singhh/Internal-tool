@@ -1,0 +1,59 @@
+# Carrier Management Hub — reproducible container build.
+#
+# The database is a file, so it MUST live on a mounted volume at /data. Without one,
+# every carrier record is lost the moment the container restarts.
+#
+#   docker build -t carrier-hub .
+#   docker volume create carrier-hub-data
+#   docker run -d --name carrier-hub -p 3000:3000 \
+#     -v carrier-hub-data:/data \
+#     -e ADMIN_EMAIL=you@company.com -e ADMIN_PASSWORD='a real password' \
+#     carrier-hub
+
+# ── deps ─────────────────────────────────────────────────────────────────────
+FROM node:24-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# ── build ────────────────────────────────────────────────────────────────────
+FROM node:24-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+# Build against a scratch database so the build never touches real data.
+ENV CARRIER_DB_PATH=/tmp/build.db
+RUN npm run build
+
+# ── runtime ──────────────────────────────────────────────────────────────────
+FROM node:24-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    CARRIER_DB_PATH=/data/carrier-hub.db \
+    BACKUP_DIR=/data/backups
+
+RUN addgroup -g 1001 -S nodejs && adduser -S -u 1001 -G nodejs carrier
+
+COPY --from=build /app/public ./public
+COPY --from=build --chown=carrier:nodejs /app/.next/standalone ./
+COPY --from=build --chown=carrier:nodejs /app/.next/static ./.next/static
+# Kept so `npm run migrate` and `npm run backup` work inside the container.
+COPY --from=build --chown=carrier:nodejs /app/src/lib ./src/lib
+COPY --from=build --chown=carrier:nodejs /app/scripts ./scripts
+
+RUN mkdir -p /data && chown -R carrier:nodejs /data
+VOLUME /data
+USER carrier
+EXPOSE 3000
+
+# Migrations run before the server accepts traffic, so a half-upgraded schema is never
+# served. They are idempotent, so restarts are free.
+CMD ["sh", "-c", "node scripts/migrate.ts && node server.js"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/login >/dev/null 2>&1 || exit 1

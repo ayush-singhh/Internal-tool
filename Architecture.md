@@ -130,13 +130,81 @@ append-only — nothing in the UI edits or deletes it.
 - All SQL uses bound parameters.
 - The database file lives outside the served tree and is git-ignored.
 
+## Multi-customer: the decision that is deliberately not made
+
+This is sold to more than one dispatch company, which forces a choice between two shapes.
+**Neither is implemented yet, and that is on purpose** — the schema has no tenant column.
+
+**One deployment per customer.** Each company gets its own container and its own database
+file. Isolation is physical, backup is one file, and the code needs no change at all. It
+costs linear operations: ten customers means ten upgrades.
+
+**One shared deployment.** Requires a `organization_id` on every table, tenant scoping on
+all ~111 query sites, an async data layer (SQLite's `DatabaseSync` is synchronous; every
+hosted database is not), plus organisations, signup and billing. One missed `WHERE` clause
+leaks one company's carriers to another.
+
+Adding tenancy speculatively would be the expensive kind of wrong: every query gets more
+complex to serve a model that may never be chosen, and the isolation is weaker than simply
+running separate instances. So the schema stays single-tenant, and everything built for
+selling — migrations, backups, throttling, resets, the container — is deliberately
+useful under **either** shape.
+
+If the shared model is chosen later, the migration path is: async-ify `src/lib/db.ts` and
+its callers, add the tenant column in a new migration, scope every query, then test
+isolation adversarially. Budget weeks, not days.
+
+## Schema changes
+
+`src/lib/migrations.ts` owns the schema outright — including creating it from nothing.
+Migrations are numbered, ordered, run exactly once, and recorded in `schema_migrations`.
+Each runs in its own transaction, so a failure rolls back rather than leaving a database
+half-upgraded.
+
+`migrate()` is self-sufficient: pointed at an empty file it builds a complete database,
+pointed at an existing one it applies only what is missing. That is what a restore, a
+provisioning script and the container's start command all rely on.
+
+Three rules, because other people's data now depends on them:
+1. Never edit a migration that has shipped — add a new one.
+2. Never renumber — the version is the identity.
+3. Every migration must be safe against a database already holding real records.
+
+## Authentication hardening
+
+**Login throttling** (`src/lib/throttle.ts`) applies two independent limits: per email
+(5 failures / 15 minutes) to stop grinding one account, and per IP (30 / 15 minutes) to
+stop one host spraying many accounts — which a per-email limit alone never sees. The check
+runs before any password verification, so a locked account costs no scrypt work. A
+successful sign-in clears that account's own failures but never the IP's, since one valid
+login should not launder a spray from the same host. Counts live in SQLite so they survive
+restarts and work across processes.
+
+**Password resets** (`src/lib/reset.ts`) are one-time links. The previous flow had an
+administrator type a password and then tell the person what it was, in plain text over
+whatever channel was handy. Now the administrator issues a link and never learns the
+password. Only the SHA-256 of the token is stored, so a database dump cannot be replayed
+into an account takeover; links expire in 24 hours, work exactly once, are invalidated by
+issuing a newer one, and completing a reset ends every existing session for that account.
+
 ## Operations
 
 ```bash
-npm run dev     # http://localhost:3000
-npm run build
-npm start
+npm run dev       # http://localhost:3000
+npm run build && npm start
+npm run migrate   # apply pending migrations (idempotent; run before starting a new version)
+npm run backup    # snapshot + verify + rotate
+npm test          # 147 tests
 ```
+
+Backups use `VACUUM INTO`, which takes a consistent snapshot of a database being written
+to. Copying the file with `cp` while the app runs can capture a torn page — the classic
+way to find out your backups were never valid. Every backup is reopened, integrity-checked
+and row-counted before it is accepted.
+
+`Dockerfile` builds a standalone image. The database **must** be on a mounted volume at
+`/data`; without one every record is lost on restart. Migrations run before the server
+accepts traffic.
 
 First boot creates `data/carrier-hub.db`, seeds the controlled vocabularies and default
 settings, and creates one admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` (defaults documented

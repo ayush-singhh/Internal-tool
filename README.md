@@ -38,7 +38,9 @@ npm start
 ### Other commands
 
 ```bash
-npm test             # 126 tests, no framework — node --test
+npm test             # 147 tests, no framework — node --test
+npm run migrate      # apply pending schema migrations (idempotent)
+npm run backup       # snapshot the database, verify it, rotate old ones
 npm run seed:demo    # builds data/demo.db with synthetic carriers
 npm run dev:demo     # runs the app against data/demo.db
 ```
@@ -69,7 +71,59 @@ and each carrier profile shows exactly what was flagged.
 
 ## Backup
 
-The entire database is one file. Stop the app and copy the `data/` directory.
+```bash
+npm run backup
+```
+
+Writes a verified snapshot to `data/backups/` and keeps the newest 14
+(`BACKUP_KEEP=30` to change that, `BACKUP_DIR=/mnt/vol` to put it elsewhere).
+
+It uses SQLite's `VACUUM INTO`, which snapshots a database that is being written to
+right now. **Do not back up by copying the file while the app is running** — that can
+capture a half-written page, and you find out only when you try to restore. Each backup
+is reopened, integrity-checked and row-counted before it is accepted; the counts are
+printed so you can see what you actually captured.
+
+To restore: stop the app, copy a backup over `data/carrier-hub.db`, delete any stale
+`-wal` / `-shm` files beside it, start the app. Run a restore for real once before you
+need to.
+
+Put it on a schedule:
+
+```bash
+0 2 * * *  cd /path/to/app && /usr/local/bin/npm run backup >> data/backups/backup.log 2>&1
+```
+
+## Deploying with Docker
+
+```bash
+docker build -t carrier-hub .
+docker volume create carrier-hub-data
+docker run -d --name carrier-hub -p 3000:3000 \
+  -v carrier-hub-data:/data \
+  -e ADMIN_EMAIL=you@company.com \
+  -e ADMIN_PASSWORD='a real password' \
+  carrier-hub
+```
+
+The volume at `/data` is not optional — the database is a file, and without a volume
+every carrier record is lost when the container restarts. Migrations run before the
+server accepts traffic.
+
+## Security
+
+- **Login throttling.** Five failed attempts on an account lock it for 15 minutes; a
+  network gets 30 before it is throttled. A successful sign-in clears the account's own
+  lock at once. Counts survive restarts.
+- **Password resets are one-time links.** An administrator opens Team → *Password* →
+  *Generate reset link* and sends the link over. They never learn the password. Links work
+  once, expire in 24 hours, and completing one signs that account out everywhere. Only the
+  token's hash is stored, so a stolen database cannot be replayed into an account.
+- **Set `ADMIN_PASSWORD`** before the first boot of any deployment. The fallback
+  (`ChangeMe123!`) is documented here and in the source — treat it as public.
+- The app has no rate limit on anything but login, no 2FA, and no self-serve signup.
+  Before putting it on the open internet, consider whether it belongs behind a VPN or an
+  identity proxy instead.
 
 ## Roles
 

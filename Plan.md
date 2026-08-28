@@ -213,6 +213,34 @@ Two further "failures" turned out to be faults in the test driver, not the app �
 that fought the browser's own email validation, and a row count read before navigation
 finished. Both re-checked and correct.
 
+## Phase 11 — Making it sellable ✅
+
+The tool is being sold to other dispatch companies, so it now has to survive people the
+author cannot walk over to. The tenancy model is undecided; this phase is deliberately the
+work that pays off under **every** model — single-tenant deploys, multi-tenant SaaS, or a
+self-hosted licence.
+
+- [x] Versioned migrations owning the schema outright — `migrate()` builds a database
+      from an empty file or upgrades an existing one, each step in its own transaction
+- [x] One-time password reset links — the administrator never learns the password; only
+      the token's SHA-256 is stored; single-use, 24h expiry, ends all sessions
+- [x] Login throttling — per account (5/15min) and per network (30/15min), checked before
+      any password work, surviving restarts
+- [x] `npm run backup` — `VACUUM INTO` snapshot, integrity-checked, row-counted and
+      rotated. A backup is not accepted until it has been reopened and read
+- [x] `Dockerfile` with standalone output, non-root user, healthcheck, and migrations
+      run before traffic is served
+- [x] Tests: 19 new cases — **147/147 passing overall**
+- [x] Verified in-browser: lockout engages on the 6th attempt and refuses even the correct
+      password, is per-account, and a reset link works exactly once end to end
+
+### Explicitly NOT done yet — and why
+The schema has **no tenant column**. That is correct for one-deployment-per-customer,
+where isolation is physical, and wrong for a shared multi-tenant app, where every one of
+~111 query sites would need scoping. Adding tenancy speculatively would be the expensive
+kind of wrong: it complicates every query for a model that may never be chosen. It is one
+focused change when the decision is made — see `Architecture.md`.
+
 ## Deferred by design
 
 Recorded so "later" is a decision rather than an oversight.

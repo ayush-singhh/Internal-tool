@@ -61,6 +61,11 @@ export default async function LoginPage() {
 
           <LoginForm />
 
+          <p className="mt-5 text-xs leading-relaxed text-ink-500">
+            Forgotten your password? Ask an administrator to send you a reset link — they
+            can issue one from the Team page without ever seeing your password.
+          </p>
+
           {firstRun && (
             <div className="mt-7 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-xs leading-relaxed text-amber-900">
               <p className="font-semibold">First run</p>

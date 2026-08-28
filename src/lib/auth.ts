@@ -1,19 +1,35 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { all, get, run } from "./db.ts";
 import { verifyPassword } from "./password.ts";
 import type { SessionUser } from "./permissions.ts";
+import { checkLogin, describeLockout, recordAttempt } from "./throttle.ts";
 
 const COOKIE = "ch_session";
 const SESSION_DAYS = 14;
+
+/** Best-effort client address. Trusts the proxy header, which is correct behind one and
+ *  harmless without: throttling is defence in depth, not an authorization decision. */
+async function clientIp(): Promise<string | null> {
+  const h = await headers();
+  const forwarded = h.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]!.trim().slice(0, 64) || null;
+  return h.get("x-real-ip")?.slice(0, 64) ?? null;
+}
 
 export async function signIn(
   email: string,
   password: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ip = await clientIp();
+
+  // Checked before any password work, so a locked account costs no scrypt time either.
+  const verdict = checkLogin(email, ip);
+  if (!verdict.allowed) return { ok: false, error: describeLockout(verdict) };
+
   const user = get<{ id: number; password_hash: string; active: number }>(
     "SELECT id, password_hash, active FROM users WHERE email = ?",
     [email.trim().toLowerCase()],
@@ -21,8 +37,15 @@ export async function signIn(
 
   // Same message either way — don't reveal which addresses exist.
   const invalid = { ok: false as const, error: "Incorrect email or password." };
-  if (!user || !verifyPassword(password, user.password_hash)) return invalid;
-  if (!user.active) return { ok: false, error: "This account has been deactivated." };
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    recordAttempt(email, ip, false);
+    return invalid;
+  }
+  if (!user.active) {
+    recordAttempt(email, ip, false);
+    return { ok: false, error: "This account has been deactivated." };
+  }
+  recordAttempt(email, ip, true);
 
   const id = randomBytes(32).toString("hex");
   const now = new Date();
