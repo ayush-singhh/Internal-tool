@@ -44,7 +44,7 @@ function failuresSince(identifier: string, since: string): { count: number; olde
   return { count: row?.count ?? 0, oldest: row?.oldest ?? null };
 }
 
-/** Checked before a password is ever verified, so a locked account costs no scrypt work. */
+/** Checked before a password is ever verified, so a locked account costs no argon2 work. */
 export function checkLogin(email: string, ip: string | null): ThrottleVerdict {
   const checks: [scope: "email" | "ip", identifier: string, rule: ThrottleRule][] = [
     ["email", `email:${email.trim().toLowerCase()}`, RULES.email],

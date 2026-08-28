@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hashPassword, verifyPassword } from "../src/lib/password.ts";
+import { scryptSync, randomBytes } from "node:crypto";
+import { hashPassword, needsRehash, verifyPassword } from "../src/lib/password.ts";
 import { can, type SessionUser } from "../src/lib/permissions.ts";
 
 test("password hashes round-trip and reject wrong input", () => {
   const stored = hashPassword("Dispatch!2024");
-  assert.ok(stored.startsWith("scrypt$"));
+  assert.ok(stored.startsWith("$argon2id$"));
   assert.equal(verifyPassword("Dispatch!2024", stored), true);
   assert.equal(verifyPassword("dispatch!2024", stored), false);
   assert.equal(verifyPassword("", stored), false);
@@ -14,6 +15,21 @@ test("password hashes round-trip and reject wrong input", () => {
 
 test("password hashes are salted per user", () => {
   assert.notEqual(hashPassword("same"), hashPassword("same"));
+});
+
+/** A hash in the retired format, as it sits in databases created before the migration. */
+function legacyScryptHash(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  return `scrypt$${salt}$${scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+test("scrypt hashes from before the migration still verify, and are flagged for rehash", () => {
+  const legacy = legacyScryptHash("Dispatch!2024");
+  assert.equal(verifyPassword("Dispatch!2024", legacy), true);
+  assert.equal(verifyPassword("wrong", legacy), false);
+  assert.equal(needsRehash(legacy), true, "a legacy hash must be upgraded on next login");
+  assert.equal(needsRehash(hashPassword("Dispatch!2024")), false, "argon2 hashes are current");
+  assert.equal(needsRehash("garbage"), true);
 });
 
 const user = (id: number, role: SessionUser["role"]): SessionUser => ({

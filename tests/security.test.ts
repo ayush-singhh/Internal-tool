@@ -1,6 +1,7 @@
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
+import { randomBytes, scryptSync } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -126,6 +127,26 @@ test("failures outside the window no longer count", () => {
 });
 
 // ── Password reset ───────────────────────────────────────────────────────────
+
+test("a legacy scrypt hash is upgraded in place, exactly as signIn does it", () => {
+  // signIn cannot be imported here (it pulls in next/headers), so this runs the same
+  // statement it runs. What it proves is that the tenant guard accepts the write: the
+  // users table is tenant-owned and login happens before any organisation is known.
+  const salt = randomBytes(16).toString("hex");
+  const legacy = `scrypt$${salt}$${scryptSync("original-password", salt, 64).toString("hex")}`;
+  db.systemQuery(() => db.run("UPDATE users SET password_hash = ? WHERE id = ?", [legacy, userId]));
+  assert.equal(pw.needsRehash(legacy), true);
+
+  db.systemQuery(() =>
+    db.run("UPDATE users SET password_hash = ? WHERE id = ?", [pw.hashPassword("original-password"), userId]),
+  );
+
+  const hash = db.get<{ password_hash: string }>(
+    "SELECT password_hash FROM users WHERE organization_id = ? AND id = ?", [orgId, userId],
+  )!.password_hash;
+  assert.equal(pw.needsRehash(hash), false, "the stored hash is now argon2id");
+  assert.equal(pw.verifyPassword("original-password", hash), true, "the password still works");
+});
 
 test("a reset link sets the password and the raw token is never stored", () => {
   const issued = reset.issueReset(userId, null);

@@ -4,7 +4,7 @@ This file is the resume point for a fresh session. It is kept current at the end
 working session. For the full picture read, in order: `PRD.md` → `Architecture.md` →
 `AI Rules.md` → `Plan.md` → `MIGRATION-PLAN.md`.
 
-**Last updated:** 2026-08-28, end of multi-tenant Phase 2.
+**Last updated:** 2026-08-28, after the argon2id password migration.
 
 ---
 
@@ -17,7 +17,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 170 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 172 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -25,7 +25,19 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ---
 
-## What is DONE (multi-tenant Phase 2 — tenant isolation)
+## What is DONE
+
+### Password hashing — Argon2id ✅
+
+- `src/lib/password.ts` hashes with Argon2id via `@node-rs/argon2`, at the library's
+  defaults, which are already the OWASP parameters (m=19456, t=2, p=1)
+- Old `scrypt$…` hashes still verify, so no existing account is locked out
+- `needsRehash()` flags them; `signIn()` re-hashes to argon2id on the next successful
+  login (`src/lib/auth.ts`) — the only moment the plaintext exists
+- `signIn()` itself has no unit test (it imports `next/headers`); the pieces are tested,
+  including that the tenant guard accepts the in-place `UPDATE users` under `systemQuery`
+
+### Multi-tenant Phase 2 — tenant isolation ✅
 
 The data layer is fully multi-tenant and isolation is proven by an adversarial test suite.
 
@@ -49,32 +61,29 @@ Table classification (global / tenant-owned / user-owned) is documented in
 
 In `Plan.md` under "Phase 12 … Still to do". Suggested order:
 
-1. **Password hashing scrypt → argon2id.** `@node-rs/argon2` is installed and verified
-   (produces `$argon2id$` hashes). `src/lib/password.ts` still uses scrypt; migrate with a
-   verify-then-rehash-on-login path so existing hashes keep working.
-2. **TOTP MFA + recovery codes.** `qrcode` installed (render the otpauth URI to a data: URI
+1. **TOTP MFA + recovery codes.** `qrcode` installed (render the otpauth URI to a data: URI
    server-side — secret never leaves the server). Enrollment → verify-before-activate →
    require OTP at login → hashed recovery codes → rate-limited OTP → replay prevention
    (store last-used step). New `mfa_*` tables via a new migration.
-3. **Secure signup + organisation creation + email verification.** `createOrganization()`
+2. **Secure signup + organisation creation + email verification.** `createOrganization()`
    in `provision.ts` already builds an org+owner+vocabularies atomically. Needs a signup
    route, email verification tokens, and SMTP (see decision 3 below).
-4. **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`).
-5. **Session hardening** — rotation on privilege change, device/session list, revoke.
-6. **RBAC UI** for owner/admin/member.
-7. **Generalised audit log** + rate limiting beyond login (throttle.ts is login-only today).
-8. **Security headers / CSP.**
-9. **Platform support role** — see decision 4.
+3. **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`).
+4. **Session hardening** — rotation on privilege change, device/session list, revoke.
+5. **RBAC UI** for owner/admin/member.
+6. **Generalised audit log** + rate limiting beyond login (throttle.ts is login-only today).
+7. **Security headers / CSP.**
+8. **Platform support role** — see decision 4.
 
 ---
 
 ## Decisions already made (do not re-litigate)
 
-1. **Password hashing:** Argon2id via `@node-rs/argon2` (prebuilt binaries; installed).
+1. **Password hashing:** Argon2id via `@node-rs/argon2` (prebuilt binaries). **Done.**
 2. **TOTP QR:** the `qrcode` package, rendered server-side (installed).
-3. **Email:** hand-rolled pluggable SMTP over `node:tls` behind a `Mailer` interface,
+2. **Email:** hand-rolled pluggable SMTP over `node:tls` behind a `Mailer` interface,
    configured by `SMTP_URL`; refuse to start in production if unset. (Not built yet.)
-4. **Platform support role:** the owner asked for standing access to look inside any
+3. **Platform support role:** the owner asked for standing access to look inside any
    tenant's data. They requested it be **unlogged and hidden from customers**. That specific
    design (deliberately concealed, tamper-free cross-tenant access to third-party PII) was
    **declined**. What to build instead, agreed as the workable version: **standing,
@@ -114,6 +123,9 @@ never touch `data/carrier-hub.db`**.
 - **The query guard is fail-closed.** Any new query on a tenant table MUST include
   `organization_id` in its SQL, or it throws. Genuinely global access goes through
   `systemQuery()`. This applies to test-side assertion queries too.
+- **`src/lib/auth.ts` cannot be imported by a test** — it imports `next/headers`, which
+  does not resolve outside the Next runtime. Logic that needs a test goes in a module
+  auth.ts imports, not in auth.ts.
 - **`carrierNotes` lives in `activity.ts`**, not `notes.ts` (easy to mis-import).
 - **Migration ordering:** migration 5 only creates/backfills an org when data already
   exists; a fresh DB gets its bootstrap org from `seed()` in `db.ts`. Don't make both create one.

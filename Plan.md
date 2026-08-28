@@ -21,7 +21,7 @@ verified over HTTP for every role.
 - [x] SQLite schema via `node:sqlite` — users, lookups, carriers, notes, activity,
       offboarding, settings, saved filters, sessions
 - [x] Idempotent seed: lookups, default settings, first admin user
-- [x] scrypt password hashing (`src/lib/password.ts`)
+- [x] scrypt password hashing (`src/lib/password.ts`) — superseded by argon2id in Phase 12
 - [x] Session create/verify/destroy, `requireUser()`, role permission helpers
       (`src/lib/auth.ts`, `src/lib/permissions.ts`)
 - [x] Login page with split brand panel + first-run credential hint
@@ -231,6 +231,13 @@ and `MIGRATION-PLAN.md`.
 - [x] **Adversarial cross-tenant suite — 16 attacks, all denied** (`tests/cross-tenant.test.ts`)
 - [x] **170 tests passing**, `npm run build` clean
 
+### Password hashing — scrypt → argon2id ✅
+- [x] `password.ts` hashes with Argon2id (`@node-rs/argon2`, OWASP defaults m=19456, t=2, p=1)
+- [x] Pre-existing scrypt hashes still verify — nobody is locked out by the change
+- [x] `signIn()` re-hashes a legacy hash on the next successful login (`needsRehash()`)
+- [x] Tests: legacy verify + rehash flagging + the guard accepts the in-place upgrade —
+      **172 passing**; `npm run build` clean
+
 ### Still to do (later phases)
 - [ ] TOTP MFA + recovery codes (argon2 + qrcode already installed)
 - [ ] Secure signup + organisation creation + email verification (SMTP)
@@ -240,7 +247,6 @@ and `MIGRATION-PLAN.md`.
 - [ ] Generalised audit log + rate limiting beyond login
 - [ ] Security headers / CSP
 - [ ] Platform support role (read-only, internally audited) per the owner's decision
-- [ ] Password hashing migration scrypt → argon2id
 
 ---
 

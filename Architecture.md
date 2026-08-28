@@ -7,7 +7,7 @@
 | Framework | **Next.js 16** (App Router, React 19, TypeScript) | Server Components + Server Actions mean forms, mutations and queries need no separate API layer or client state library |
 | Styling | **Tailwind CSS v4** | Design tokens live in `globals.css`; no component library to fight |
 | Database | **SQLite via `node:sqlite`** | Ships with Node 22+. Real persistent, relational, transactional storage with **zero dependencies** and no native build step |
-| Auth | **`node:crypto` scrypt + server-side session table** | ~80 lines, no NextAuth. Sessions are DB rows, so revocation is a `DELETE` |
+| Auth | **Argon2id (`@node-rs/argon2`) + server-side session table** | ~80 lines, no NextAuth. Sessions are DB rows, so revocation is a `DELETE` |
 | Charts | **Hand-rolled inline SVG / CSS** | Bars, donuts and sparklines are a few dozen lines each and stay on-brand. No 500 KB charting dependency |
 | CSV | **Hand-rolled RFC 4180 parser/serializer** | Handles quoting and embedded newlines correctly in ~40 lines |
 
@@ -38,7 +38,7 @@ src/
   lib/
     constants.ts   controlled vocabularies, roles, default settings
     db.ts          connection, schema, seeding, query helpers (all/get/run)
-    password.ts    scrypt hash + verify
+    password.ts    argon2id hash + verify (also verifies retired scrypt hashes)
     auth.ts        session create/read/destroy, requireUser, permission checks
     carriers.ts    carrier queries, mutations, activity logging
     format.ts      phone / date / pricing display formatting
@@ -123,7 +123,11 @@ append-only — nothing in the UI edits or deletes it.
 ## Security
 
 - All application routes sit behind `requireUser()`; `/login` is the only public page.
-- Passwords: scrypt with a per-user random salt, compared with `timingSafeEqual`.
+- Passwords: **Argon2id** at the OWASP parameters (m=19456, t=2, p=1), per-hash random
+  salt, verified by `@node-rs/argon2`. Hashes written before this migration use
+  `node:crypto` scrypt; they still verify, and `signIn()` re-hashes them to argon2id on
+  the next successful login — the one moment the plaintext is available. `needsRehash()`
+  in `password.ts` is the discriminator.
 - Sessions: opaque 256-bit random IDs in HTTP-only, `SameSite=Lax` cookies, with a
   server-side expiry row. Logout deletes the row.
 - Authorization is re-checked inside every Server Action.
@@ -229,7 +233,7 @@ Three rules, because other people's data now depends on them:
 **Login throttling** (`src/lib/throttle.ts`) applies two independent limits: per email
 (5 failures / 15 minutes) to stop grinding one account, and per IP (30 / 15 minutes) to
 stop one host spraying many accounts — which a per-email limit alone never sees. The check
-runs before any password verification, so a locked account costs no scrypt work. A
+runs before any password verification, so a locked account costs no hashing work. A
 successful sign-in clears that account's own failures but never the IP's, since one valid
 login should not launder a spray from the same host. Counts live in SQLite so they survive
 restarts and work across processes.

@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { all, get, run, systemQuery } from "./db.ts";
-import { verifyPassword } from "./password.ts";
+import { hashPassword, needsRehash, verifyPassword } from "./password.ts";
 import type { SessionUser } from "./permissions.ts";
 import { Org } from "./tenant-db.ts";
 import { checkLogin, describeLockout, recordAttempt } from "./throttle.ts";
@@ -27,7 +27,7 @@ export async function signIn(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ip = await clientIp();
 
-  // Checked before any password work, so a locked account costs no scrypt time either.
+  // Checked before any password work, so a locked account costs no hashing time either.
   const verdict = checkLogin(email, ip);
   if (!verdict.allowed) return { ok: false, error: describeLockout(verdict) };
 
@@ -49,6 +49,14 @@ export async function signIn(
     return { ok: false, error: "This account has been deactivated." };
   }
   recordAttempt(email, ip, true);
+
+  // Retire a pre-argon2 hash now, while the plaintext is in hand. A login is the only
+  // moment an old hash can be upgraded, and it happens exactly once per account.
+  if (needsRehash(user.password_hash)) {
+    systemQuery(() =>
+      run("UPDATE users SET password_hash = ? WHERE id = ?", [hashPassword(password), user.id]),
+    );
+  }
 
   const id = randomBytes(32).toString("hex");
   const now = new Date();
