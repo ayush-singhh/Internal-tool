@@ -139,17 +139,28 @@ the only carrier of meaning.
       — **88/88 passing overall**
 - [x] `npm run build` clean
 
-## Phase 9 — Import 🔨
+## Phase 9 — Import ✅
 
-- [ ] CSV upload + RFC 4180 parser
-- [ ] Column mapping UI with auto-suggested matches
-- [ ] Row preview with per-row validation errors
-- [ ] Duplicate MC/USDOT detection with skip / create / update handling
-- [ ] Unmatched vocabulary values preserved and flagged for review
-- [ ] Commit inside a transaction; existing records preserved
-- [ ] Tests: parser edge cases (quotes, embedded newlines, CRLF)
+- [x] Four-step wizard: upload → map → review → done. The file is parsed in the browser,
+      so mapping is instant and nothing reaches the server until you ask for a preview
+- [x] Delimiter sniffing (comma, semicolon, tab, pipe) and BOM handling
+- [x] Column mapping with auto-suggested matches from 27 target fields and ~120 header
+      aliases; a field can only be claimed once
+- [x] Row-by-row preview with per-row errors and flags — **preview writes nothing**
+- [x] Duplicate MC/USDOT detected against the database *and* within the file itself,
+      with skip / update / create handling
+- [x] Unmatched vocabulary values preserved verbatim and flagged, never guessed
+- [x] Commit runs in one transaction — a failure leaves nothing behind
+- [x] Tests: 22 cases — **110/110 passing overall**
+- [x] `npm run build` clean
 
-## Phase 10 — Team & Settings ⬜
+### Bug found and fixed by these tests
+`"Mar 4, 2025"` imported as **2025-03-03**. `new Date("Mar 4, 2025")` yields *local*
+midnight, and `toISOString()` then rolls the calendar day backwards in any timezone east
+of UTC — which would have silently shifted every named-month date in the real migration.
+Now rebuilt from local components and verified identical across UTC-8 → UTC+14.
+
+## Phase 10 — Team & Settings 🔨
 
 - [ ] Team list with role, status and assigned carrier counts
 - [ ] Create/edit team member, deactivate, reset password (admin only)
