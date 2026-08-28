@@ -12,6 +12,7 @@ let attention: typeof import("../src/lib/attention.ts");
 let write: typeof import("../src/lib/carrier-write.ts");
 let ids: Record<string, number>;
 let userId: number;
+let org: import("../src/lib/tenant-db.ts").Org;
 
 const daysAgo = (n: number) =>
   new Date(Date.now() - n * 86400_000).toISOString().slice(0, 10);
@@ -21,16 +22,19 @@ before(async () => {
   db = await import("../src/lib/db.ts");
   attention = await import("../src/lib/attention.ts");
   write = await import("../src/lib/carrier-write.ts");
+  const { Org } = await import("../src/lib/tenant-db.ts");
+  const orgId = db.get<{ id: number }>("SELECT id FROM organizations LIMIT 1")!.id;
+  org = new Org(orgId);
 
   const now = new Date().toISOString();
   db.run(
-    `INSERT INTO users (name, email, password_hash, role, active, created_at, updated_at)
-     VALUES ('Queue Owner', 'queue@x.test', 'x', 'admin', 1, ?, ?)`, [now, now],
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active, created_at, updated_at)
+     VALUES (?, 'Queue Owner', 'queue@x.test', 'x', 'admin', 1, ?, ?)`, [orgId, now, now],
   );
-  userId = db.get<{ id: number }>("SELECT id FROM users WHERE email='queue@x.test'")!.id;
+  userId = db.get<{ id: number }>("SELECT id FROM users WHERE organization_id = ? AND email='queue@x.test'", [orgId])!.id;
 
   const look = (k: string, v: string) =>
-    db.get<{ id: number }>("SELECT id FROM lookups WHERE kind=? AND value=?", [k, v])!.id;
+    db.get<{ id: number }>("SELECT id FROM lookups WHERE organization_id = ? AND kind=? AND value=?", [org.id, k, v])!.id;
   ids = {
     active: look("status", "active"),
     upcoming: look("status", "about_to_be_active"),
@@ -51,17 +55,18 @@ after(() => {
 });
 
 beforeEach(() => {
-  db.run("DELETE FROM carrier_activity");
-  db.run("DELETE FROM carriers");
-  db.run("UPDATE app_settings SET value = '14' WHERE key = 'about_to_be_active_days'");
-  db.run("UPDATE app_settings SET value = '21' WHERE key = 'missing_first_load_days'");
-  db.run("UPDATE app_settings SET value = '7' WHERE key = 'investigation_stale_days'");
+  db.run("DELETE FROM carrier_activity WHERE organization_id = ?", [org.id]);
+  db.run("DELETE FROM carriers WHERE organization_id = ?", [org.id]);
+  db.run("UPDATE app_settings SET value = '14' WHERE organization_id = ? AND key = 'about_to_be_active_days'", [org.id]);
+  db.run("UPDATE app_settings SET value = '21' WHERE organization_id = ? AND key = 'missing_first_load_days'", [org.id]);
+  db.run("UPDATE app_settings SET value = '7' WHERE organization_id = ? AND key = 'investigation_stale_days'", [org.id]);
 });
 
 let seq = 0;
 function carrier(fields: Record<string, unknown> = {}): number {
   seq++;
   return write.createCarrier(
+    org,
     {
       legal_name: `Queue Fixture ${seq}`,
       status_id: ids.active,
@@ -78,19 +83,19 @@ function carrier(fields: Record<string, unknown> = {}): number {
   );
 }
 
-const rule = (key: string) => attention.needsAttention().find((r) => r.key === key);
+const rule = (key: string) => attention.needsAttention(org).find((r) => r.key === key);
 
 test("a clean book of carriers produces an empty queue", () => {
   carrier();
   carrier();
-  assert.deepEqual(attention.needsAttention(), [], "rules with no hits are omitted entirely");
+  assert.deepEqual(attention.needsAttention(org), [], "rules with no hits are omitted entirely");
 });
 
 test("about-to-be-active fires only past the configured threshold", () => {
   const stale = carrier({ status_id: ids.upcoming });
-  db.run("UPDATE carriers SET status_changed_at = ? WHERE id = ?", [isoDaysAgo(30), stale]);
+  db.run("UPDATE carriers SET status_changed_at = ? WHERE organization_id = ? AND id = ?", [isoDaysAgo(30), org.id, stale]);
   const recent = carrier({ status_id: ids.upcoming });
-  db.run("UPDATE carriers SET status_changed_at = ? WHERE id = ?", [isoDaysAgo(3), recent]);
+  db.run("UPDATE carriers SET status_changed_at = ? WHERE organization_id = ? AND id = ?", [isoDaysAgo(3), org.id, recent]);
 
   assert.equal(rule("stale_upcoming")!.count, 1, "only the stale one");
   assert.equal(rule("stale_upcoming")!.items[0]!.id, stale);
@@ -98,20 +103,20 @@ test("about-to-be-active fires only past the configured threshold", () => {
 
 test("raising the threshold in Settings removes items from the queue", () => {
   const c = carrier({ status_id: ids.upcoming });
-  db.run("UPDATE carriers SET status_changed_at = ? WHERE id = ?", [isoDaysAgo(20), c]);
+  db.run("UPDATE carriers SET status_changed_at = ? WHERE organization_id = ? AND id = ?", [isoDaysAgo(20), org.id, c]);
   assert.equal(rule("stale_upcoming")!.count, 1);
 
-  db.run("UPDATE app_settings SET value = '45' WHERE key = 'about_to_be_active_days'");
+  db.run("UPDATE app_settings SET value = '45' WHERE organization_id = ? AND key = 'about_to_be_active_days'", [org.id]);
   assert.equal(rule("stale_upcoming"), undefined, "no longer overdue at a 45-day threshold");
 
-  db.run("UPDATE app_settings SET value = '10' WHERE key = 'about_to_be_active_days'");
+  db.run("UPDATE app_settings SET value = '10' WHERE organization_id = ? AND key = 'about_to_be_active_days'", [org.id]);
   assert.equal(rule("stale_upcoming")!.count, 1, "overdue again at 10 days");
 });
 
 test("an invalid threshold falls back to the default instead of breaking", () => {
   const c = carrier({ status_id: ids.upcoming });
-  db.run("UPDATE carriers SET status_changed_at = ? WHERE id = ?", [isoDaysAgo(20), c]);
-  db.run("UPDATE app_settings SET value = 'not a number' WHERE key = 'about_to_be_active_days'");
+  db.run("UPDATE carriers SET status_changed_at = ? WHERE organization_id = ? AND id = ?", [isoDaysAgo(20), org.id, c]);
+  db.run("UPDATE app_settings SET value = 'not a number' WHERE organization_id = ? AND key = 'about_to_be_active_days'", [org.id]);
   assert.equal(rule("stale_upcoming")!.count, 1, "default of 14 days still applies");
 });
 
@@ -171,9 +176,9 @@ test("import-flagged records surface for review", () => {
 
 test("stale investigations respect their own threshold", () => {
   const stale = carrier({ status_id: ids.investigation });
-  db.run("UPDATE carriers SET status_changed_at = ? WHERE id = ?", [isoDaysAgo(14), stale]);
+  db.run("UPDATE carriers SET status_changed_at = ? WHERE organization_id = ? AND id = ?", [isoDaysAgo(14), org.id, stale]);
   const fresh = carrier({ status_id: ids.investigation });
-  db.run("UPDATE carriers SET status_changed_at = ? WHERE id = ?", [isoDaysAgo(2), fresh]);
+  db.run("UPDATE carriers SET status_changed_at = ? WHERE organization_id = ? AND id = ?", [isoDaysAgo(2), org.id, fresh]);
 
   assert.equal(rule("stale_investigation")!.count, 1);
   assert.equal(rule("stale_investigation")!.items[0]!.id, stale);
@@ -183,7 +188,7 @@ test("the queue is ordered by size and samples at most five per rule", () => {
   for (let i = 0; i < 8; i++) carrier({ mc_number: null });
   carrier({ pricing_type_id: ids.notPitched });
 
-  const rules = attention.needsAttention();
+  const rules = attention.needsAttention(org);
   assert.ok(rules[0]!.count >= rules[rules.length - 1]!.count, "largest rule first");
 
   const identifiers = rules.find((r) => r.key === "missing_identifiers")!;

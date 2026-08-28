@@ -21,27 +21,37 @@ after(() => {
   for (const p of paths) for (const s of ["", "-wal", "-shm"]) rmSync(`${p}${s}`, { force: true });
 });
 
+/** Creates an organisation with one 'active' status lookup, mirroring per-tenant seeding. */
+function makeOrg(db: DatabaseSync, slug: string): number {
+  const now = new Date().toISOString();
+  db.prepare("INSERT INTO organizations (name, slug, status, created_at) VALUES (?, ?, 'active', ?)").run(slug, slug, now);
+  const id = (db.prepare("SELECT id FROM organizations WHERE slug = ?").get(slug) as { id: number }).id;
+  db.prepare(`INSERT INTO lookups (organization_id, kind, value, label, sort, active)
+              VALUES (?, 'status', 'active', 'Active', 0, 1)`).run(id);
+  return id;
+}
+
 const seedTwoOrgs = (db: DatabaseSync) => {
+  // A fresh migrate builds the schema but creates no organisation (seed does that in the
+  // app; these raw-DB tests provision tenants explicitly).
   m.migrate(db);
   const now = new Date().toISOString();
-  // Migration created org 1 with the seeded lookups. Add a second org + its own lookups.
-  db.prepare("INSERT INTO organizations (name, slug, status, created_at) VALUES ('Org B','org-b','active',?)").run(now);
-  const a = (db.prepare("SELECT id FROM organizations ORDER BY id LIMIT 1").get() as { id: number }).id;
-  const b = (db.prepare("SELECT id FROM organizations WHERE slug='org-b'").get() as { id: number }).id;
-  db.prepare(`INSERT INTO lookups (organization_id, kind, value, label, sort, active)
-              VALUES (?, 'status', 'active', 'Active', 0, 1)`).run(b);
+  const a = makeOrg(db, "org-a");
+  const b = makeOrg(db, "org-b");
   return { a, b, now };
 };
 
-test("migration creates exactly one organization and assigns all data to it", () => {
-  const db = migratedDb("assign");
+test("a fresh migrate builds the schema but creates no organization", () => {
+  // On an empty database there is no data to attribute, so no tenant is invented; the
+  // app's seed() creates the bootstrap organisation instead.
+  const db = migratedDb("fresh");
   m.migrate(db);
   const orgs = db.prepare("SELECT COUNT(*) n FROM organizations").get() as { n: number };
-  assert.equal(orgs.n, 1);
-  const orphanLookups = db.prepare("SELECT COUNT(*) n FROM lookups WHERE organization_id IS NULL").get() as { n: number };
-  const orphanUsers = db.prepare("SELECT COUNT(*) n FROM users WHERE organization_id IS NULL").get() as { n: number };
-  assert.equal(orphanLookups.n, 0, "no lookup left without an org");
-  assert.equal(orphanUsers.n, 0, "no user left without an org");
+  assert.equal(orgs.n, 0);
+  assert.ok(
+    db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='organizations'").get(),
+    "the organizations table exists",
+  );
   db.close();
 });
 

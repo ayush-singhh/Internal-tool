@@ -130,29 +130,83 @@ append-only — nothing in the UI edits or deletes it.
 - All SQL uses bound parameters.
 - The database file lives outside the served tree and is git-ignored.
 
-## Multi-customer: the decision that is deliberately not made
+## Multi-tenancy (Option B) — implemented
 
-This is sold to more than one dispatch company, which forces a choice between two shapes.
-**Neither is implemented yet, and that is on purpose** — the schema has no tenant column.
+This is a shared application with a shared database and strict per-tenant isolation. One
+deployment serves many organisations; a user authenticated to one organisation has no
+application path and no database path to another's data.
 
-**One deployment per customer.** Each company gets its own container and its own database
-file. Isolation is physical, backup is one file, and the code needs no change at all. It
-costs linear operations: ten customers means ten upgrades.
+### Why Option B
 
-**One shared deployment.** Requires a `organization_id` on every table, tenant scoping on
-all ~111 query sites, an async data layer (SQLite's `DatabaseSync` is synchronous; every
-hosted database is not), plus organisations, signup and billing. One missed `WHERE` clause
-leaks one company's carriers to another.
+Chosen so the product can be sold self-serve to many companies without operating one
+deployment per customer. The cost — every query is tenant-scoped, and isolation must be
+proven, not assumed — is paid down by three independent layers plus an adversarial test
+suite, rather than trusting each query site to remember a `WHERE` clause.
 
-Adding tenancy speculatively would be the expensive kind of wrong: every query gets more
-complex to serve a model that may never be chosen, and the isolation is weaker than simply
-running separate instances. So the schema stays single-tenant, and everything built for
-selling — migrations, backups, throttling, resets, the container — is deliberately
-useful under **either** shape.
+### Table classification (spec §1)
 
-If the shared model is chosen later, the migration path is: async-ify `src/lib/db.ts` and
-its callers, add the tenant column in a new migration, scope every query, then test
-isolation adversarially. Budget weeks, not days.
+| Class | Tables | Rule |
+|---|---|---|
+| **Global / system** | `organizations`, `schema_migrations`, `login_attempts`, `sessions`, `password_resets` | No `organization_id`. Reached only through `systemQuery()`, whose call sites are enumerated and few. Sessions/resets derive their tenant from the user they point at; login throttling must work *before* a tenant is known. |
+| **Tenant-owned** | `carriers`, `carrier_notes`, `carrier_activity`, `offboarding_records`, `lookups`, `app_settings`, `users` | Carry `organization_id`. Every read and write is scoped. `lookups` and `app_settings` are per-tenant so one company retiring a plan or changing a threshold never touches another. |
+| **User-owned within a tenant** | `saved_filters` | Scoped by `organization_id` *and* `user_id`. |
+
+### Three isolation layers
+
+**Layer 1 — the database refuses it.** Composite foreign keys
+(`FOREIGN KEY (organization_id, status_id) REFERENCES lookups (organization_id, id)`, and
+likewise for every lookup/user/carrier reference) mean a carrier, note or offboarding row
+cannot point at another tenant's row even if application code tried. Verified: inserting an
+org-B carrier that references an org-A status fails with `FOREIGN KEY constraint failed`.
+
+**Layer 2 — the query layer refuses it.** `src/lib/db.ts` inspects every statement; one
+naming a tenant-owned table without an `organization_id` predicate throws
+(`tenantTablesLackingScope`). Fail-closed — a forgotten scope is a loud error in
+development, never a silent leak. `systemQuery()` is the only bypass.
+
+**Layer 3 — the caller passes a tenant, never a request value.** Query functions take an
+`Org` obtained from `requireOrg()`, which reads `organization_id` from the server-side
+session. No `organization_id` from a URL, body or header is ever trusted. An id from
+another tenant simply resolves to "not found".
+
+### Tenant identity
+
+`requireOrg()` → `{ user, org }`. `org.id` comes only from the authenticated session. IDOR
+is closed structurally: `getCarrier(org, id)` scopes by both, so a foreign id returns
+`undefined` rather than another tenant's row — proven in `tests/cross-tenant.test.ts`.
+
+### Migration of existing data (spec §18)
+
+Migrations 5–6 add tenancy. On a database that already held single-tenant data, migration 5
+creates one organisation (named from `MIGRATION_ORG_NAME` or the existing `company_name`)
+and backfills every row to it — the single-tenant book maps unambiguously to one tenant, so
+nothing is guessed. `assertSingleTenantData` refuses to proceed if it ever finds data that
+cannot belong to one organisation. On a genuinely empty database, migration creates no
+organisation; the app's `seed()` creates the bootstrap organisation with its vocabularies
+and owner. Sessions are cleared on migration, since they predate tenancy.
+
+### Roles
+
+`owner` › `admin` › `member` (with the existing dispatcher / account-manager / viewer
+distinctions carried inside member). "Last active administrator" is enforced per
+organisation. Evaluated server-side only.
+
+### Proven, not assumed
+
+`tests/cross-tenant.test.ts` provisions two organisations and attacks isolation through the
+real query functions: read, fetch-by-id, search, duplicate detection, update, notes,
+offboarding, saved-filter deletion, dashboard, reports, needs-attention, export, import,
+team and settings. All 16 confirm A cannot reach B.
+
+### Known limitations (spec §19)
+
+- **A platform support role is not yet built.** The product owner chose standing,
+  read-only, internally-audited support access; that role and its audit log are a later
+  phase. Until then there is no cross-tenant access of any kind through the application.
+- MFA, self-serve signup, invitations, email verification and the generalised audit log are
+  later phases; this phase is tenant isolation and the data layer.
+- Cross-tenant access, if the support role is added, will be the single documented exception
+  to the isolation invariant, and read-only.
 
 ## Schema changes
 

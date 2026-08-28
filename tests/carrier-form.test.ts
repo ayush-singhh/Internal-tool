@@ -15,6 +15,7 @@ let allowed: import("../src/lib/carrier-form.ts").AllowedIds;
 let userId: number;
 let statusActive: number;
 let pctLoad: number;
+let org: import("../src/lib/tenant-db.ts").Org;
 
 const fd = (entries: Record<string, string>) => {
   const f = new FormData();
@@ -29,19 +30,22 @@ before(async () => {
   carriers = await import("../src/lib/carriers.ts");
 
   const now = new Date().toISOString();
+  const { Org } = await import("../src/lib/tenant-db.ts");
+  const orgId = db.get<{ id: number }>("SELECT id FROM organizations LIMIT 1")!.id;
+  org = new Org(orgId);
   db.run(
-    `INSERT INTO users (name, email, password_hash, role, active, created_at, updated_at)
-     VALUES ('Form Tester', 'form@x.test', 'x', 'dispatcher', 1, ?, ?)`,
-    [now, now],
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active, created_at, updated_at)
+     VALUES (?, 'Form Tester', 'form@x.test', 'x', 'dispatcher', 1, ?, ?)`,
+    [orgId, now, now],
   );
-  userId = db.get<{ id: number }>("SELECT id FROM users WHERE email = 'form@x.test'")!.id;
+  userId = db.get<{ id: number }>("SELECT id FROM users WHERE organization_id = ? AND email = 'form@x.test'", [orgId])!.id;
   statusActive = db.get<{ id: number }>(
-    "SELECT id FROM lookups WHERE kind='status' AND value='active'",
+    "SELECT id FROM lookups WHERE organization_id = ? AND kind='status' AND value='active'", [orgId],
   )!.id;
   pctLoad = db.get<{ id: number }>(
-    "SELECT id FROM lookups WHERE kind='pricing_type' AND value='percentage_per_load'",
+    "SELECT id FROM lookups WHERE organization_id = ? AND kind='pricing_type' AND value='percentage_per_load'", [orgId],
   )!.id;
-  allowed = form.allowedIds();
+  allowed = form.allowedIds(org);
 });
 
 after(() => {
@@ -80,8 +84,8 @@ test("a realistic submission becomes a correct carrier record", () => {
   assert.equal(input.percentage, 12.5);
   assert.equal(input.truck_count, 14);
 
-  const id = write.createCarrier(input, userId);
-  const row = carriers.getCarrier(id)!;
+  const id = write.createCarrier(org, input, userId);
+  const row = carriers.getCarrier(org, id)!;
   assert.equal(row.legal_name, "Northbound Freight LLC");
   assert.equal(row.mc_number, "874512");
   assert.equal(row.percentage, 12.5);
@@ -89,14 +93,14 @@ test("a realistic submission becomes a correct carrier record", () => {
 });
 
 test("the same carrier is then found by every documented search term", () => {
-  const byName = carriers.listCarriers({ q: "northbound" });
-  const byMc = carriers.listCarriers({ q: "874512" });
-  const byDot = carriers.listCarriers({ q: "3100447" });
-  const byEmail = carriers.listCarriers({ q: "northbound.com" });
-  const byAddress = carriers.listCarriers({ q: "Depot Rd" });
-  const byOwner = carriers.listCarriers({ q: "Petrov" });
-  const byPhoneFormatted = carriers.listCarriers({ q: "(555) 240-1188" });
-  const byPhoneDigits = carriers.listCarriers({ q: "5552401188" });
+  const byName = carriers.listCarriers(org, { q: "northbound" });
+  const byMc = carriers.listCarriers(org, { q: "874512" });
+  const byDot = carriers.listCarriers(org, { q: "3100447" });
+  const byEmail = carriers.listCarriers(org, { q: "northbound.com" });
+  const byAddress = carriers.listCarriers(org, { q: "Depot Rd" });
+  const byOwner = carriers.listCarriers(org, { q: "Petrov" });
+  const byPhoneFormatted = carriers.listCarriers(org, { q: "(555) 240-1188" });
+  const byPhoneDigits = carriers.listCarriers(org, { q: "5552401188" });
 
   for (const [label, result] of Object.entries({
     byName, byMc, byDot, byEmail, byAddress, byOwner, byPhoneFormatted, byPhoneDigits,
@@ -156,11 +160,11 @@ test("an edit that only touches one field leaves the rest of the record intact",
     }),
     allowed,
   );
-  const id = write.createCarrier(input, userId);
+  const id = write.createCarrier(org, input, userId);
 
-  write.updateCarrier(id, { truck_count: 11 }, userId);
+  write.updateCarrier(org, id, { truck_count: 11 }, userId);
 
-  const row = carriers.getCarrier(id)!;
+  const row = carriers.getCarrier(org, id)!;
   assert.equal(row.truck_count, 11);
   assert.equal(row.owner_name, "Original Owner");
   assert.equal(row.mc_number, "551122");

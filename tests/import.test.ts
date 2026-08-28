@@ -12,6 +12,7 @@ let imp: typeof import("../src/lib/import.ts");
 let targets: typeof import("../src/lib/import-targets.ts");
 let carriers: typeof import("../src/lib/carriers.ts");
 let userId: number;
+let org: import("../src/lib/tenant-db.ts").Org;
 
 before(async () => {
   db = await import("../src/lib/db.ts");
@@ -20,13 +21,16 @@ before(async () => {
   carriers = await import("../src/lib/carriers.ts");
 
   const now = new Date().toISOString();
+  const { Org } = await import("../src/lib/tenant-db.ts");
+  const orgId = db.get<{ id: number }>("SELECT id FROM organizations LIMIT 1")!.id;
+  org = new Org(orgId);
   for (const [n, e] of [["Marcus Reed", "mr@x.test"], ["Renee Castille", "rc@x.test"]]) {
     db.run(
-      `INSERT INTO users (name, email, password_hash, role, active, created_at, updated_at)
-       VALUES (?, ?, 'x', 'dispatcher', 1, ?, ?)`, [n, e, now, now],
+      `INSERT INTO users (organization_id, name, email, password_hash, role, active, created_at, updated_at)
+       VALUES (?, ?, ?, 'x', 'dispatcher', 1, ?, ?)`, [orgId, n, e, now, now],
     );
   }
-  userId = db.get<{ id: number }>("SELECT id FROM users WHERE email='mr@x.test'")!.id;
+  userId = db.get<{ id: number }>("SELECT id FROM users WHERE organization_id = ? AND email='mr@x.test'", [orgId])!.id;
 });
 
 after(() => {
@@ -34,13 +38,13 @@ after(() => {
 });
 
 beforeEach(() => {
-  db.run("DELETE FROM carrier_activity");
-  db.run("DELETE FROM carriers");
+  db.run("DELETE FROM carrier_activity WHERE organization_id = ?", [org.id]);
+  db.run("DELETE FROM carriers WHERE organization_id = ?", [org.id]);
 });
 
 const flagsOf = (id: number) =>
   JSON.parse(db.get<{ review_flags: string }>(
-    "SELECT review_flags FROM carriers WHERE id = ?", [id],
+    "SELECT review_flags FROM carriers WHERE organization_id = ? AND id = ?", [org.id, id],
   )!.review_flags ?? "[]") as string[];
 
 // ── Header mapping ───────────────────────────────────────────────────────────
@@ -99,7 +103,7 @@ test("spreadsheet date shapes are understood; nonsense is not invented", () => {
 // ── Row parsing: preserve, never silently correct ────────────────────────────
 
 test("a clean row imports with no flags", () => {
-  const parsed = imp.parseImportRow({
+  const parsed = imp.parseImportRow(org, {
     legal_name: "Ironline Freight LLC", owner_name: "Elena Petrov",
     phone: "(555) 240-1188", email: "ops@ironline.com", mc_number: "874512",
     usdot: "3100447", status: "Active", trailer_type: "Dry Van", truck_count: "12",
@@ -112,7 +116,7 @@ test("a clean row imports with no flags", () => {
 });
 
 test("a misspelled status is preserved and flagged, never guessed into a value", () => {
-  const parsed = imp.parseImportRow({ legal_name: "Typo Freight", status: "Acitve" });
+  const parsed = imp.parseImportRow(org, { legal_name: "Typo Freight", status: "Acitve" });
   assert.equal(parsed.input.status_id, null, "no status is invented");
   const flags = JSON.parse(parsed.input.review_flags as string) as string[];
   assert.equal(flags.length, 1);
@@ -122,31 +126,31 @@ test("a misspelled status is preserved and flagged, never guessed into a value",
 
 test("close-enough vocabulary values still match", () => {
   assert.equal(
-    imp.parseImportRow({ legal_name: "X", status: "  ACTIVE  " }).input.review_flags,
+    imp.parseImportRow(org, { legal_name: "X", status: "  ACTIVE  " }).input.review_flags,
     null, "case and padding are not a mismatch",
   );
   assert.equal(
-    imp.parseImportRow({ legal_name: "X", trailer_type: "dry van" }).input.review_flags,
+    imp.parseImportRow(org, { legal_name: "X", trailer_type: "dry van" }).input.review_flags,
     null,
   );
 });
 
 test("dispatcher names resolve, including by first name", () => {
   assert.equal(
-    imp.parseImportRow({ legal_name: "X", dispatcher: "Marcus Reed" }).input.dispatcher_id,
+    imp.parseImportRow(org, { legal_name: "X", dispatcher: "Marcus Reed" }).input.dispatcher_id,
     userId,
   );
   assert.equal(
-    imp.parseImportRow({ legal_name: "X", dispatcher: "marcus" }).input.dispatcher_id,
+    imp.parseImportRow(org, { legal_name: "X", dispatcher: "marcus" }).input.dispatcher_id,
     userId,
   );
-  const unknown = imp.parseImportRow({ legal_name: "X", dispatcher: "Nobody At All" });
+  const unknown = imp.parseImportRow(org, { legal_name: "X", dispatcher: "Nobody At All" });
   assert.equal(unknown.input.dispatcher_id, null);
   assert.match((unknown.input.review_flags as string), /did not match a team member/);
 });
 
 test("a non-numeric MC is not imported, and the original is recorded", () => {
-  const parsed = imp.parseImportRow({ legal_name: "X", mc_number: "pending", usdot: "n/a" });
+  const parsed = imp.parseImportRow(org, { legal_name: "X", mc_number: "pending", usdot: "n/a" });
   assert.equal(parsed.input.mc_number, null);
   assert.equal(parsed.input.usdot, null);
   const flags = JSON.parse(parsed.input.review_flags as string) as string[];
@@ -155,22 +159,22 @@ test("a non-numeric MC is not imported, and the original is recorded", () => {
 });
 
 test("an odd phone number is kept exactly as written", () => {
-  const parsed = imp.parseImportRow({ legal_name: "X", phone: "call the yard" });
+  const parsed = imp.parseImportRow(org, { legal_name: "X", phone: "call the yard" });
   assert.equal(parsed.input.phone, "call the yard", "nothing is discarded");
   assert.equal(parsed.input.phone_digits, null);
   assert.match(parsed.input.review_flags as string, /kept as entered/);
 });
 
 test("an out-of-range percentage is flagged rather than clamped", () => {
-  const parsed = imp.parseImportRow({ legal_name: "X", percentage: "150" });
+  const parsed = imp.parseImportRow(org, { legal_name: "X", percentage: "150" });
   assert.equal(parsed.input.percentage, null, "not silently changed to 100");
   assert.match(parsed.input.review_flags as string, /150/);
 });
 
 test("only a missing legal name blocks a row", () => {
-  const bad = imp.parseImportRow({ legal_name: "   ", mc_number: "123" });
+  const bad = imp.parseImportRow(org, { legal_name: "   ", mc_number: "123" });
   assert.equal(bad.issues.filter((i) => i.severity === "error").length, 1);
-  const messy = imp.parseImportRow({
+  const messy = imp.parseImportRow(org, {
     legal_name: "Messy But Importable", status: "???", mc_number: "abc", percentage: "999",
   });
   assert.equal(messy.issues.filter((i) => i.severity === "error").length, 0);
@@ -180,9 +184,9 @@ test("only a missing legal name blocks a row", () => {
 // ── Preview ──────────────────────────────────────────────────────────────────
 
 test("preview detects duplicates against the database and within the file", () => {
-  imp.commitImport([{ legal_name: "Existing Hauling", mc_number: "555001" }], "skip", userId);
+  imp.commitImport(org, [{ legal_name: "Existing Hauling", mc_number: "555001" }], "skip", userId);
 
-  const { preview, counts } = imp.buildPreview([
+  const { preview, counts } = imp.buildPreview(org, [
     { legal_name: "New One", mc_number: "555002" },
     { legal_name: "Clash With Database", mc_number: "555001" },
     { legal_name: "Repeat A", mc_number: "555003" },
@@ -200,43 +204,43 @@ test("preview detects duplicates against the database and within the file", () =
 });
 
 test("preview writes nothing to the database", () => {
-  const before_ = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers")!.n;
-  imp.buildPreview([{ legal_name: "Never Saved", mc_number: "999111" }]);
-  assert.equal(db.get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers")!.n, before_);
+  const before_ = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers WHERE organization_id = ?", [org.id])!.n;
+  imp.buildPreview(org, [{ legal_name: "Never Saved", mc_number: "999111" }]);
+  assert.equal(db.get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers WHERE organization_id = ?", [org.id])!.n, before_);
 });
 
 // ── Commit ───────────────────────────────────────────────────────────────────
 
 test("skip mode leaves the existing carrier completely untouched", () => {
-  imp.commitImport(
+  imp.commitImport(org, 
     [{ legal_name: "Original Name", mc_number: "600001", owner_name: "First Owner", truck_count: "5" }],
     "skip", userId,
   );
-  const id = db.get<{ id: number }>("SELECT id FROM carriers WHERE mc_number='600001'")!.id;
+  const id = db.get<{ id: number }>("SELECT id FROM carriers WHERE organization_id = ? AND mc_number='600001'", [org.id])!.id;
 
-  const summary = imp.commitImport(
+  const summary = imp.commitImport(org, 
     [{ legal_name: "Changed Name", mc_number: "600001", owner_name: "Second Owner" }],
     "skip", userId,
   );
 
   assert.deepEqual(summary, { created: 0, updated: 0, skipped: 1, failed: 0, flagged: 0 });
-  const row = carriers.getCarrier(id)!;
+  const row = carriers.getCarrier(org, id)!;
   assert.equal(row.legal_name, "Original Name");
   assert.equal(row.owner_name, "First Owner");
   assert.equal(row.truck_count, 5);
 });
 
 test("update mode fills in values but an empty cell never erases data", () => {
-  imp.commitImport(
+  imp.commitImport(org, 
     [{
       legal_name: "Fill Me In", mc_number: "600002", owner_name: "Keep This Owner",
       truck_count: "7", email: "keep@example.com",
     }],
     "create", userId,
   );
-  const id = db.get<{ id: number }>("SELECT id FROM carriers WHERE mc_number='600002'")!.id;
+  const id = db.get<{ id: number }>("SELECT id FROM carriers WHERE organization_id = ? AND mc_number='600002'", [org.id])!.id;
 
-  const summary = imp.commitImport(
+  const summary = imp.commitImport(org, 
     [{
       legal_name: "Fill Me In", mc_number: "600002",
       owner_name: "", email: "", truck_count: "9", usdot: "3600002",
@@ -245,7 +249,7 @@ test("update mode fills in values but an empty cell never erases data", () => {
   );
 
   assert.equal(summary.updated, 1);
-  const row = carriers.getCarrier(id)!;
+  const row = carriers.getCarrier(org, id)!;
   assert.equal(row.truck_count, 9, "a provided value is applied");
   assert.equal(row.usdot, "3600002", "a newly provided value is added");
   assert.equal(row.owner_name, "Keep This Owner", "an empty cell did not erase the owner");
@@ -253,19 +257,19 @@ test("update mode fills in values but an empty cell never erases data", () => {
 });
 
 test("create mode deliberately makes a second record", () => {
-  imp.commitImport([{ legal_name: "Twin A", mc_number: "600003" }], "create", userId);
-  const summary = imp.commitImport([{ legal_name: "Twin B", mc_number: "600003" }], "create", userId);
+  imp.commitImport(org, [{ legal_name: "Twin A", mc_number: "600003" }], "create", userId);
+  const summary = imp.commitImport(org, [{ legal_name: "Twin B", mc_number: "600003" }], "create", userId);
   assert.equal(summary.created, 1);
   assert.equal(
-    db.get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers WHERE mc_number='600003'")!.n, 2,
+    db.get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers WHERE organization_id = ? AND mc_number='600003'", [org.id])!.n, 2,
   );
 });
 
 test("imported carriers get an attributed activity entry", () => {
-  imp.commitImport([{ legal_name: "Audited Import", mc_number: "600004" }], "create", userId);
-  const id = db.get<{ id: number }>("SELECT id FROM carriers WHERE mc_number='600004'")!.id;
+  imp.commitImport(org, [{ legal_name: "Audited Import", mc_number: "600004" }], "create", userId);
+  const id = db.get<{ id: number }>("SELECT id FROM carriers WHERE organization_id = ? AND mc_number='600004'", [org.id])!.id;
   const act = db.get<{ type: string; summary: string; user_id: number }>(
-    "SELECT type, summary, user_id FROM carrier_activity WHERE carrier_id = ?", [id],
+    "SELECT type, summary, user_id FROM carrier_activity WHERE organization_id = ? AND carrier_id = ?", [org.id, id],
   )!;
   assert.equal(act.type, "import");
   assert.equal(act.user_id, userId);
@@ -273,22 +277,22 @@ test("imported carriers get an attributed activity entry", () => {
 });
 
 test("flagged rows still import, carrying their flags for review", () => {
-  const summary = imp.commitImport(
+  const summary = imp.commitImport(org, 
     [{ legal_name: "Flagged Freight", mc_number: "600005", status: "Actve", percentage: "500" }],
     "create", userId,
   );
   assert.equal(summary.created, 1);
   assert.equal(summary.flagged, 1);
 
-  const id = db.get<{ id: number }>("SELECT id FROM carriers WHERE mc_number='600005'")!.id;
+  const id = db.get<{ id: number }>("SELECT id FROM carriers WHERE organization_id = ? AND mc_number='600005'", [org.id])!.id;
   const flags = flagsOf(id);
   assert.equal(flags.length, 2);
   assert.ok(flags.some((f) => f.includes("Actve")));
-  assert.ok(carriers.getCarrier(id)!.review_flags, "the record is marked for review");
+  assert.ok(carriers.getCarrier(org, id)!.review_flags, "the record is marked for review");
 });
 
 test("rows that cannot be imported are counted, not silently dropped", () => {
-  const summary = imp.commitImport(
+  const summary = imp.commitImport(org, 
     [
       { legal_name: "Good One", mc_number: "600006" },
       { legal_name: "", mc_number: "600007" },
@@ -301,11 +305,11 @@ test("rows that cannot be imported are counted, not silently dropped", () => {
 });
 
 test("a failing import writes nothing at all", () => {
-  imp.commitImport([{ legal_name: "Pre-existing", mc_number: "600009" }], "create", userId);
-  const before_ = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers")!.n;
+  imp.commitImport(org, [{ legal_name: "Pre-existing", mc_number: "600009" }], "create", userId);
+  const before_ = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers WHERE organization_id = ?", [org.id])!.n;
 
   assert.throws(() =>
-    imp.commitImport(
+    imp.commitImport(org, 
       [
         { legal_name: "Would Be Created", mc_number: "600010" },
         // A dispatcher id that does not exist trips the foreign key mid-transaction.
@@ -317,7 +321,7 @@ test("a failing import writes nothing at all", () => {
   );
 
   assert.equal(
-    db.get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers")!.n, before_,
+    db.get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers WHERE organization_id = ?", [org.id])!.n, before_,
     "the whole batch rolled back — no half-imported file",
   );
 });
@@ -336,15 +340,16 @@ test("a full realistic file imports end to end", () => {
       onboarding_date: "2026-01-20", pricing_type: "Not Yet Pitched", agreement_status: "Pending" },
   ];
 
-  const { counts } = imp.buildPreview(rows);
+  const { counts } = imp.buildPreview(org, rows);
   assert.equal(counts.errors, 0);
   assert.equal(counts.flagged, 0, "a well-formed file produces no flags");
 
-  const summary = imp.commitImport(rows, "skip", userId);
+  const summary = imp.commitImport(org, rows, "skip", userId);
   assert.equal(summary.created, 2);
 
   const sierra = carriers.getCarrier(
-    db.get<{ id: number }>("SELECT id FROM carriers WHERE mc_number='812345'")!.id,
+    org,
+    db.get<{ id: number }>("SELECT id FROM carriers WHERE organization_id = ? AND mc_number='812345'", [org.id])!.id,
   )!;
   assert.equal(sierra.legal_name, "Sierra Ridge Transport LLC");
   assert.equal(sierra.usdot, "3100998", "spaces stripped from USDOT");
@@ -353,5 +358,5 @@ test("a full realistic file imports end to end", () => {
   assert.equal(sierra.dispatcher_name, "Marcus Reed");
   assert.equal(sierra.account_manager_name, "Renee Castille");
   assert.equal(sierra.truck_count, 9);
-  assert.equal(carriers.listCarriers({ q: "sierra ridge" }).total, 1, "immediately searchable");
+  assert.equal(carriers.listCarriers(org, { q: "sierra ridge" }).total, 1, "immediately searchable");
 });

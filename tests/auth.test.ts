@@ -17,7 +17,7 @@ test("password hashes are salted per user", () => {
 });
 
 const user = (id: number, role: SessionUser["role"]): SessionUser => ({
-  id, role, name: "T", email: "t@x.com", active: 1,
+  id, organization_id: 1, role, name: "T", email: "t@x.com", active: 1,
 });
 
 const admin = user(1, "admin");

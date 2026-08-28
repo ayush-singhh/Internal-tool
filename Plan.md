@@ -213,6 +213,37 @@ Two further "failures" turned out to be faults in the test driver, not the app �
 that fought the browser's own email validation, and a row count read before navigation
 finished. Both re-checked and correct.
 
+## Phase 12 — Multi-tenant SaaS (Option B) 🔨
+
+Committed to a shared app with strict per-tenant isolation. See `Architecture.md` §Multi-tenancy
+and `MIGRATION-PLAN.md`.
+
+### Phase 2 of the rollout — data-layer tenant isolation ✅
+- [x] `organizations` table; `organization_id` on all 8 tenant-owned tables (migration 5)
+- [x] Composite foreign keys — the database refuses cross-tenant references (migration 6, Layer 1)
+- [x] Fail-closed query guard in `db.ts`; `systemQuery()` for global tables (Layer 2)
+- [x] `Org` threaded from the session into all ~56 query sites (Layer 3); 24 modules + all
+      pages/actions/components/routes converted
+- [x] Per-tenant vocabularies and settings; per-tenant email uniqueness
+- [x] Per-tenant provisioning (`provision.ts`); owner role; tenant-aware seed & migration
+- [x] Table classification documented in `Architecture.md`
+- [x] Existing-data migration backfills one org unambiguously; refuses ambiguous data
+- [x] **Adversarial cross-tenant suite — 16 attacks, all denied** (`tests/cross-tenant.test.ts`)
+- [x] **170 tests passing**, `npm run build` clean
+
+### Still to do (later phases)
+- [ ] TOTP MFA + recovery codes (argon2 + qrcode already installed)
+- [ ] Secure signup + organisation creation + email verification (SMTP)
+- [ ] Invitations (single-use, tenant-bound tokens)
+- [ ] RBAC UI for owner/admin/member
+- [ ] Session hardening: rotation, device list, revoke
+- [ ] Generalised audit log + rate limiting beyond login
+- [ ] Security headers / CSP
+- [ ] Platform support role (read-only, internally audited) per the owner's decision
+- [ ] Password hashing migration scrypt → argon2id
+
+---
+
 ## Phase 11 — Making it sellable ✅
 
 The tool is being sold to other dispatch companies, so it now has to survive people the

@@ -12,6 +12,7 @@ let throttle: typeof import("../src/lib/throttle.ts");
 let reset: typeof import("../src/lib/reset.ts");
 let pw: typeof import("../src/lib/password.ts");
 let userId: number;
+let orgId: number;
 
 before(async () => {
   db = await import("../src/lib/db.ts");
@@ -20,12 +21,13 @@ before(async () => {
   pw = await import("../src/lib/password.ts");
 
   const now = new Date().toISOString();
+  orgId = db.get<{ id: number }>("SELECT id FROM organizations LIMIT 1")!.id;
   db.run(
-    `INSERT INTO users (name, email, password_hash, role, active, created_at, updated_at)
-     VALUES ('Target User', 'target@x.test', ?, 'dispatcher', 1, ?, ?)`,
-    [pw.hashPassword("original-password"), now, now],
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active, created_at, updated_at)
+     VALUES (?, 'Target User', 'target@x.test', ?, 'dispatcher', 1, ?, ?)`,
+    [orgId, pw.hashPassword("original-password"), now, now],
   );
-  userId = db.get<{ id: number }>("SELECT id FROM users WHERE email='target@x.test'")!.id;
+  userId = db.get<{ id: number }>("SELECT id FROM users WHERE organization_id = ? AND email='target@x.test'", [orgId])!.id;
 });
 
 after(() => {
@@ -139,7 +141,7 @@ test("a reset link sets the password and the raw token is never stored", () => {
   assert.deepEqual(result, { ok: true, userId });
 
   const hash = db.get<{ password_hash: string }>(
-    "SELECT password_hash FROM users WHERE id = ?", [userId],
+    "SELECT password_hash FROM users WHERE organization_id = ? AND id = ?", [orgId, userId],
   )!.password_hash;
   assert.equal(pw.verifyPassword("a-brand-new-password", hash), true);
   assert.equal(pw.verifyPassword("original-password", hash), false);
@@ -181,10 +183,10 @@ test("a made-up token is refused and reveals nothing", () => {
 
 test("a deactivated account cannot be reset into", () => {
   const issued = reset.issueReset(userId, null);
-  db.run("UPDATE users SET active = 0 WHERE id = ?", [userId]);
+  db.run("UPDATE users SET active = 0 WHERE organization_id = ? AND id = ?", [orgId, userId]);
   assert.equal(reset.checkReset(issued.token).valid, false);
   assert.equal(reset.consumeReset(issued.token, "should-not-work").ok, false);
-  db.run("UPDATE users SET active = 1 WHERE id = ?", [userId]);
+  db.run("UPDATE users SET active = 1 WHERE organization_id = ? AND id = ?", [orgId, userId]);
 });
 
 test("completing a reset signs the account out everywhere", () => {

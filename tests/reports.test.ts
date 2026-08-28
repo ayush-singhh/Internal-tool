@@ -15,6 +15,7 @@ let csv: typeof import("../src/lib/csv.ts");
 let ids: Record<string, number>;
 let alice: number;
 let bob: number;
+let org: import("../src/lib/tenant-db.ts").Org;
 
 before(async () => {
   db = await import("../src/lib/db.ts");
@@ -24,17 +25,20 @@ before(async () => {
   csv = await import("../src/lib/csv.ts");
 
   const now = new Date().toISOString();
+  const { Org } = await import("../src/lib/tenant-db.ts");
+  const orgId = db.get<{ id: number }>("SELECT id FROM organizations LIMIT 1")!.id;
+  org = new Org(orgId);
   for (const [n, e] of [["Alice", "ra@x.test"], ["Bob", "rb@x.test"]]) {
     db.run(
-      `INSERT INTO users (name, email, password_hash, role, active, created_at, updated_at)
-       VALUES (?, ?, 'x', 'dispatcher', 1, ?, ?)`, [n, e, now, now],
+      `INSERT INTO users (organization_id, name, email, password_hash, role, active, created_at, updated_at)
+       VALUES (?, ?, ?, 'x', 'dispatcher', 1, ?, ?)`, [orgId, n, e, now, now],
     );
   }
-  alice = db.get<{ id: number }>("SELECT id FROM users WHERE email='ra@x.test'")!.id;
-  bob = db.get<{ id: number }>("SELECT id FROM users WHERE email='rb@x.test'")!.id;
+  alice = db.get<{ id: number }>("SELECT id FROM users WHERE organization_id = ? AND email='ra@x.test'", [orgId])!.id;
+  bob = db.get<{ id: number }>("SELECT id FROM users WHERE organization_id = ? AND email='rb@x.test'", [orgId])!.id;
 
   const look = (k: string, v: string) =>
-    db.get<{ id: number }>("SELECT id FROM lookups WHERE kind=? AND value=?", [k, v])!.id;
+    db.get<{ id: number }>("SELECT id FROM lookups WHERE organization_id = ? AND kind=? AND value=?", [org.id, k, v])!.id;
   ids = {
     active: look("status", "active"),
     inactive: look("status", "inactive"),
@@ -48,6 +52,7 @@ before(async () => {
   let n = 0;
   const make = (fields: Record<string, unknown>) =>
     write.createCarrier(
+      org,
       {
         legal_name: `Report Fixture ${++n}`,
         mc_number: String(500000 + n),
@@ -64,7 +69,7 @@ before(async () => {
   make({ dispatcher_id: bob, onboarding_date: "2025-03-05", plan_id: ids.royal, lead_source_id: ids.coldCall, truck_count: 8, percentage: 16 });
   make({ dispatcher_id: bob, onboarding_date: "2026-01-11", plan_id: ids.imperial, lead_source_id: ids.referral, truck_count: 60 });
   const leaver = make({ dispatcher_id: alice, onboarding_date: "2025-02-02", plan_id: ids.royal, lead_source_id: ids.referral, truck_count: 2 });
-  off.offboardCarrier(
+  off.offboardCarrier(org,
     {
       carrierId: leaver, statusId: ids.inactive, offboardedOn: "2026-03-15",
       reasonId: ids.reason, categoryId: null, finalStatusId: null, handledBy: alice,
@@ -79,13 +84,13 @@ after(() => {
   for (const s of ["", "-wal", "-shm"]) rmSync(`${DB}${s}`, { force: true });
 });
 
-const rowsOf = (key: Parameters<typeof reports.runReport>[0], range = {}) =>
-  new Map(reports.runReport(key, range).rows.map((r) => [r.label, r.value]));
+const rowsOf = (key: Parameters<typeof reports.runReport>[1], range = {}) =>
+  new Map(reports.runReport(org, key, range).rows.map((r) => [r.label, r.value]));
 
 test("all thirteen reports are defined and each one runs", () => {
   assert.equal(reports.REPORTS.length, 13);
   for (const def of reports.REPORTS) {
-    const result = reports.runReport(def.key);
+    const result = reports.runReport(org, def.key);
     assert.equal(result.def.key, def.key);
     assert.ok(Array.isArray(result.rows), `${def.key} returns rows`);
   }
@@ -104,9 +109,9 @@ test("active-by-dispatcher counts only active carriers", () => {
 });
 
 test("breakdowns total to the number of carriers they cover", () => {
-  const status = reports.runReport("by_status");
+  const status = reports.runReport(org, "by_status");
   assert.equal(status.total, 6, "all six carriers");
-  const byPlan = reports.runReport("by_plan");
+  const byPlan = reports.runReport(org, "by_plan");
   assert.equal(byPlan.total, 6);
 });
 
@@ -118,12 +123,12 @@ test("a date range narrows a breakdown", () => {
   assert.equal(only2025.get("Referral"), 3, "the 2026 referral is excluded");
   assert.equal(only2025.get("Cold Call"), 1);
 
-  const narrow = reports.runReport("by_lead_source", { from: "2026-01-01" });
+  const narrow = reports.runReport(org, "by_lead_source", { from: "2026-01-01" });
   assert.equal(narrow.total, 2);
 });
 
 test("an empty range yields an empty report rather than an error", () => {
-  const result = reports.runReport("by_plan", { from: "2030-01-01", to: "2030-12-31" });
+  const result = reports.runReport(org, "by_plan", { from: "2030-01-01", to: "2030-12-31" });
   assert.deepEqual(result.rows, []);
   assert.equal(result.total, 0);
 });
@@ -135,7 +140,7 @@ test("fleet size groups into bands and accounts for every carrier", () => {
   assert.equal(rows.get("6–10"), 1);
   assert.equal(rows.get("26–50"), 1);
   assert.equal(rows.get("51+"), 1);
-  assert.equal(reports.runReport("by_fleet_size").total, 6);
+  assert.equal(reports.runReport(org, "by_fleet_size").total, 6);
 });
 
 test("percentage bands cover only carriers with a percentage", () => {
@@ -145,11 +150,11 @@ test("percentage bands cover only carriers with a percentage", () => {
   assert.equal(rows.get("10–12%"), 1);
   assert.equal(rows.get("12–15%"), 1);
   assert.equal(rows.get("Over 15%"), 1);
-  assert.equal(reports.runReport("by_percentage").total, 4, "the carrier with no rate is excluded");
+  assert.equal(reports.runReport(org, "by_percentage").total, 4, "the carrier with no rate is excluded");
 });
 
 test("monthly trends return a continuous series with no gaps", () => {
-  const result = reports.runReport("monthly_onboarding");
+  const result = reports.runReport(org, "monthly_onboarding");
   assert.ok(result.trend, "trend reports carry a series");
   const months = result.trend!.map((p) => p.month);
   assert.deepEqual([...months].sort(), months, "months are in order");
@@ -162,10 +167,10 @@ test("monthly trends return a continuous series with no gaps", () => {
 test("offboarding reasons respect the offboarding date, not the onboarding date", () => {
   assert.equal(rowsOf("offboarding_reasons").get("Rates Too Low"), 1);
   assert.equal(
-    reports.runReport("offboarding_reasons", { from: "2026-03-01", to: "2026-03-31" }).total, 1,
+    reports.runReport(org, "offboarding_reasons", { from: "2026-03-01", to: "2026-03-31" }).total, 1,
   );
   assert.equal(
-    reports.runReport("offboarding_reasons", { from: "2025-01-01", to: "2025-12-31" }).total, 0,
+    reports.runReport(org, "offboarding_reasons", { from: "2025-01-01", to: "2025-12-31" }).total, 0,
     "filtered on when they left, not when they joined",
   );
 });
@@ -180,7 +185,7 @@ test("retention reports the share still with us", () => {
 
 test("every report exports as a CSV that parses back to the same numbers", () => {
   for (const def of reports.REPORTS) {
-    const result = reports.runReport(def.key);
+    const result = reports.runReport(org, def.key);
     const text = csv.toCsv(reports.reportToCsvRows(result));
     const parsed = csv.parseCsv(text);
 

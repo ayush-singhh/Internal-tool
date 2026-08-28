@@ -14,6 +14,7 @@ let carriers: typeof import("../src/lib/carriers.ts");
 let offboarding: typeof import("../src/lib/offboarding.ts");
 let ids: Record<string, number>;
 let userId: number;
+let org: import("../src/lib/tenant-db.ts").Org;
 
 before(async () => {
   db = await import("../src/lib/db.ts");
@@ -23,14 +24,17 @@ before(async () => {
   offboarding = await import("../src/lib/offboarding.ts");
 
   const now = new Date().toISOString();
+  const { Org } = await import("../src/lib/tenant-db.ts");
+  const orgId = db.get<{ id: number }>("SELECT id FROM organizations LIMIT 1")!.id;
+  org = new Org(orgId);
   db.run(
-    `INSERT INTO users (name, email, password_hash, role, active, created_at, updated_at)
-     VALUES ('Exit Handler', 'exit@x.test', 'x', 'admin', 1, ?, ?)`, [now, now],
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active, created_at, updated_at)
+     VALUES (?, 'Exit Handler', 'exit@x.test', 'x', 'admin', 1, ?, ?)`, [orgId, now, now],
   );
-  userId = db.get<{ id: number }>("SELECT id FROM users WHERE email='exit@x.test'")!.id;
+  userId = db.get<{ id: number }>("SELECT id FROM users WHERE organization_id = ? AND email='exit@x.test'", [orgId])!.id;
 
   const look = (k: string, v: string) =>
-    db.get<{ id: number }>("SELECT id FROM lookups WHERE kind=? AND value=?", [k, v])!.id;
+    db.get<{ id: number }>("SELECT id FROM lookups WHERE organization_id = ? AND kind=? AND value=?", [orgId, k, v])!.id;
   ids = {
     active: look("status", "active"),
     upcoming: look("status", "about_to_be_active"),
@@ -55,6 +59,7 @@ after(() => {
 let seq = 0;
 const makeActive = () =>
   write.createCarrier(
+    org,
     {
       legal_name: `Exit Fixture ${++seq}`,
       status_id: ids.active,
@@ -82,23 +87,23 @@ const baseInput = (carrierId: number, statusId: number) => ({
 
 test("all four exit statuses open the offboarding workflow, others do not", () => {
   for (const key of ["inactive", "suspended", "blacklisted", "backoff"]) {
-    assert.equal(off.isExitStatus(ids[key]), true, key);
+    assert.equal(off.isExitStatus(org, ids[key]), true, key);
   }
   for (const key of ["active", "upcoming", "investigation"]) {
-    assert.equal(off.isExitStatus(ids[key]), false, key);
+    assert.equal(off.isExitStatus(org, ids[key]), false, key);
   }
-  assert.equal(off.isExitStatus(null), false);
+  assert.equal(off.isExitStatus(org, null), false);
 });
 
 test("offboarding retains the carrier and records every captured field", () => {
   const id = makeActive();
-  off.offboardCarrier(baseInput(id, ids.inactive), userId);
+  off.offboardCarrier(org, baseInput(id, ids.inactive), userId);
 
-  const carrier = carriers.getCarrier(id);
+  const carrier = carriers.getCarrier(org, id);
   assert.ok(carrier, "the carrier still exists — offboarding never deletes");
   assert.equal(carrier!.status_id, ids.inactive);
 
-  const rec = offboarding.getOffboarding(id)!;
+  const rec = offboarding.getOffboarding(org, id)!;
   assert.equal(rec.offboarded_on, "2026-05-01");
   assert.equal(rec.reason_id, ids.reasonRates);
   assert.equal(rec.category_id, ids.catVoluntary);
@@ -114,16 +119,16 @@ test("offboarding retains the carrier and records every captured field", () => {
 
 test("offboarding writes both a status entry and an offboarding entry", () => {
   const id = makeActive();
-  off.offboardCarrier(baseInput(id, ids.suspended), userId);
+  off.offboardCarrier(org, baseInput(id, ids.suspended), userId);
 
   const types = db.all<{ type: string }>(
-    "SELECT type FROM carrier_activity WHERE carrier_id = ? ORDER BY id", [id],
+    "SELECT type FROM carrier_activity WHERE organization_id = ? AND carrier_id = ? ORDER BY id", [org.id, id],
   ).map((r) => r.type);
   assert.deepEqual(types, ["created", "status", "offboarding"]);
 
   const status = db.get<{ old_value: string; new_value: string }>(
-    "SELECT old_value, new_value FROM carrier_activity WHERE carrier_id = ? AND type='status'",
-    [id],
+    "SELECT old_value, new_value FROM carrier_activity WHERE organization_id = ? AND carrier_id = ? AND type='status'",
+    [org.id, id],
   )!;
   assert.equal(status.old_value, "Active");
   assert.equal(status.new_value, "Suspended");
@@ -131,23 +136,23 @@ test("offboarding writes both a status entry and an offboarding entry", () => {
 
 test("cancelling the subscription during offboarding updates the carrier field", () => {
   const id = makeActive();
-  assert.equal(carriers.getCarrier(id)!.subscription_id, ids.subActive);
-  off.offboardCarrier(baseInput(id, ids.inactive), userId);
-  assert.equal(carriers.getCarrier(id)!.subscription_id, ids.subCancelled);
+  assert.equal(carriers.getCarrier(org, id)!.subscription_id, ids.subActive);
+  off.offboardCarrier(org, baseInput(id, ids.inactive), userId);
+  assert.equal(carriers.getCarrier(org, id)!.subscription_id, ids.subCancelled);
 });
 
 test("leaving the subscription alone does not touch it", () => {
   const id = makeActive();
-  off.offboardCarrier(
+  off.offboardCarrier(org,
     { ...baseInput(id, ids.inactive), subscriptionCancelled: false }, userId,
   );
-  assert.equal(carriers.getCarrier(id)!.subscription_id, ids.subActive);
+  assert.equal(carriers.getCarrier(org, id)!.subscription_id, ids.subActive);
 });
 
 test("re-running the workflow revises the record instead of duplicating it", () => {
   const id = makeActive();
-  off.offboardCarrier(baseInput(id, ids.inactive), userId);
-  off.offboardCarrier(
+  off.offboardCarrier(org, baseInput(id, ids.inactive), userId);
+  off.offboardCarrier(org,
     {
       ...baseInput(id, ids.blacklisted),
       reasonId: ids.reasonFraud,
@@ -158,40 +163,41 @@ test("re-running the workflow revises the record instead of duplicating it", () 
   );
 
   const count = db.get<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM offboarding_records WHERE carrier_id = ?", [id],
+    "SELECT COUNT(*) AS n FROM offboarding_records WHERE organization_id = ? AND carrier_id = ?", [org.id, id],
   )!.n;
   assert.equal(count, 1, "one record per carrier");
 
-  const rec = offboarding.getOffboarding(id)!;
+  const rec = offboarding.getOffboarding(org, id)!;
   assert.equal(rec.reason_id, ids.reasonFraud);
   assert.equal(rec.can_return, 0);
   assert.equal(rec.notes, "Escalated after review.");
-  assert.equal(carriers.getCarrier(id)!.status_id, ids.blacklisted);
+  assert.equal(carriers.getCarrier(org, id)!.status_id, ids.blacklisted);
 });
 
 test("returning from an exit status is logged as a reactivation, keeping the record", () => {
   const id = makeActive();
-  off.offboardCarrier(baseInput(id, ids.inactive), userId);
-  off.changeStatus(id, ids.active, userId, "Owner called back");
+  off.offboardCarrier(org, baseInput(id, ids.inactive), userId);
+  off.changeStatus(org, id, ids.active, userId, "Owner called back");
 
   const last = db.get<{ type: string; summary: string }>(
-    "SELECT type, summary FROM carrier_activity WHERE carrier_id = ? ORDER BY id DESC", [id],
+    "SELECT type, summary FROM carrier_activity WHERE organization_id = ? AND carrier_id = ? ORDER BY id DESC", [org.id, id],
   )!;
   assert.equal(last.type, "reactivation");
   assert.match(last.summary, /Owner called back/);
-  assert.equal(carriers.getCarrier(id)!.status_id, ids.active);
-  assert.ok(offboarding.getOffboarding(id), "offboarding history is kept, not erased");
+  assert.equal(carriers.getCarrier(org, id)!.status_id, ids.active);
+  assert.ok(offboarding.getOffboarding(org, id), "offboarding history is kept, not erased");
 });
 
 test("an ordinary status change is a plain status entry", () => {
   const id = write.createCarrier(
+    org,
     { legal_name: "Plain Move", status_id: ids.upcoming, mc_number: String(800001) },
     userId,
   );
-  off.changeStatus(id, ids.active, userId, null);
+  off.changeStatus(org, id, ids.active, userId, null);
 
   const last = db.get<{ type: string }>(
-    "SELECT type FROM carrier_activity WHERE carrier_id = ? ORDER BY id DESC", [id],
+    "SELECT type FROM carrier_activity WHERE organization_id = ? AND carrier_id = ? ORDER BY id DESC", [org.id, id],
   )!;
   assert.equal(last.type, "status");
 });
@@ -199,29 +205,29 @@ test("an ordinary status change is a plain status entry", () => {
 test("changing to the status already set does nothing", () => {
   const id = makeActive();
   const before_ = db.get<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM carrier_activity WHERE carrier_id = ?", [id],
+    "SELECT COUNT(*) AS n FROM carrier_activity WHERE organization_id = ? AND carrier_id = ?", [org.id, id],
   )!.n;
-  off.changeStatus(id, ids.active, userId, null);
+  off.changeStatus(org, id, ids.active, userId, null);
   const after_ = db.get<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM carrier_activity WHERE carrier_id = ?", [id],
+    "SELECT COUNT(*) AS n FROM carrier_activity WHERE organization_id = ? AND carrier_id = ?", [org.id, id],
   )!.n;
   assert.equal(after_, before_);
 });
 
 test("offboarded carriers still appear in the offboarded view and in search", () => {
   const id = makeActive();
-  const name = carriers.getCarrier(id)!.legal_name;
-  off.offboardCarrier(baseInput(id, ids.backoff), userId);
+  const name = carriers.getCarrier(org, id)!.legal_name;
+  off.offboardCarrier(org, baseInput(id, ids.backoff), userId);
 
-  const grouped = carriers.listCarriers({ group: "offboarded" });
+  const grouped = carriers.listCarriers(org, { group: "offboarded" });
   assert.ok(grouped.rows.some((r) => r.id === id), "listed under Offboarded / Inactive");
-  assert.equal(carriers.listCarriers({ q: name }).total, 1, "still searchable");
+  assert.equal(carriers.listCarriers(org, { q: name }).total, 1, "still searchable");
 
-  const active = carriers.listCarriers({ group: "active" });
+  const active = carriers.listCarriers(org, { group: "active" });
   assert.ok(!active.rows.some((r) => r.id === id), "no longer counted as active");
 });
 
 test("offboarding an unknown carrier throws rather than writing", () => {
-  assert.throws(() => off.offboardCarrier(baseInput(999999, ids.inactive), userId), /not found/i);
-  assert.throws(() => off.changeStatus(999999, ids.active, userId, null), /not found/i);
+  assert.throws(() => off.offboardCarrier(org, baseInput(999999, ids.inactive), userId), /not found/i);
+  assert.throws(() => off.changeStatus(org, 999999, ids.active, userId, null), /not found/i);
 });

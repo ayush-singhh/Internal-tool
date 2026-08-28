@@ -11,12 +11,17 @@ let db: typeof import("../src/lib/db.ts");
 let team: typeof import("../src/lib/team.ts");
 let settings: typeof import("../src/lib/settings.ts");
 let pw: typeof import("../src/lib/password.ts");
+let org: import("../src/lib/tenant-db.ts").Org;
+let orgId: number;
 
 before(async () => {
   db = await import("../src/lib/db.ts");
   team = await import("../src/lib/team.ts");
   settings = await import("../src/lib/settings.ts");
   pw = await import("../src/lib/password.ts");
+  const { Org } = await import("../src/lib/tenant-db.ts");
+  orgId = db.get<{ id: number }>("SELECT id FROM organizations LIMIT 1")!.id;
+  org = new Org(orgId);
 });
 
 after(() => {
@@ -25,15 +30,17 @@ after(() => {
 
 beforeEach(() => {
   db.run("DELETE FROM sessions");
-  db.run("DELETE FROM carriers");
-  // Keep only the seeded admin (id 1) between tests.
-  db.run("DELETE FROM users WHERE id != 1");
-  db.run("UPDATE users SET role = 'admin', active = 1 WHERE id = 1");
-  settings.resetSettings();
+  db.run("DELETE FROM carriers WHERE organization_id = ?", [org.id]);
+  // Keep only the seeded owner between tests; give it admin-tier for the team tests.
+  db.run("DELETE FROM users WHERE organization_id = ? AND id != ?", [orgId, ownerId()]);
+  db.run("UPDATE users SET role = 'admin', active = 1 WHERE organization_id = ? AND id = ?", [orgId, ownerId()]);
+  settings.resetSettings(org);
 });
 
-const add = (over: Partial<Parameters<typeof team.createTeamMember>[0]> = {}) =>
-  team.createTeamMember({
+const ownerId = () => db.get<{ id: number }>("SELECT id FROM users WHERE organization_id = ? ORDER BY id LIMIT 1", [orgId])!.id;
+
+const add = (over: Partial<Parameters<typeof team.createTeamMember>[1]> = {}) =>
+  team.createTeamMember(org, {
     name: "Marcus Reed", email: `m${Math.random().toString(36).slice(2, 8)}@x.test`,
     role: "dispatcher", password: "dispatch2026", ...over,
   });
@@ -44,7 +51,7 @@ test("a new team member can sign in with the password they were given", () => {
   const result = add({ email: "signin@x.test", password: "correct horse" });
   assert.ok(result.ok);
   const row = db.get<{ password_hash: string; active: number; role: string }>(
-    "SELECT password_hash, active, role FROM users WHERE email = 'signin@x.test'",
+    "SELECT password_hash, active, role FROM users WHERE organization_id = ? AND email = 'signin@x.test'", [orgId],
   )!;
   assert.equal(pw.verifyPassword("correct horse", row.password_hash), true);
   assert.equal(pw.verifyPassword("wrong horse", row.password_hash), false);
@@ -54,7 +61,7 @@ test("a new team member can sign in with the password they were given", () => {
 
 test("email is normalised and cannot be reused", () => {
   assert.ok(add({ email: "  Dupe@Example.COM  " }).ok);
-  assert.ok(db.get("SELECT id FROM users WHERE email = 'dupe@example.com'"), "lowercased");
+  assert.ok(db.get("SELECT id FROM users WHERE organization_id = ? AND email = 'dupe@example.com'", [orgId]), "lowercased");
   const second = add({ email: "DUPE@example.com" });
   assert.deepEqual(second, { ok: false, error: "Someone already uses that email address." });
 });
@@ -67,16 +74,16 @@ test("bad input is rejected with a usable message", () => {
 });
 
 test("the last active administrator cannot be deactivated or demoted", () => {
-  assert.deepEqual(team.setTeamMemberActive(1, false), {
+  assert.deepEqual(team.setTeamMemberActive(org, ownerId(), false), {
     ok: false, error: "You cannot deactivate the last active administrator.",
   });
-  assert.equal(team.wouldRemoveLastAdmin(1, "viewer"), true);
-  assert.equal(team.wouldRemoveLastAdmin(1, "admin"), false);
+  assert.equal(team.wouldRemoveLastAdmin(org, ownerId(), "viewer"), true);
+  assert.equal(team.wouldRemoveLastAdmin(org, ownerId(), "admin"), false);
 
   const second = add({ email: "admin2@x.test", role: "admin" });
   assert.ok(second.ok);
-  assert.equal(team.wouldRemoveLastAdmin(1, "viewer"), false, "safe once a second admin exists");
-  assert.equal(team.setTeamMemberActive(1, false).ok, true);
+  assert.equal(team.wouldRemoveLastAdmin(org, ownerId(), "viewer"), false, "safe once a second admin exists");
+  assert.equal(team.setTeamMemberActive(org, ownerId(), false).ok, true);
 });
 
 test("deactivating revokes sessions but keeps the person's history", () => {
@@ -89,19 +96,19 @@ test("deactivating revokes sessions but keeps the person's history", () => {
     [id, new Date().toISOString(), new Date(Date.now() + 86400000).toISOString()],
   );
   db.run(
-    `INSERT INTO carriers (legal_name, dispatcher_id, created_at, updated_at)
-     VALUES ('Assigned Carrier', ?, ?, ?)`,
-    [id, new Date().toISOString(), new Date().toISOString()],
+    `INSERT INTO carriers (organization_id, legal_name, dispatcher_id, created_at, updated_at)
+     VALUES (?, 'Assigned Carrier', ?, ?, ?)`,
+    [orgId, id, new Date().toISOString(), new Date().toISOString()],
   );
 
-  assert.equal(team.setTeamMemberActive(id, false).ok, true);
+  assert.equal(team.setTeamMemberActive(org, id, false).ok, true);
   assert.equal(
     db.get<{ n: number }>("SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?", [id])!.n, 0,
     "signed out everywhere",
   );
-  assert.ok(db.get("SELECT id FROM users WHERE id = ?", [id]), "the account is kept, not deleted");
+  assert.ok(db.get("SELECT id FROM users WHERE organization_id = ? AND id = ?", [orgId, id]), "the account is kept, not deleted");
   assert.equal(
-    db.get<{ dispatcher_id: number }>("SELECT dispatcher_id FROM carriers WHERE legal_name='Assigned Carrier'")!.dispatcher_id,
+    db.get<{ dispatcher_id: number }>("SELECT dispatcher_id FROM carriers WHERE organization_id = ? AND legal_name='Assigned Carrier'", [orgId])!.dispatcher_id,
     id,
     "their carriers stay assigned until reassigned",
   );
@@ -110,19 +117,19 @@ test("deactivating revokes sessions but keeps the person's history", () => {
 test("a reactivated member can sign in again", () => {
   const created = add({ email: "returner@x.test" });
   assert.ok(created.ok);
-  team.setTeamMemberActive(created.id, false);
-  assert.equal(db.get<{ active: number }>("SELECT active FROM users WHERE id=?", [created.id])!.active, 0);
-  assert.equal(team.setTeamMemberActive(created.id, true).ok, true);
-  assert.equal(db.get<{ active: number }>("SELECT active FROM users WHERE id=?", [created.id])!.active, 1);
+  team.setTeamMemberActive(org, created.id, false);
+  assert.equal(db.get<{ active: number }>("SELECT active FROM users WHERE organization_id = ? AND id=?", [orgId, created.id])!.active, 0);
+  assert.equal(team.setTeamMemberActive(org, created.id, true).ok, true);
+  assert.equal(db.get<{ active: number }>("SELECT active FROM users WHERE organization_id = ? AND id=?", [orgId, created.id])!.active, 1);
 });
 
 test("editing changes only the fields given", () => {
   const created = add({ email: "editme@x.test", name: "Original Name" });
   assert.ok(created.ok);
-  team.updateTeamMember(created.id, { role: "account_manager" });
+  team.updateTeamMember(org, created.id, { role: "account_manager" });
 
   const row = db.get<{ name: string; email: string; role: string }>(
-    "SELECT name, email, role FROM users WHERE id = ?", [created.id],
+    "SELECT name, email, role FROM users WHERE organization_id = ? AND id = ?", [orgId, created.id],
   )!;
   assert.equal(row.role, "account_manager");
   assert.equal(row.name, "Original Name", "name untouched");
@@ -133,10 +140,10 @@ test("an edit cannot steal another member's email", () => {
   const a = add({ email: "taken@x.test" });
   const b = add({ email: "other@x.test" });
   assert.ok(a.ok && b.ok);
-  assert.deepEqual(team.updateTeamMember(b.id, { email: "taken@x.test" }), {
+  assert.deepEqual(team.updateTeamMember(org, b.id, { email: "taken@x.test" }), {
     ok: false, error: "Someone already uses that email address.",
   });
-  assert.equal(team.updateTeamMember(b.id, { email: "other@x.test" }).ok, true, "own email is fine");
+  assert.equal(team.updateTeamMember(org, b.id, { email: "other@x.test" }).ok, true, "own email is fine");
 });
 
 test("changing a password ends other sessions but can keep the current one", () => {
@@ -149,12 +156,12 @@ test("changing a password ends other sessions but can keep the current one", () 
       [sid, created.id, now, later]);
   }
 
-  assert.equal(team.setPassword(created.id, "brand new password", "keep-me").ok, true);
+  assert.equal(team.setPassword(org, created.id, "brand new password", "keep-me").ok, true);
   const left = db.all<{ id: string }>("SELECT id FROM sessions WHERE user_id = ?", [created.id]);
   assert.deepEqual(left.map((s) => s.id), ["keep-me"]);
 
   const hash = db.get<{ password_hash: string }>(
-    "SELECT password_hash FROM users WHERE id = ?", [created.id],
+    "SELECT password_hash FROM users WHERE organization_id = ? AND id = ?", [orgId, created.id],
   )!.password_hash;
   assert.equal(pw.verifyPassword("brand new password", hash), true);
   assert.equal(pw.verifyPassword("dispatch2026", hash), false, "the old password stops working");
@@ -163,10 +170,10 @@ test("changing a password ends other sessions but can keep the current one", () 
 test("a short password is refused and changes nothing", () => {
   const created = add({ email: "shortpw@x.test" });
   assert.ok(created.ok);
-  const before_ = db.get<{ password_hash: string }>("SELECT password_hash FROM users WHERE id=?", [created.id])!.password_hash;
-  assert.match((team.setPassword(created.id, "1234567") as { error: string }).error, /at least 8/);
+  const before_ = db.get<{ password_hash: string }>("SELECT password_hash FROM users WHERE organization_id = ? AND id=?", [orgId, created.id])!.password_hash;
+  assert.match((team.setPassword(org, created.id, "1234567") as { error: string }).error, /at least 8/);
   assert.equal(
-    db.get<{ password_hash: string }>("SELECT password_hash FROM users WHERE id=?", [created.id])!.password_hash,
+    db.get<{ password_hash: string }>("SELECT password_hash FROM users WHERE organization_id = ? AND id=?", [orgId, created.id])!.password_hash,
     before_,
   );
 });
@@ -178,11 +185,11 @@ test("the team list reports assigned carrier counts", () => {
   const now = new Date().toISOString();
   for (let i = 0; i < 3; i++) {
     db.run(
-      `INSERT INTO carriers (legal_name, dispatcher_id, account_manager_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`, [`Counted ${i}`, d.id, i < 2 ? m.id : null, now, now],
+      `INSERT INTO carriers (organization_id, legal_name, dispatcher_id, account_manager_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`, [orgId, `Counted ${i}`, d.id, i < 2 ? m.id : null, now, now],
     );
   }
-  const list = team.listTeam();
+  const list = team.listTeam(org);
   assert.equal(list.find((t) => t.id === d.id)!.dispatching, 3);
   assert.equal(list.find((t) => t.id === m.id)!.managing, 2);
 });
@@ -191,16 +198,16 @@ test("the team list reports assigned carrier counts", () => {
 
 test("valid thresholds save and are read back", () => {
   assert.deepEqual(
-    settings.saveSettings({ about_to_be_active_days: "30", investigation_stale_days: "3" }),
+    settings.saveSettings(org, { about_to_be_active_days: "30", investigation_stale_days: "3" }),
     { ok: true },
   );
-  assert.equal(db.getSetting("about_to_be_active_days"), "30");
-  assert.equal(db.getSetting("investigation_stale_days"), "3");
+  assert.equal(db.getSetting(orgId, "about_to_be_active_days"), "30");
+  assert.equal(db.getSetting(orgId, "investigation_stale_days"), "3");
 });
 
 test("invalid thresholds are rejected and nothing is written", () => {
-  settings.saveSettings({ about_to_be_active_days: "21" });
-  const result = settings.saveSettings({
+  settings.saveSettings(org, { about_to_be_active_days: "21" });
+  const result = settings.saveSettings(org, {
     about_to_be_active_days: "0",
     missing_first_load_days: "abc",
     investigation_stale_days: "9999",
@@ -211,47 +218,47 @@ test("invalid thresholds are rejected and nothing is written", () => {
     assert.match(result.errors.missing_first_load_days!, /whole number/);
     assert.match(result.errors.investigation_stale_days!, /at most 365/);
   }
-  assert.equal(db.getSetting("about_to_be_active_days"), "21", "the earlier good value survived");
+  assert.equal(db.getSetting(orgId, "about_to_be_active_days"), "21", "the earlier good value survived");
 });
 
 test("company name cannot be blanked", () => {
-  const result = settings.saveSettings({ company_name: "   " });
+  const result = settings.saveSettings(org, { company_name: "   " });
   assert.equal(result.ok, false);
 });
 
 test("restoring defaults puts every threshold back", () => {
-  settings.saveSettings({ about_to_be_active_days: "99" });
-  settings.resetSettings();
-  assert.equal(db.getSetting("about_to_be_active_days"), "14");
-  assert.equal(db.getSetting("missing_first_load_days"), "21");
-  assert.equal(db.getSetting("investigation_stale_days"), "7");
+  settings.saveSettings(org, { about_to_be_active_days: "99" });
+  settings.resetSettings(org);
+  assert.equal(db.getSetting(orgId, "about_to_be_active_days"), "14");
+  assert.equal(db.getSetting(orgId, "missing_first_load_days"), "21");
+  assert.equal(db.getSetting(orgId, "investigation_stale_days"), "7");
 });
 
 test("retiring a vocabulary value hides it without touching existing carriers", async () => {
   const lookups = await import("../src/lib/lookups.ts");
   const statusId = db.get<{ id: number }>(
-    "SELECT id FROM lookups WHERE kind='status' AND value='suspended'",
+    "SELECT id FROM lookups WHERE organization_id = ? AND kind='status' AND value='suspended'", [orgId],
   )!.id;
   const now = new Date().toISOString();
   db.run(
-    "INSERT INTO carriers (legal_name, status_id, created_at, updated_at) VALUES ('Still Suspended', ?, ?, ?)",
-    [statusId, now, now],
+    "INSERT INTO carriers (organization_id, legal_name, status_id, created_at, updated_at) VALUES (?, 'Still Suspended', ?, ?, ?)",
+    [orgId, statusId, now, now],
   );
 
-  const usageBefore = settings.lookupUsage().find((l) => l.id === statusId)!;
+  const usageBefore = settings.lookupUsage(org).find((l) => l.id === statusId)!;
   assert.equal(usageBefore.usage, 1, "usage is reported before retiring");
 
-  settings.setLookupActive(statusId, false);
+  settings.setLookupActive(org, statusId, false);
   assert.equal(
-    db.get<{ status_id: number }>("SELECT status_id FROM carriers WHERE legal_name='Still Suspended'")!.status_id,
+    db.get<{ status_id: number }>("SELECT status_id FROM carriers WHERE organization_id = ? AND legal_name='Still Suspended'", [orgId])!.status_id,
     statusId,
     "the carrier keeps its status",
   );
-  assert.equal(db.get<{ active: number }>("SELECT active FROM lookups WHERE id=?", [statusId])!.active, 0);
+  assert.equal(db.get<{ active: number }>("SELECT active FROM lookups WHERE organization_id = ? AND id=?", [orgId, statusId])!.active, 0);
 
   // A retired value stays selectable on a record that already uses it.
-  assert.ok(!lookups.options("status").some((o) => o.id === statusId), "hidden from new records");
-  assert.ok(lookups.options("status", statusId).some((o) => o.id === statusId), "kept for this record");
+  assert.ok(!lookups.options(org, "status").some((o) => o.id === statusId), "hidden from new records");
+  assert.ok(lookups.options(org, "status", statusId).some((o) => o.id === statusId), "kept for this record");
 
-  settings.setLookupActive(statusId, true);
+  settings.setLookupActive(org, statusId, true);
 });
