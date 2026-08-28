@@ -74,16 +74,24 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started
       testable without request context — the pattern Phase 5 reuses for carrier writes
 - [x] Tests: 8 note/activity cases against a throwaway database — **25/25 passing overall**
 
-## Phase 5 — Add / Edit Carrier 🔨
+## Phase 5 — Add / Edit Carrier ✅
 
-- [ ] Nine-section create form with dropdowns, date pickers, auto-formatting
-- [ ] Server-side validation for every rule in PRD §5
-- [ ] Edit form that preserves untouched fields
-- [ ] Duplicate MC/USDOT warning with a link to the existing carrier and deliberate override
-- [ ] Field-level diffing into activity history
-- [ ] Tests: validation rules, duplicate detection, diffing
+- [x] Nine-section create form — 12 dropdowns, 3 date pickers, no free-text vocabularies
+- [x] Smart behaviour: pricing type reveals only the relevant money field and sets the
+      billing frequency; new carriers default to About to Be Active / Pending agreement /
+      today's onboarding date; the creator is pre-assigned to their own role slot
+- [x] Server-side validation for every rule in PRD §5, shared by form and import
+- [x] Edit form pre-filled from the record; a patch never blanks untouched fields
+- [x] Duplicate MC/USDOT warning listing the existing carrier with a link, requiring an
+      explicit "this is a different carrier" confirmation to proceed
+- [x] Field-level diffing into activity history, typed per change
+      (status / assignment / pricing / agreement / subscription / field)
+- [x] Editing a flagged record clears its review flag
+- [x] Tests: 29 new cases — validation rules, real FormData round trip, duplicate
+      detection, patch isolation, activity typing — **54/54 passing overall**
+- [x] `npm run build` clean
 
-## Phase 6 — Status & Offboarding ⬜
+## Phase 6 — Status & Offboarding 🔨
 
 - [ ] Status change action with automatic activity entry
 - [ ] Offboarding workflow triggered by the four exit statuses
