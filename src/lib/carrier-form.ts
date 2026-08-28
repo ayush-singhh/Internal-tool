@@ -1,5 +1,6 @@
 import "server-only";
 import { all } from "./db.ts";
+import type { Org } from "./tenant-db.ts";
 import { options } from "./lookups.ts";
 import type { LookupKind } from "./constants.ts";
 import type { CarrierInput } from "./carrier-write.ts";
@@ -10,18 +11,20 @@ import {
 
 /** Ids the form is allowed to reference, rebuilt per request from the database.
  *  Anything else in a submission is rejected rather than trusted. */
-export function allowedIds() {
+export function allowedIds(org: Org) {
   const kinds: LookupKind[] = [
     "status", "trailer_type", "onboarding_type", "lead_source", "plan",
     "pricing_type", "billing_frequency", "subscription", "agreement_status",
     "invoice_mode", "offboard_reason", "offboard_category", "final_status",
   ];
   const byKind = Object.fromEntries(
-    kinds.map((k) => [k, new Set(options(k).map((o) => o.id))]),
+    kinds.map((k) => [k, new Set(options(org, k).map((o) => o.id))]),
   ) as Record<LookupKind, Set<number>>;
 
   const users = new Set(
-    all<{ id: number }>("SELECT id FROM users WHERE active = 1").map((u) => u.id),
+    all<{ id: number }>(
+      "SELECT id FROM users WHERE organization_id = ? AND active = 1", [org.id],
+    ).map((u) => u.id),
   );
   return { ...byKind, users };
 }

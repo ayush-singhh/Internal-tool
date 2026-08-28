@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { all } from "./db.ts";
+import type { Org } from "./tenant-db.ts";
 import type { LookupKind, Tone } from "./constants.ts";
 
 export type Lookup = {
@@ -17,13 +18,15 @@ export type Lookup = {
  * The whole lookup table is a few dozen rows, so it is loaded once per request and
  * indexed in memory. Every screen needs several kinds; this avoids a query per dropdown.
  */
-export const loadLookups = cache((): {
+export const loadLookups = cache((org: Org): {
   byId: Map<number, Lookup>;
   byKind: Map<LookupKind, Lookup[]>;
   byValue: Map<string, Lookup>;
 } => {
   const rows = all<Lookup>(
-    "SELECT id, kind, value, label, tone, sort, active FROM lookups ORDER BY sort, label",
+    `SELECT id, kind, value, label, tone, sort, active FROM lookups
+      WHERE organization_id = ? ORDER BY sort, label`,
+    [org.id],
   );
   const byId = new Map<number, Lookup>();
   const byKind = new Map<LookupKind, Lookup[]>();
@@ -39,28 +42,28 @@ export const loadLookups = cache((): {
 });
 
 /** Options for a `<select>`; inactive values are hidden unless one is already selected. */
-export function options(kind: LookupKind, keepId?: number | null): Lookup[] {
-  const list = loadLookups().byKind.get(kind) ?? [];
+export function options(org: Org, kind: LookupKind, keepId?: number | null): Lookup[] {
+  const list = loadLookups(org).byKind.get(kind) ?? [];
   return list.filter((l) => l.active === 1 || l.id === keepId);
 }
 
-export function lookup(id: number | null | undefined): Lookup | undefined {
-  return id == null ? undefined : loadLookups().byId.get(id);
+export function lookup(org: Org, id: number | null | undefined): Lookup | undefined {
+  return id == null ? undefined : loadLookups(org).byId.get(id);
 }
 
-export function labelOf(id: number | null | undefined): string {
-  return lookup(id)?.label ?? "";
+export function labelOf(org: Org, id: number | null | undefined): string {
+  return lookup(org, id)?.label ?? "";
 }
 
-export function toneOf(id: number | null | undefined): Tone | null {
-  return lookup(id)?.tone ?? null;
+export function toneOf(org: Org, id: number | null | undefined): Tone | null {
+  return lookup(org, id)?.tone ?? null;
 }
 
 /** Resolve a controlled value slug (e.g. STATUS.ACTIVE) to its row id. */
-export function idOf(kind: LookupKind, value: string): number | undefined {
-  return loadLookups().byValue.get(`${kind}:${value}`)?.id;
+export function idOf(org: Org, kind: LookupKind, value: string): number | undefined {
+  return loadLookups(org).byValue.get(`${kind}:${value}`)?.id;
 }
 
-export function idsOf(kind: LookupKind, values: string[]): number[] {
-  return values.map((v) => idOf(kind, v)).filter((v): v is number => v !== undefined);
+export function idsOf(org: Org, kind: LookupKind, values: string[]): number[] {
+  return values.map((v) => idOf(org, kind, v)).filter((v): v is number => v !== undefined);
 }

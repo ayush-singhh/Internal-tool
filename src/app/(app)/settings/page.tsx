@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { getSettings } from "@/lib/db";
 import { SETTING_DEFS, lookupUsage } from "@/lib/settings";
@@ -10,10 +10,10 @@ import { SettingsForm, PasswordSelfForm, LookupManager, type LookupRow } from "@
 export const metadata: Metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "settings:manage")) redirect("/");
 
-  const rows = lookupUsage();
+  const rows = lookupUsage(org);
   const grouped = new Map<string, LookupRow[]>();
   for (const row of rows) {
     const list = grouped.get(row.kind) ?? [];
@@ -34,7 +34,7 @@ export default async function SettingsPage() {
             title="Needs Attention thresholds"
             subtitle="These drive the work queue on the dashboard. Changes take effect immediately."
           />
-          <SettingsForm defs={SETTING_DEFS} values={getSettings()} />
+          <SettingsForm defs={SETTING_DEFS} values={getSettings(org.id)} />
         </Card>
 
         <Card>

@@ -1,5 +1,6 @@
 import "server-only";
 import { get, run, transaction } from "./db.ts";
+import type { Org } from "./tenant-db.ts";
 import { labelOf } from "./lookups.ts";
 import { recordActivity, type ActivityType } from "./activity.ts";
 import type { CarrierRow } from "./carrier-types.ts";
@@ -47,23 +48,25 @@ export type CarrierInput = Partial<Record<CarrierField, string | number | null>>
   review_flags?: string | null;
 };
 
-function display(field: CarrierField, value: unknown): string {
+function display(org: Org, field: CarrierField, value: unknown): string {
   if (value === null || value === undefined || value === "") return "";
   const meta = FIELDS[field] as FieldMeta;
-  if (meta.kind === "lookup") return labelOf(Number(value)) || String(value);
+  if (meta.kind === "lookup") return labelOf(org, Number(value)) || String(value);
   if (meta.kind === "user") {
     return (
-      get<{ name: string }>("SELECT name FROM users WHERE id = ?", [Number(value)])?.name ??
-      String(value)
+      get<{ name: string }>(
+        "SELECT name FROM users WHERE organization_id = ? AND id = ?",
+        [org.id, Number(value)],
+      )?.name ?? String(value)
     );
   }
   return String(value);
 }
 
-export function createCarrier(input: CarrierInput, userId: number | null): number {
+export function createCarrier(org: Org, input: CarrierInput, userId: number | null): number {
   const now = new Date().toISOString();
-  const columns: string[] = [];
-  const values: unknown[] = [];
+  const columns: string[] = ["organization_id"];
+  const values: unknown[] = [org.id];
 
   for (const key of Object.keys(input) as (keyof CarrierInput)[]) {
     columns.push(key);
@@ -84,11 +87,12 @@ export function createCarrier(input: CarrierInput, userId: number | null): numbe
     );
     const id = get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
     recordActivity({
+      org,
       carrierId: id,
       userId,
       type: "created",
       summary: `Carrier record created${
-        input.status_id ? ` with status ${display("status_id", input.status_id)}` : ""
+        input.status_id ? ` with status ${display(org, "status_id", input.status_id)}` : ""
       }`,
     });
     return id;
@@ -103,11 +107,15 @@ export type UpdateResult = { changed: CarrierField[] };
  * value the form did not carry.
  */
 export function updateCarrier(
+  org: Org,
   id: number,
   input: CarrierInput,
   userId: number | null,
 ): UpdateResult {
-  const existing = get<CarrierRow>("SELECT * FROM carriers WHERE id = ?", [id]);
+  const existing = get<CarrierRow>(
+    "SELECT * FROM carriers WHERE organization_id = ? AND id = ?",
+    [org.id, id],
+  );
   if (!existing) throw new Error("Carrier not found.");
 
   const changed: CarrierField[] = [];
@@ -129,16 +137,18 @@ export function updateCarrier(
   const now = new Date().toISOString();
   if (changed.includes("status_id")) { sets.push("status_changed_at = ?"); values.push(now); }
   sets.push("updated_at = ?", "updated_by = ?");
-  values.push(now, userId, id);
+  values.push(now, userId);
 
   transaction(() => {
-    run(`UPDATE carriers SET ${sets.join(", ")} WHERE id = ?`, values);
+    run(`UPDATE carriers SET ${sets.join(", ")} WHERE organization_id = ? AND id = ?`,
+      [...values, org.id, id]);
 
     for (const field of changed) {
       const meta = FIELDS[field] as FieldMeta;
-      const from = display(field, (existing as Record<string, unknown>)[field]);
-      const to = display(field, input[field]);
+      const from = display(org, field, (existing as Record<string, unknown>)[field]);
+      const to = display(org, field, input[field]);
       recordActivity({
+        org,
         carrierId: id,
         userId,
         type: meta.activity,

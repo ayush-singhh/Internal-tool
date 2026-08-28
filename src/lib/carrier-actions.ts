@@ -2,13 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireUser } from "./auth.ts";
+import { requireOrg } from "./auth.ts";
 import { can } from "./permissions.ts";
 import { getCarrier, findDuplicates } from "./carriers.ts";
 import { createCarrier, updateCarrier } from "./carrier-write.ts";
 import { allowedIds, echoValues, parseCarrierForm } from "./carrier-form.ts";
 import { createNote } from "./notes.ts";
 import { labelOf } from "./lookups.ts";
+import type { Org } from "./tenant-db.ts";
 import type { FieldErrors } from "./validate.ts";
 
 export type DuplicateMatch = {
@@ -27,13 +28,13 @@ export type CarrierFormState = {
   values?: Record<string, string>;
 };
 
-function summarize(rows: ReturnType<typeof findDuplicates>["mc"]): DuplicateMatch[] {
+function summarize(org: Org, rows: ReturnType<typeof findDuplicates>["mc"]): DuplicateMatch[] {
   return rows.map((r) => ({
     id: r.id,
     legal_name: r.legal_name,
     mc_number: r.mc_number,
     usdot: r.usdot,
-    status: labelOf(r.status_id),
+    status: labelOf(org, r.status_id),
     dispatcher_name: r.dispatcher_name,
   }));
 }
@@ -42,12 +43,12 @@ export async function createCarrierAction(
   _prev: CarrierFormState,
   formData: FormData,
 ): Promise<CarrierFormState> {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "carrier:create")) {
     return { message: "You do not have permission to add carriers." };
   }
 
-  const { input, errors } = parseCarrierForm(formData, allowedIds());
+  const { input, errors } = parseCarrierForm(formData, allowedIds(org));
   const values = echoValues(formData);
   if (Object.keys(errors).length > 0) {
     return { errors, values, message: "Fix the highlighted fields and try again." };
@@ -57,23 +58,24 @@ export async function createCarrierAction(
   // never a silent block and never a silent duplicate.
   if (formData.get("confirm_duplicate") !== "yes") {
     const dupes = findDuplicates(
+      org,
       input.mc_number as string | null,
       input.usdot as string | null,
     );
     if (dupes.mc.length > 0 || dupes.usdot.length > 0) {
       return {
         values,
-        duplicates: { mc: summarize(dupes.mc), usdot: summarize(dupes.usdot) },
+        duplicates: { mc: summarize(org, dupes.mc), usdot: summarize(org, dupes.usdot) },
         message: "A carrier with this MC or USDOT already exists.",
       };
     }
   }
 
-  const id = createCarrier(input, user.id);
+  const id = createCarrier(org, input, user.id);
 
   const note = formData.get("note");
   if (typeof note === "string" && note.trim()) {
-    createNote({ carrierId: id, userId: user.id, body: note });
+    createNote({ org, carrierId: id, userId: user.id, body: note });
   }
 
   revalidatePath("/carriers");
@@ -84,17 +86,17 @@ export async function updateCarrierAction(
   _prev: CarrierFormState,
   formData: FormData,
 ): Promise<CarrierFormState> {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { message: "Unknown carrier." };
 
-  const carrier = getCarrier(id);
+  const carrier = getCarrier(org, id);
   if (!carrier) return { message: "Unknown carrier." };
   if (!can(user, "carrier:edit", carrier)) {
     return { message: "You can only edit carriers assigned to you." };
   }
 
-  const { input, errors } = parseCarrierForm(formData, allowedIds());
+  const { input, errors } = parseCarrierForm(formData, allowedIds(org));
   const values = echoValues(formData);
   if (Object.keys(errors).length > 0) {
     return { errors, values, message: "Fix the highlighted fields and try again." };
@@ -102,6 +104,7 @@ export async function updateCarrierAction(
 
   if (formData.get("confirm_duplicate") !== "yes") {
     const dupes = findDuplicates(
+      org,
       input.mc_number as string | null,
       input.usdot as string | null,
       id,
@@ -109,7 +112,7 @@ export async function updateCarrierAction(
     if (dupes.mc.length > 0 || dupes.usdot.length > 0) {
       return {
         values,
-        duplicates: { mc: summarize(dupes.mc), usdot: summarize(dupes.usdot) },
+        duplicates: { mc: summarize(org, dupes.mc), usdot: summarize(org, dupes.usdot) },
         message: "Another carrier already uses this MC or USDOT.",
       };
     }
@@ -118,11 +121,11 @@ export async function updateCarrierAction(
   // Editing resolves whatever the importer flagged, so clear the review marker.
   if (carrier.review_flags) input.review_flags = null;
 
-  updateCarrier(id, input, user.id);
+  updateCarrier(org, id, input, user.id);
 
   const note = formData.get("note");
   if (typeof note === "string" && note.trim()) {
-    createNote({ carrierId: id, userId: user.id, body: note });
+    createNote({ org, carrierId: id, userId: user.id, body: note });
   }
 
   revalidatePath("/carriers");

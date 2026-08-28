@@ -1,5 +1,6 @@
 import "server-only";
 import { all, getSettings } from "./db.ts";
+import type { Org } from "./tenant-db.ts";
 import { idOf, idsOf } from "./lookups.ts";
 import { STATUS } from "./constants.ts";
 import type { Tone } from "./constants.ts";
@@ -31,8 +32,8 @@ function daysAgoIso(days: number): string {
  * precomputed or cached, so an item leaves the queue the moment it is resolved.
  * Thresholds come from Settings.
  */
-export function needsAttention(): AttentionRule[] {
-  const settings = getSettings();
+export function needsAttention(org: Org): AttentionRule[] {
+  const settings = getSettings(org.id);
   const num = (key: string, fallback: number) => {
     const n = Number(settings[key]);
     return Number.isFinite(n) && n > 0 ? n : fallback;
@@ -41,14 +42,14 @@ export function needsAttention(): AttentionRule[] {
   const staleFirstLoad = num("missing_first_load_days", 21);
   const staleInvestigation = num("investigation_stale_days", 7);
 
-  const upcomingId = idOf("status", STATUS.ABOUT_TO_BE_ACTIVE);
-  const investigationId = idOf("status", STATUS.PENDING_INVESTIGATION);
-  const activeId = idOf("status", STATUS.ACTIVE);
-  const signedId = idOf("agreement_status", "signed");
-  const notRequiredId = idOf("agreement_status", "not_required");
-  const notPitchedId = idOf("pricing_type", "not_yet_pitched");
-  const notSetInvoiceId = idOf("invoice_mode", "not_set");
-  const liveIds = idsOf("status", [STATUS.ACTIVE, STATUS.ABOUT_TO_BE_ACTIVE]);
+  const upcomingId = idOf(org, "status", STATUS.ABOUT_TO_BE_ACTIVE);
+  const investigationId = idOf(org, "status", STATUS.PENDING_INVESTIGATION);
+  const activeId = idOf(org, "status", STATUS.ACTIVE);
+  const signedId = idOf(org, "agreement_status", "signed");
+  const notRequiredId = idOf(org, "agreement_status", "not_required");
+  const notPitchedId = idOf(org, "pricing_type", "not_yet_pitched");
+  const notSetInvoiceId = idOf(org, "invoice_mode", "not_set");
+  const liveIds = idsOf(org, "status", [STATUS.ACTIVE, STATUS.ABOUT_TO_BE_ACTIVE]);
 
   const query = (sql: string, params: unknown[] = []) =>
     all<AttentionItem>(sql, params);
@@ -64,9 +65,9 @@ export function needsAttention(): AttentionRule[] {
         `SELECT id, legal_name,
                 'Waiting since ' || COALESCE(substr(status_changed_at, 1, 10), 'unknown') AS detail
            FROM carriers
-          WHERE status_id = ? AND substr(status_changed_at, 1, 10) <= ?
+          WHERE organization_id = ? AND status_id = ? AND substr(status_changed_at, 1, 10) <= ?
           ORDER BY status_changed_at`,
-        [upcomingId, daysAgoIso(staleUpcoming)],
+        [org.id, upcomingId, daysAgoIso(staleUpcoming)],
       ),
     }),
 
@@ -80,9 +81,9 @@ export function needsAttention(): AttentionRule[] {
         `SELECT id, legal_name,
                 'Open since ' || COALESCE(substr(status_changed_at, 1, 10), 'unknown') AS detail
            FROM carriers
-          WHERE status_id = ? AND substr(status_changed_at, 1, 10) <= ?
+          WHERE organization_id = ? AND status_id = ? AND substr(status_changed_at, 1, 10) <= ?
           ORDER BY status_changed_at`,
-        [investigationId, daysAgoIso(staleInvestigation)],
+        [org.id, investigationId, daysAgoIso(staleInvestigation)],
       ),
     }),
 
@@ -97,11 +98,11 @@ export function needsAttention(): AttentionRule[] {
           : query(
               `SELECT c.id, c.legal_name, COALESCE(l.label, 'No agreement recorded') AS detail
                  FROM carriers c LEFT JOIN lookups l ON l.id = c.agreement_status_id
-                WHERE c.status_id IN (${liveIds.map(() => "?").join(",")})
+                WHERE c.organization_id = ? AND c.status_id IN (${liveIds.map(() => "?").join(",")})
                   AND (c.agreement_status_id IS NULL
                        OR (c.agreement_status_id != ? AND c.agreement_status_id != ?))
                 ORDER BY c.legal_name`,
-              [...liveIds, signedId ?? -1, notRequiredId ?? -1],
+              [org.id, ...liveIds, signedId ?? -1, notRequiredId ?? -1],
             ),
     }),
 
@@ -113,8 +114,8 @@ export function needsAttention(): AttentionRule[] {
       href: `/carriers?pricing=${notPitchedId}`,
       items: query(
         `SELECT id, legal_name, NULL AS detail
-           FROM carriers WHERE pricing_type_id = ? ORDER BY legal_name`,
-        [notPitchedId],
+           FROM carriers WHERE organization_id = ? AND pricing_type_id = ? ORDER BY legal_name`,
+        [org.id, notPitchedId],
       ),
     }),
 
@@ -127,11 +128,11 @@ export function needsAttention(): AttentionRule[] {
         `SELECT id, legal_name,
                 'Onboarded ' || COALESCE(onboarding_date, 'unknown') AS detail
            FROM carriers
-          WHERE first_load_date IS NULL
+          WHERE organization_id = ? AND first_load_date IS NULL
             AND onboarding_date IS NOT NULL AND onboarding_date <= ?
             AND status_id = ?
           ORDER BY onboarding_date`,
-        [daysAgoIso(staleFirstLoad), activeId],
+        [org.id, daysAgoIso(staleFirstLoad), activeId],
       ),
     }),
 
@@ -146,8 +147,9 @@ export function needsAttention(): AttentionRule[] {
                      WHEN mc_number IS NULL THEN 'MC missing'
                      ELSE 'USDOT missing' END AS detail
            FROM carriers
-          WHERE mc_number IS NULL OR usdot IS NULL
+          WHERE organization_id = ? AND (mc_number IS NULL OR usdot IS NULL)
           ORDER BY legal_name`,
+        [org.id],
       ),
     }),
 
@@ -162,10 +164,10 @@ export function needsAttention(): AttentionRule[] {
           : query(
               `SELECT id, legal_name, NULL AS detail
                  FROM carriers
-                WHERE status_id = ?
+                WHERE organization_id = ? AND status_id = ?
                   AND (invoice_mode_id IS NULL OR invoice_mode_id = ?)
                 ORDER BY legal_name`,
-              [activeId, notSetInvoiceId ?? -1],
+              [org.id, activeId, notSetInvoiceId ?? -1],
             ),
     }),
 
@@ -176,7 +178,8 @@ export function needsAttention(): AttentionRule[] {
       tone: "purple",
       items: query(
         `SELECT id, legal_name, NULL AS detail
-           FROM carriers WHERE review_flags IS NOT NULL ORDER BY legal_name`,
+           FROM carriers WHERE organization_id = ? AND review_flags IS NOT NULL ORDER BY legal_name`,
+        [org.id],
       ),
     }),
   ];

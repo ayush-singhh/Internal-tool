@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { REPORTS, parseReportKey, runReport } from "@/lib/reports";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import { BarList, TrendChart } from "@/components/charts";
@@ -12,7 +12,7 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const GROUPS = ["Team", "Portfolio", "Commercial", "Movement"] as const;
 
 export default async function ReportsPage(props: PageProps<"/reports">) {
-  await requireUser();
+  const { org } = await requireOrg();
   const sp = await props.searchParams;
   const one = (k: string) => {
     const v = sp[k];
@@ -23,7 +23,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const key = parseReportKey(Array.isArray(sp.r) ? sp.r[0] : sp.r);
   const from = one("from");
   const to = one("to");
-  const result = runReport(key, { from, to });
+  const result = runReport(org, key, { from, to });
 
   const query = new URLSearchParams({ r: key });
   if (from) query.set("from", from);

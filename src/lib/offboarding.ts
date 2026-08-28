@@ -1,5 +1,6 @@
 import "server-only";
 import { get } from "./db.ts";
+import type { Org } from "./tenant-db.ts";
 
 export type OffboardingRow = {
   id: number;
@@ -20,12 +21,12 @@ export type OffboardingRow = {
   handler_name: string | null;
 };
 
-export function getOffboarding(carrierId: number): OffboardingRow | undefined {
+export function getOffboarding(org: Org, carrierId: number): OffboardingRow | undefined {
   return get<OffboardingRow>(
     `SELECT o.*, u.name AS handler_name
        FROM offboarding_records o
        LEFT JOIN users u ON u.id = o.handled_by
-      WHERE o.carrier_id = ?`,
-    [carrierId],
+      WHERE o.organization_id = ? AND o.carrier_id = ?`,
+    [org.id, carrierId],
   );
 }

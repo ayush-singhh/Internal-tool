@@ -1,5 +1,6 @@
 import "server-only";
 import { all, run, transaction } from "./db.ts";
+import type { Org } from "./tenant-db.ts";
 import { DEFAULT_SETTINGS } from "./constants.ts";
 
 export type SettingDef = {
@@ -20,7 +21,7 @@ export const SETTING_DEFS: SettingDef[] = [
 
 export type SettingsResult = { ok: true } | { ok: false; errors: Record<string, string> };
 
-export function saveSettings(values: Record<string, string>): SettingsResult {
+export function saveSettings(org: Org, values: Record<string, string>): SettingsResult {
   const errors: Record<string, string> = {};
   const clean: Record<string, string> = {};
 
@@ -46,22 +47,22 @@ export function saveSettings(values: Record<string, string>): SettingsResult {
   transaction(() => {
     for (const [key, value] of Object.entries(clean)) {
       run(
-        `INSERT INTO app_settings (key, value) VALUES (?, ?)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-        [key, value],
+        `INSERT INTO app_settings (organization_id, key, value) VALUES (?, ?, ?)
+         ON CONFLICT (organization_id, key) DO UPDATE SET value = excluded.value`,
+        [org.id, key, value],
       );
     }
   });
   return { ok: true };
 }
 
-export function resetSettings(): void {
+export function resetSettings(org: Org): void {
   transaction(() => {
     for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
       run(
-        `INSERT INTO app_settings (key, value) VALUES (?, ?)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-        [key, value],
+        `INSERT INTO app_settings (organization_id, key, value) VALUES (?, ?, ?)
+         ON CONFLICT (organization_id, key) DO UPDATE SET value = excluded.value`,
+        [org.id, key, value],
       );
     }
   });
@@ -78,7 +79,7 @@ export type LookupUsage = {
 };
 
 /** Vocabulary values with how many carriers use each — so nothing is retired blindly. */
-export function lookupUsage(): LookupUsage[] {
+export function lookupUsage(org: Org): LookupUsage[] {
   const COLUMN: Record<string, string> = {
     status: "status_id", trailer_type: "trailer_type_id", onboarding_type: "onboarding_type_id",
     lead_source: "lead_source_id", plan: "plan_id", pricing_type: "pricing_type_id",
@@ -87,19 +88,23 @@ export function lookupUsage(): LookupUsage[] {
   };
 
   const rows = all<Omit<LookupUsage, "usage">>(
-    "SELECT id, kind, value, label, sort, active FROM lookups ORDER BY kind, sort, label",
+    "SELECT id, kind, value, label, sort, active FROM lookups WHERE organization_id = ? ORDER BY kind, sort, label",
+    [org.id],
   );
 
   return rows.map((row) => {
     const column = COLUMN[row.kind];
     const usage = column
-      ? all<{ n: number }>(`SELECT COUNT(*) AS n FROM carriers WHERE ${column} = ?`, [row.id])[0]!.n
+      ? all<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM carriers WHERE organization_id = ? AND ${column} = ?`,
+          [org.id, row.id],
+        )[0]!.n
       : 0;
     return { ...row, usage };
   });
 }
 
 /** Retiring hides a value from new records without touching carriers already using it. */
-export function setLookupActive(id: number, active: boolean): void {
-  run("UPDATE lookups SET active = ? WHERE id = ?", [active ? 1 : 0, id]);
+export function setLookupActive(org: Org, id: number, active: boolean): void {
+  run("UPDATE lookups SET active = ? WHERE organization_id = ? AND id = ?", [active ? 1 : 0, org.id, id]);
 }

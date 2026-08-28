@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "./auth.ts";
+import { requireOrg } from "./auth.ts";
 import { can } from "./permissions.ts";
 import {
   buildPreview, commitImport, type DuplicateMode, type ImportSummary, type PreviewRow,
@@ -14,14 +14,14 @@ export type PreviewResult =
 export async function previewImportAction(
   rows: Record<string, string>[],
 ): Promise<PreviewResult> {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "import:run")) {
     return { ok: false, error: "Only administrators can import carrier data." };
   }
   if (!Array.isArray(rows) || rows.length === 0) {
     return { ok: false, error: "No rows to import." };
   }
-  const { preview, counts } = buildPreview(rows);
+  const { preview, counts } = buildPreview(org, rows);
   return { ok: true, preview, counts };
 }
 
@@ -33,7 +33,7 @@ export async function commitImportAction(
   rows: Record<string, string>[],
   mode: DuplicateMode,
 ): Promise<CommitResult> {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "import:run")) {
     return { ok: false, error: "Only administrators can import carrier data." };
   }
@@ -45,7 +45,7 @@ export async function commitImportAction(
   }
 
   try {
-    const summary = commitImport(rows, mode as DuplicateMode, user.id);
+    const summary = commitImport(org, rows, mode as DuplicateMode, user.id);
     revalidatePath("/carriers");
     revalidatePath("/");
     return { ok: true, summary };

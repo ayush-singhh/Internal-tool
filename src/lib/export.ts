@@ -1,6 +1,7 @@
 import "server-only";
 import { toCsv } from "./csv.ts";
 import { decorate, type CarrierRow } from "./carriers.ts";
+import type { Org } from "./tenant-db.ts";
 import { formatPhone, formatPricing } from "./format.ts";
 
 /** Export carries every field, not just the visible columns — the filter chooses the
@@ -15,9 +16,9 @@ const HEADERS = [
   "Offboarded On", "Flagged For Review", "Created At", "Last Updated",
 ];
 
-export function carriersToCsv(rows: CarrierRow[]): string {
+export function carriersToCsv(org: Org, rows: CarrierRow[]): string {
   const body = rows.map((r) => {
-    const d = decorate(r);
+    const d = decorate(org, r);
     return [
       r.serial, r.legal_name, r.owner_name, d.status?.label,
       r.dispatcher_name, r.account_manager_name,

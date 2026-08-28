@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { getCarrier, decorate, reviewFlags } from "@/lib/carriers";
 import { carrierActivity, carrierNotes } from "@/lib/activity";
 import { getOffboarding } from "@/lib/offboarding";
-import { requireUser } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
+import { Org } from "@/lib/tenant-db";
 import { can } from "@/lib/permissions";
 import { OFFBOARDING_STATUSES } from "@/lib/constants";
 import { lookup, options as lookupOptions, idsOf } from "@/lib/lookups";
@@ -21,8 +22,9 @@ import { StatusDialog } from "@/components/status-dialog";
 export async function generateMetadata(
   props: PageProps<"/carriers/[id]">,
 ): Promise<Metadata> {
+  const { org } = await requireOrg();
   const { id } = await props.params;
-  const carrier = getCarrier(Number(id));
+  const carrier = getCarrier(org, Number(id));
   return { title: carrier?.legal_name ?? "Carrier" };
 }
 
@@ -46,30 +48,31 @@ function Section({
 }
 
 export default async function CarrierProfilePage(props: PageProps<"/carriers/[id]">) {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   const { id } = await props.params;
   const carrierId = Number(id);
   if (!Number.isInteger(carrierId)) notFound();
 
-  const carrier = getCarrier(carrierId);
+  const carrier = getCarrier(org, carrierId);
   if (!carrier) notFound();
 
-  const d = decorate(carrier);
+  const d = decorate(org, carrier);
   const flags = reviewFlags(carrier);
-  const notes = carrierNotes(carrierId);
-  const activity = carrierActivity(carrierId);
-  const offboarding = getOffboarding(carrierId);
+  const notes = carrierNotes(org, carrierId);
+  const activity = carrierActivity(org, carrierId);
+  const offboarding = getOffboarding(org, carrierId);
   const isExited = OFFBOARDING_STATUSES.includes(d.status?.value ?? "");
 
   const editable = can(user, "carrier:edit", carrier);
   const canOffboard = can(user, "carrier:offboard", carrier);
 
-  const toOptions = (kind: Parameters<typeof lookupOptions>[0]) =>
-    lookupOptions(kind).map((l) => ({ id: l.id, label: l.label, value: l.value }));
+  const toOptions = (kind: Parameters<typeof lookupOptions>[1]) =>
+    lookupOptions(org, kind).map((l) => ({ id: l.id, label: l.label, value: l.value }));
   const statusOptions = {
     status: toOptions("status"),
     users: all<{ id: number; name: string }>(
-      "SELECT id, name FROM users WHERE active = 1 ORDER BY name",
+      "SELECT id, name FROM users WHERE organization_id = ? AND active = 1 ORDER BY name",
+      [org.id],
     ).map((u) => ({ id: u.id, label: u.name })),
     offboard_reason: toOptions("offboard_reason"),
     offboard_category: toOptions("offboard_category"),
@@ -118,7 +121,7 @@ export default async function CarrierProfilePage(props: PageProps<"/carriers/[id
               carrierId={carrier.id}
               currentStatusId={carrier.status_id}
               currentStatusLabel={d.status?.label ?? "No status"}
-              exitStatusIds={idsOf("status", OFFBOARDING_STATUSES)}
+              exitStatusIds={idsOf(org, "status", OFFBOARDING_STATUSES)}
               options={statusOptions}
               currentUserId={user.id}
               existing={offboarding ?? null}
@@ -230,10 +233,10 @@ export default async function CarrierProfilePage(props: PageProps<"/carriers/[id
               {offboarding ? (
                 <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                   <Field label="Offboarding Date">{formatDate(offboarding.offboarded_on)}</Field>
-                  <Field label="Reason">{lookup(offboarding.reason_id)?.label}</Field>
-                  <Field label="Category">{lookup(offboarding.category_id)?.label}</Field>
+                  <Field label="Reason">{lookup(org, offboarding.reason_id)?.label}</Field>
+                  <Field label="Category">{lookup(org, offboarding.category_id)?.label}</Field>
                   <Field label="Handled By">{offboarding.handler_name}</Field>
-                  <Field label="Final Status">{lookup(offboarding.final_status_id)?.label}</Field>
+                  <Field label="Final Status">{lookup(org, offboarding.final_status_id)?.label}</Field>
                   <Field label="Last Load Date">{formatDate(offboarding.last_load_date)}</Field>
                   <Field label="Outstanding Balance" mono>
                     {offboarding.outstanding_balance == null

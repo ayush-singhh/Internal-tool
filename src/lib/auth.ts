@@ -3,9 +3,10 @@ import { randomBytes } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { all, get, run } from "./db.ts";
+import { all, get, run, systemQuery } from "./db.ts";
 import { verifyPassword } from "./password.ts";
 import type { SessionUser } from "./permissions.ts";
+import { Org } from "./tenant-db.ts";
 import { checkLogin, describeLockout, recordAttempt } from "./throttle.ts";
 
 const COOKIE = "ch_session";
@@ -30,9 +31,11 @@ export async function signIn(
   const verdict = checkLogin(email, ip);
   if (!verdict.allowed) return { ok: false, error: describeLockout(verdict) };
 
-  const user = get<{ id: number; password_hash: string; active: number }>(
-    "SELECT id, password_hash, active FROM users WHERE email = ?",
-    [email.trim().toLowerCase()],
+  const user = systemQuery(() =>
+    get<{ id: number; password_hash: string; active: number }>(
+      "SELECT id, password_hash, active FROM users WHERE email = ?",
+      [email.trim().toLowerCase()],
+    ),
   );
 
   // Same message either way — don't reveal which addresses exist.
@@ -79,11 +82,15 @@ export async function signOut() {
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const id = (await cookies()).get(COOKIE)?.value;
   if (!id) return null;
-  const row = get<SessionUser & { expires_at: string }>(
-    `SELECT u.id, u.name, u.email, u.role, u.active, s.expires_at
-       FROM sessions s JOIN users u ON u.id = s.user_id
-      WHERE s.id = ?`,
-    [id],
+  // Session→user lookup runs before an org is known, and joins the global sessions
+  // table, so it is a system query by definition.
+  const row = systemQuery(() =>
+    get<SessionUser & { expires_at: string }>(
+      `SELECT u.id, u.organization_id, u.name, u.email, u.role, u.active, s.expires_at
+         FROM sessions s JOIN users u ON u.id = s.user_id
+        WHERE s.id = ?`,
+      [id],
+    ),
   );
   if (!row) return null;
   if (new Date(row.expires_at) < new Date() || !row.active) {
@@ -101,17 +108,30 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
-/** True before anyone has changed the seeded admin password — drives the login hint. */
-export function isFirstRun(): boolean {
-  const { count } = get<{ count: number }>("SELECT COUNT(*) AS count FROM users")!;
-  const { sessions } = get<{ sessions: number }>(
-    "SELECT COUNT(*) AS sessions FROM sessions",
-  )!;
-  return count === 1 && sessions === 0;
+/**
+ * The authenticated organisation, as an `Org` to be threaded into tenant queries. This is
+ * the ONLY source of tenant identity in the application — it comes from the server-side
+ * session, never from a request parameter, header or body.
+ */
+export async function requireOrg(): Promise<{ user: SessionUser; org: Org }> {
+  const user = await requireUser();
+  return { user, org: new Org(user.organization_id) };
 }
 
-export function listAssignableUsers() {
+/** True before anyone has changed the seeded admin password — drives the login hint. */
+export function isFirstRun(): boolean {
+  return systemQuery(() => {
+    const { count } = get<{ count: number }>("SELECT COUNT(*) AS count FROM users")!;
+    const { sessions } = get<{ sessions: number }>(
+      "SELECT COUNT(*) AS sessions FROM sessions",
+    )!;
+    return count === 1 && sessions === 0;
+  });
+}
+
+export function listAssignableUsers(org: Org) {
   return all<{ id: number; name: string; role: string }>(
-    "SELECT id, name, role FROM users WHERE active = 1 ORDER BY name",
+    "SELECT id, name, role FROM users WHERE organization_id = ? AND active = 1 ORDER BY name",
+    [org.id],
   );
 }

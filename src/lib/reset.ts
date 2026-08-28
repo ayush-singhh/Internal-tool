@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { get, run, transaction } from "./db.ts";
+import { get, run, transaction, systemQuery } from "./db.ts";
 import { hashPassword } from "./password.ts";
 
 /**
@@ -27,15 +27,18 @@ export function issueReset(userId: number, issuedBy: number | null): IssuedReset
   const now = new Date();
   const expiresAt = new Date(now.getTime() + TTL_HOURS * 3_600_000).toISOString();
 
-  transaction(() => {
-    // A fresh link invalidates any earlier unused one for the same person.
-    run("DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL", [userId]);
-    run(
-      `INSERT INTO password_resets (token, user_id, created_at, expires_at, issued_by)
-       VALUES (?, ?, ?, ?, ?)`,
-      [digest(token), userId, now.toISOString(), expiresAt, issuedBy],
-    );
-  });
+  // password_resets is a pre-auth table authorised by the token; the calling admin action
+  // has already confirmed the target user belongs to the admin's organisation.
+  systemQuery(() =>
+    transaction(() => {
+      run("DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL", [userId]);
+      run(
+        `INSERT INTO password_resets (token, user_id, created_at, expires_at, issued_by)
+         VALUES (?, ?, ?, ?, ?)`,
+        [digest(token), userId, now.toISOString(), expiresAt, issuedBy],
+      );
+    }),
+  );
 
   return { token, expiresAt, path: `/reset/${token}` };
 }
@@ -46,14 +49,17 @@ export type ResetCheck =
 
 /** Validates without consuming, so the page can show a form or a clear failure. */
 export function checkReset(token: string): ResetCheck {
-  const row = get<{
-    token: string; user_id: number; expires_at: string; used_at: string | null;
-    name: string; email: string; active: number;
-  }>(
-    `SELECT r.token, r.user_id, r.expires_at, r.used_at, u.name, u.email, u.active
-       FROM password_resets r JOIN users u ON u.id = r.user_id
-      WHERE r.token = ?`,
-    [digest(token)],
+  // Authorised by the token; runs on the unauthenticated reset page.
+  const row = systemQuery(() =>
+    get<{
+      token: string; user_id: number; expires_at: string; used_at: string | null;
+      name: string; email: string; active: number;
+    }>(
+      `SELECT r.token, r.user_id, r.expires_at, r.used_at, u.name, u.email, u.active
+         FROM password_resets r JOIN users u ON u.id = r.user_id
+        WHERE r.token = ?`,
+      [digest(token)],
+    ),
   );
 
   if (!row) return { valid: false, reason: "This reset link is not valid." };
@@ -84,19 +90,23 @@ export function consumeReset(token: string, password: string): ResetResult {
   const check = checkReset(token);
   if (!check.valid) return { ok: false, error: check.reason };
 
-  transaction(() => {
-    run("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?", [
-      hashPassword(password), new Date().toISOString(), check.userId,
-    ]);
-    run("UPDATE password_resets SET used_at = ? WHERE token = ?", [
-      new Date().toISOString(), digest(token),
-    ]);
-    run("DELETE FROM sessions WHERE user_id = ?", [check.userId]);
-  });
+  systemQuery(() =>
+    transaction(() => {
+      run("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?", [
+        hashPassword(password), new Date().toISOString(), check.userId,
+      ]);
+      run("UPDATE password_resets SET used_at = ? WHERE token = ?", [
+        new Date().toISOString(), digest(token),
+      ]);
+      run("DELETE FROM sessions WHERE user_id = ?", [check.userId]);
+    }),
+  );
 
   return { ok: true, userId: check.userId };
 }
 
 export function purgeExpiredResets(): void {
-  run("DELETE FROM password_resets WHERE expires_at < ?", [new Date().toISOString()]);
+  systemQuery(() =>
+    run("DELETE FROM password_resets WHERE expires_at < ?", [new Date().toISOString()]),
+  );
 }

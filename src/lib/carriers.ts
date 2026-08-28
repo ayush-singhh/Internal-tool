@@ -3,6 +3,7 @@ import { all, get } from "./db.ts";
 import { loadLookups, idsOf } from "./lookups.ts";
 import { STATUS, OFFBOARDING_STATUSES, type Tone } from "./constants.ts";
 import type { CarrierRow, CarrierFilters, ListOptions, SortKey } from "./carrier-types.ts";
+import type { Org } from "./tenant-db.ts";
 
 export type { CarrierRow, CarrierFilters, ListOptions, SortKey };
 export { SORT_KEYS, parseSort } from "./carrier-types.ts";
@@ -40,9 +41,11 @@ const SELECT = `
     LEFT JOIN users   ua ON ua.id = c.account_manager_id
     LEFT JOIN offboarding_records o ON o.carrier_id = c.id`;
 
-function buildWhere(f: CarrierFilters): { sql: string; params: unknown[] } {
-  const clauses: string[] = [];
-  const params: unknown[] = [];
+function buildWhere(org: Org, f: CarrierFilters): { sql: string; params: unknown[] } {
+  // The tenant predicate is always first, so every carrier query is organisation-scoped
+  // by construction and the fail-closed guard is satisfied.
+  const clauses: string[] = ["c.organization_id = ?"];
+  const params: unknown[] = [org.id];
 
   const inList = (column: string, ids?: number[]) => {
     if (!ids || ids.length === 0) return;
@@ -53,12 +56,12 @@ function buildWhere(f: CarrierFilters): { sql: string; params: unknown[] } {
   if (f.group) {
     const groupIds =
       f.group === "active"
-        ? idsOf("status", [STATUS.ACTIVE])
+        ? idsOf(org, "status", [STATUS.ACTIVE])
         : f.group === "onboarding"
-          ? idsOf("status", [STATUS.ABOUT_TO_BE_ACTIVE])
+          ? idsOf(org, "status", [STATUS.ABOUT_TO_BE_ACTIVE])
           : f.group === "investigations"
-            ? idsOf("status", [STATUS.PENDING_INVESTIGATION])
-            : idsOf("status", OFFBOARDING_STATUSES);
+            ? idsOf(org, "status", [STATUS.PENDING_INVESTIGATION])
+            : idsOf(org, "status", OFFBOARDING_STATUSES);
     // An empty group would silently match everything — force zero rows instead.
     if (groupIds.length === 0) clauses.push("1 = 0");
     else inList("c.status_id", groupIds);
@@ -105,10 +108,11 @@ function buildWhere(f: CarrierFilters): { sql: string; params: unknown[] } {
 }
 
 export function listCarriers(
+  org: Org,
   filters: CarrierFilters = {},
   opts: ListOptions = {},
 ): { rows: CarrierRow[]; total: number; page: number; pageSize: number; pages: number } {
-  const { sql: where, params } = buildWhere(filters);
+  const { sql: where, params } = buildWhere(org, filters);
 
   const total = get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM carriers c
@@ -138,12 +142,13 @@ export function listCarriers(
   return { rows, total, page, pageSize, pages };
 }
 
-export function getCarrier(id: number): CarrierRow | undefined {
-  return get<CarrierRow>(`${SELECT} WHERE c.id = ?`, [id]);
+export function getCarrier(org: Org, id: number): CarrierRow | undefined {
+  return get<CarrierRow>(`${SELECT} WHERE c.organization_id = ? AND c.id = ?`, [org.id, id]);
 }
 
 /** Duplicate detection. Compared on digits so formatting differences never hide a match. */
 export function findDuplicates(
+  org: Org,
   mc: string | null,
   usdot: string | null,
   excludeId?: number,
@@ -156,17 +161,23 @@ export function findDuplicates(
 
   return {
     mc: mcD
-      ? all<CarrierRow>(`${SELECT} WHERE c.mc_number = ? ${exclude}`, [mcD, ...tail])
+      ? all<CarrierRow>(
+          `${SELECT} WHERE c.organization_id = ? AND c.mc_number = ? ${exclude}`,
+          [org.id, mcD, ...tail],
+        )
       : [],
     usdot: dotD
-      ? all<CarrierRow>(`${SELECT} WHERE c.usdot = ? ${exclude}`, [dotD, ...tail])
+      ? all<CarrierRow>(
+          `${SELECT} WHERE c.organization_id = ? AND c.usdot = ? ${exclude}`,
+          [org.id, dotD, ...tail],
+        )
       : [],
   };
 }
 
 /** Everything a table cell or profile field needs, resolved from the lookup cache. */
-export function decorate(row: CarrierRow) {
-  const L = loadLookups().byId;
+export function decorate(org: Org, row: CarrierRow) {
+  const L = loadLookups(org).byId;
   const l = (id: number | null) => (id == null ? undefined : L.get(id));
   return {
     status: l(row.status_id),
@@ -185,8 +196,8 @@ export function decorate(row: CarrierRow) {
 
 export type DecoratedCarrier = CarrierRow & { d: ReturnType<typeof decorate> };
 
-export function withLookups(rows: CarrierRow[]): DecoratedCarrier[] {
-  return rows.map((r) => ({ ...r, d: decorate(r) }));
+export function withLookups(org: Org, rows: CarrierRow[]): DecoratedCarrier[] {
+  return rows.map((r) => ({ ...r, d: decorate(org, r) }));
 }
 
 export function reviewFlags(row: Pick<CarrierRow, "review_flags">): string[] {

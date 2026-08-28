@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "./auth.ts";
+import { requireOrg } from "./auth.ts";
 import { can } from "./permissions.ts";
 import { createNote, toggleNotePin } from "./notes.ts";
 
@@ -11,11 +11,12 @@ export async function addNoteAction(
   _prev: NoteState,
   formData: FormData,
 ): Promise<NoteState> {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "note:create")) return { error: "You do not have permission to add notes." };
 
   const carrierId = Number(formData.get("carrierId"));
   const result = createNote({
+    org,
     carrierId,
     userId: user.id,
     body: String(formData.get("body") ?? ""),
@@ -28,12 +29,12 @@ export async function addNoteAction(
 }
 
 export async function toggleNotePinAction(formData: FormData) {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "note:create")) return;
 
   const noteId = Number(formData.get("noteId"));
   if (!Number.isInteger(noteId)) return;
 
-  const carrierId = toggleNotePin(noteId);
+  const carrierId = toggleNotePin(org, noteId);
   if (carrierId !== null) revalidatePath(`/carriers/${carrierId}`);
 }

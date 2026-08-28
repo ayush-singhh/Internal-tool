@@ -212,29 +212,41 @@ export const MIGRATIONS: Migration[] = [
       // than guessed — see assertSingleTenantData.
       assertSingleTenantData(db);
 
-      const existingName =
-        (db.prepare("SELECT value FROM app_settings WHERE key = 'company_name'").get() as
-          | { value: string }
-          | undefined)?.value ?? "My Organization";
-      const orgName = process.env.MIGRATION_ORG_NAME ?? existingName;
-      const now = new Date().toISOString();
-
-      let orgId =
-        (db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: number } | undefined)?.id;
-      if (orgId === undefined) {
-        db.prepare(
-          "INSERT INTO organizations (name, slug, status, created_at) VALUES (?, ?, 'active', ?)",
-        ).run(orgName, uniqueSlug(db, orgName), now);
-        orgId = (db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
-      }
-
       const tenantTables = [
         "users", "carriers", "carrier_notes", "carrier_activity",
         "offboarding_records", "saved_filters", "lookups", "app_settings",
       ];
       for (const table of tenantTables) {
         addColumn(db, table, "organization_id", "INTEGER REFERENCES organizations(id)");
-        db.prepare(`UPDATE ${table} SET organization_id = ? WHERE organization_id IS NULL`).run(orgId);
+      }
+
+      // Backfill only runs when the database already holds data from the single-tenant
+      // era. A genuinely fresh database has nothing to assign — its bootstrap organisation
+      // (with seeded vocabularies and an owner) is created by seed() in db.ts instead, so
+      // the two paths never both create an org.
+      const hasExistingData =
+        (db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number }).n > 0 ||
+        (db.prepare("SELECT COUNT(*) AS n FROM lookups").get() as { n: number }).n > 0;
+
+      if (hasExistingData) {
+        const existingName =
+          (db.prepare("SELECT value FROM app_settings WHERE key = 'company_name'").get() as
+            | { value: string }
+            | undefined)?.value ?? "My Organization";
+        const orgName = process.env.MIGRATION_ORG_NAME ?? existingName;
+        const now = new Date().toISOString();
+
+        let orgId =
+          (db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: number } | undefined)?.id;
+        if (orgId === undefined) {
+          db.prepare(
+            "INSERT INTO organizations (name, slug, status, created_at) VALUES (?, ?, 'active', ?)",
+          ).run(orgName, uniqueSlug(db, orgName), now);
+          orgId = (db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+        }
+        for (const table of tenantTables) {
+          db.prepare(`UPDATE ${table} SET organization_id = ? WHERE organization_id IS NULL`).run(orgId);
+        }
       }
 
       for (const [name, table, cols] of [

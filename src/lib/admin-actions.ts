@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
-import { requireUser } from "./auth.ts";
+import { requireOrg } from "./auth.ts";
 import { assertCan, can } from "./permissions.ts";
 import {
   createTeamMember, setPassword, setTeamMemberActive, updateTeamMember,
@@ -26,11 +26,11 @@ export async function createTeamMemberAction(
   _prev: AdminState,
   formData: FormData,
 ): Promise<AdminState> {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "team:manage")) return { error: "Only administrators can manage the team." };
 
   const values = echo(formData, ["name", "email", "role", "phone"]);
-  const result = createTeamMember({
+  const result = createTeamMember(org, {
     name: String(formData.get("name") ?? ""),
     email: String(formData.get("email") ?? ""),
     role: String(formData.get("role") ?? ""),
@@ -47,18 +47,18 @@ export async function updateTeamMemberAction(
   _prev: AdminState,
   formData: FormData,
 ): Promise<AdminState> {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "team:manage")) return { error: "Only administrators can manage the team." };
 
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Unknown team member." };
 
   const role = String(formData.get("role") ?? "");
-  if (wouldRemoveLastAdmin(id, role)) {
+  if (wouldRemoveLastAdmin(org, id, role)) {
     return { error: "You cannot change the role of the last active administrator." };
   }
 
-  const result = updateTeamMember(id, {
+  const result = updateTeamMember(org, id, {
     name: String(formData.get("name") ?? ""),
     email: String(formData.get("email") ?? ""),
     role,
@@ -71,12 +71,12 @@ export async function updateTeamMemberAction(
 }
 
 export async function toggleTeamMemberAction(formData: FormData) {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   assertCan(user, "team:manage");
 
   const id = Number(formData.get("id"));
   const active = formData.get("active") === "1";
-  if (Number.isInteger(id)) setTeamMemberActive(id, active);
+  if (Number.isInteger(id)) setTeamMemberActive(org, id, active);
   revalidatePath("/team");
 }
 
@@ -84,7 +84,7 @@ export async function setPasswordAction(
   _prev: AdminState,
   formData: FormData,
 ): Promise<AdminState> {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Unknown team member." };
 
@@ -97,10 +97,10 @@ export async function setPasswordAction(
   const confirm = String(formData.get("confirm") ?? "");
   if (password !== confirm) return { error: "The two passwords do not match." };
 
-  // Keep the current session alive when someone changes their own password, so they
-  // are not signed out mid-task; every other session for that account is revoked.
+  // setPassword is org-scoped, so an admin can only reset a password within their own
+  // organisation — an id from another tenant simply resolves to "unknown".
   const current = id === user.id ? (await cookies()).get("ch_session")?.value : undefined;
-  const result = setPassword(id, password, current);
+  const result = setPassword(org, id, password, current);
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/team");
@@ -112,7 +112,7 @@ export async function saveSettingsAction(
   _prev: AdminState,
   formData: FormData,
 ): Promise<AdminState> {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "settings:manage")) {
     return { error: "Only administrators can change settings." };
   }
@@ -120,7 +120,7 @@ export async function saveSettingsAction(
   const values = Object.fromEntries(
     SETTING_DEFS.map((d) => [d.key, String(formData.get(d.key) ?? "")]),
   );
-  const result = saveSettings(values);
+  const result = saveSettings(org, values);
   if (!result.ok) return { errors: result.errors, values, error: "Fix the highlighted fields." };
 
   revalidatePath("/settings");
@@ -129,19 +129,19 @@ export async function saveSettingsAction(
 }
 
 export async function resetSettingsAction() {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   assertCan(user, "settings:manage");
-  resetSettings();
+  resetSettings(org);
   revalidatePath("/settings");
   revalidatePath("/");
 }
 
 export async function toggleLookupAction(formData: FormData) {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   assertCan(user, "settings:manage");
 
   const id = Number(formData.get("id"));
   const active = formData.get("active") === "1";
-  if (Number.isInteger(id)) setLookupActive(id, active);
+  if (Number.isInteger(id)) setLookupActive(org, id, active);
   revalidatePath("/settings");
 }

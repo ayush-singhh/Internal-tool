@@ -5,7 +5,7 @@ import { parseFilters, parseListOptions, countActiveFilters, type RawParams, typ
 import { parseColumns } from "@/lib/columns";
 import { options as lookupOptions } from "@/lib/lookups";
 import { all } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { STATUS } from "@/lib/constants";
 import { idOf } from "@/lib/lookups";
 import { CarrierTable } from "./carrier-table";
@@ -46,18 +46,19 @@ export async function CarrierListView({
   group?: CarrierFilters["group"];
   showQuickFilters?: boolean;
 }) {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   const filters = parseFilters(searchParams, group);
   const listOpts = parseListOptions(searchParams);
-  const { rows, total, page, pages, pageSize } = listCarriers(filters, listOpts);
+  const { rows, total, page, pages, pageSize } = listCarriers(org, filters, listOpts);
   const columns = parseColumns((await cookies()).get("ch_cols")?.value);
 
   const team = all<{ id: number; name: string }>(
-    "SELECT id, name FROM users WHERE active = 1 ORDER BY name",
+    "SELECT id, name FROM users WHERE organization_id = ? AND active = 1 ORDER BY name",
+    [org.id],
   );
   const teamOptions: Option[] = team.map((t) => ({ id: t.id, label: t.name }));
-  const toOptions = (kind: Parameters<typeof lookupOptions>[0]): Option[] =>
-    lookupOptions(kind).map((l) => ({ id: l.id, label: l.label, tone: l.tone }));
+  const toOptions = (kind: Parameters<typeof lookupOptions>[1]): Option[] =>
+    lookupOptions(org, kind).map((l) => ({ id: l.id, label: l.label, tone: l.tone }));
 
   const options: Record<FilterParam, Option[]> = {
     status: toOptions("status"),
@@ -77,7 +78,7 @@ export async function CarrierListView({
     ? [
         { id: null, label: "All" } satisfies QuickFilter,
         ...QUICK_ORDER.flatMap<QuickFilter>((value) => {
-          const id = idOf("status", value);
+          const id = idOf(org, "status", value);
           const opt = id ? options.status.find((o) => o.id === id) : undefined;
           if (!id || !opt) return [];
           return [{ id, label: QUICK_LABELS[value] ?? opt.label, tone: opt.tone }];
@@ -86,8 +87,8 @@ export async function CarrierListView({
     : undefined;
 
   const savedFilters = all<SavedFilter>(
-    "SELECT id, name, query FROM saved_filters WHERE user_id = ? ORDER BY name",
-    [user.id],
+    "SELECT id, name, query FROM saved_filters WHERE organization_id = ? AND user_id = ? ORDER BY name",
+    [org.id, user.id],
   );
 
   const activeFilterCount = countActiveFilters({ ...filters, group: undefined });
@@ -149,7 +150,7 @@ export async function CarrierListView({
         ) : (
           <Card padded={false} className="overflow-hidden">
             <CarrierTable
-              rows={withLookups(rows)}
+              rows={withLookups(org, rows)}
               columns={columns}
               params={searchParams}
               basePath={basePath}

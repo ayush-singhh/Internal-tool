@@ -1,6 +1,7 @@
 import "server-only";
 import { all, get, run, transaction } from "./db.ts";
 import { loadLookups } from "./lookups.ts";
+import type { Org } from "./tenant-db.ts";
 import { recordActivity } from "./activity.ts";
 import type { LookupKind } from "./constants.ts";
 import { TARGET_MAP, normalize } from "./import-targets.ts";
@@ -26,8 +27,8 @@ export type PreviewRow = {
 export type DuplicateMode = "skip" | "update" | "create";
 
 /** Resolve free text against a vocabulary. Unmatched text is preserved and flagged. */
-function resolveLookup(kind: LookupKind, raw: string): { id: number | null; matched: boolean } {
-  const list = loadLookups().byKind.get(kind) ?? [];
+function resolveLookup(org: Org, kind: LookupKind, raw: string): { id: number | null; matched: boolean } {
+  const list = loadLookups(org).byKind.get(kind) ?? [];
   const n = normalize(raw);
   const hit =
     list.find((l) => normalize(l.label) === n) ??
@@ -36,10 +37,11 @@ function resolveLookup(kind: LookupKind, raw: string): { id: number | null; matc
   return { id: hit?.id ?? null, matched: Boolean(hit) };
 }
 
-function resolveUser(raw: string): { id: number | null; matched: boolean } {
+function resolveUser(org: Org, raw: string): { id: number | null; matched: boolean } {
   const n = normalize(raw);
   const users = all<{ id: number; name: string }>(
-    "SELECT id, name FROM users WHERE active = 1",
+    "SELECT id, name FROM users WHERE organization_id = ? AND active = 1",
+    [org.id],
   );
   const hit =
     users.find((u) => normalize(u.name) === n) ??
@@ -99,6 +101,7 @@ export type ParsedRow = {
  * Only a missing legal name is fatal — everything else imports and gets flagged.
  */
 export function parseImportRow(
+  org: Org,
   values: Record<string, string>,
 ): ParsedRow {
   const issues: RowIssue[] = [];
@@ -206,7 +209,7 @@ export function parseImportRow(
   for (const [key, column, kind] of lookupFields) {
     const text = raw(key);
     if (!text) { input[column] = null; continue; }
-    const { id, matched } = resolveLookup(kind, text);
+    const { id, matched } = resolveLookup(org, kind, text);
     input[column] = id;
     if (!matched) {
       flags.push(`${TARGET_MAP.get(key)?.label ?? key} "${text}" did not match a known option`);
@@ -216,7 +219,7 @@ export function parseImportRow(
   for (const [key, column] of [["dispatcher", "dispatcher_id"], ["account_manager", "account_manager_id"]] as const) {
     const text = raw(key);
     if (!text) { input[column] = null; continue; }
-    const { id, matched } = resolveUser(text);
+    const { id, matched } = resolveUser(org, text);
     input[column] = id;
     if (!matched) {
       flags.push(`${TARGET_MAP.get(key)?.label ?? key} "${text}" did not match a team member`);
@@ -251,6 +254,7 @@ export type ImportSummary = {
  * "update", and even then only the columns the spreadsheet actually carried.
  */
 export function commitImport(
+  org: Org,
   rows: Record<string, string>[],
   mode: DuplicateMode,
   userId: number | null,
@@ -260,13 +264,13 @@ export function commitImport(
 
   transaction(() => {
     for (const values of rows) {
-      const parsed = parseImportRow(values);
+      const parsed = parseImportRow(org, values);
       if (parsed.issues.some((i) => i.severity === "error")) {
         summary.failed++;
         continue;
       }
 
-      const existing = findExisting(parsed.mc, parsed.usdot);
+      const existing = findExisting(org, parsed.mc, parsed.usdot);
 
       if (existing && mode === "skip") { summary.skipped++; continue; }
 
@@ -282,11 +286,11 @@ export function commitImport(
         }
         if (sets.length > 0) {
           sets.push("updated_at = ?", "updated_by = ?");
-          params.push(now, userId, existing.id);
-          run(`UPDATE carriers SET ${sets.join(", ")} WHERE id = ?`, params);
+          params.push(now, userId, org.id, existing.id);
+          run(`UPDATE carriers SET ${sets.join(", ")} WHERE organization_id = ? AND id = ?`, params);
         }
         recordActivity({
-          carrierId: existing.id, userId, type: "import",
+          org, carrierId: existing.id, userId, type: "import",
           summary: "Record updated from a spreadsheet import", at: now,
         });
         summary.updated++;
@@ -294,8 +298,8 @@ export function commitImport(
         continue;
       }
 
-      const columns = Object.keys(parsed.input);
-      const values2 = columns.map((c) => parsed.input[c] ?? null);
+      const columns = ["organization_id", ...Object.keys(parsed.input)];
+      const values2: unknown[] = [org.id, ...Object.keys(parsed.input).map((c) => parsed.input[c] ?? null)];
       columns.push("status_changed_at", "created_at", "updated_at", "created_by", "updated_by");
       values2.push(now, now, now, userId, userId);
 
@@ -306,7 +310,7 @@ export function commitImport(
       );
       const id = get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
       recordActivity({
-        carrierId: id, userId, type: "import",
+        org, carrierId: id, userId, type: "import",
         summary: "Carrier created from a spreadsheet import", at: now,
       });
       summary.created++;
@@ -318,18 +322,19 @@ export function commitImport(
 }
 
 export function findExisting(
+  org: Org,
   mc: string | null,
   usdot: string | null,
 ): { id: number; legal_name: string; on: "MC" | "USDOT" } | null {
   if (mc) {
     const hit = get<{ id: number; legal_name: string }>(
-      "SELECT id, legal_name FROM carriers WHERE mc_number = ?", [mc],
+      "SELECT id, legal_name FROM carriers WHERE organization_id = ? AND mc_number = ?", [org.id, mc],
     );
     if (hit) return { ...hit, on: "MC" };
   }
   if (usdot) {
     const hit = get<{ id: number; legal_name: string }>(
-      "SELECT id, legal_name FROM carriers WHERE usdot = ?", [usdot],
+      "SELECT id, legal_name FROM carriers WHERE organization_id = ? AND usdot = ?", [org.id, usdot],
     );
     if (hit) return { ...hit, on: "USDOT" };
   }
@@ -337,7 +342,7 @@ export function findExisting(
 }
 
 /** Builds the preview the user confirms before anything is written. */
-export function buildPreview(rows: Record<string, string>[]): {
+export function buildPreview(org: Org, rows: Record<string, string>[]): {
   preview: PreviewRow[];
   counts: { total: number; errors: number; flagged: number; duplicates: number };
 } {
@@ -348,8 +353,8 @@ export function buildPreview(rows: Record<string, string>[]): {
   let duplicates = 0;
 
   const preview = rows.map((values, index) => {
-    const parsed = parseImportRow(values);
-    const duplicateOf = findExisting(parsed.mc, parsed.usdot);
+    const parsed = parseImportRow(org, values);
+    const duplicateOf = findExisting(org, parsed.mc, parsed.usdot);
 
     let duplicateInFile = false;
     if (parsed.mc) {

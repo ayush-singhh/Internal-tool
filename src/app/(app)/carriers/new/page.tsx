@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { carrierFormOptions } from "@/lib/form-options";
 import { idOf } from "@/lib/lookups";
@@ -12,10 +12,10 @@ import { PageHeader } from "@/components/ui";
 export const metadata: Metadata = { title: "Add Carrier" };
 
 export default async function NewCarrierPage() {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "carrier:create")) redirect("/carriers");
 
-  const options = carrierFormOptions();
+  const options = carrierFormOptions(org);
 
   // Sensible starting point: a brand new carrier is almost always onboarding, with
   // paperwork pending and nothing billed yet.
@@ -25,10 +25,10 @@ export default async function NewCarrierPage() {
   const set = (key: string, id: number | undefined) => {
     if (id !== undefined) defaults[key] = String(id);
   };
-  set("status_id", idOf("status", STATUS.ABOUT_TO_BE_ACTIVE));
-  set("subscription_id", idOf("subscription", "none"));
-  set("agreement_status_id", idOf("agreement_status", "pending"));
-  set("invoice_mode_id", idOf("invoice_mode", "not_set"));
+  set("status_id", idOf(org, "status", STATUS.ABOUT_TO_BE_ACTIVE));
+  set("subscription_id", idOf(org, "subscription", "none"));
+  set("agreement_status_id", idOf(org, "agreement_status", "pending"));
+  set("invoice_mode_id", idOf(org, "invoice_mode", "not_set"));
   if (user.role === "dispatcher") set("dispatcher_id", user.id);
   if (user.role === "account_manager") set("account_manager_id", user.id);
 

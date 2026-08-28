@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "./auth.ts";
+import { requireOrg } from "./auth.ts";
 import { can } from "./permissions.ts";
 import { getCarrier } from "./carriers.ts";
 import { allowedIds } from "./carrier-form.ts";
@@ -22,17 +22,17 @@ export async function changeStatusAction(
   _prev: StatusState,
   formData: FormData,
 ): Promise<StatusState> {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   const carrierId = Number(formData.get("carrierId"));
   if (!Number.isInteger(carrierId)) return { message: "Unknown carrier." };
 
-  const carrier = getCarrier(carrierId);
+  const carrier = getCarrier(org, carrierId);
   if (!carrier) return { message: "Unknown carrier." };
   if (!can(user, "carrier:offboard", carrier)) {
     return { message: "You can only change the status of carriers assigned to you." };
   }
 
-  const allowed = allowedIds();
+  const allowed = allowedIds(org);
   const errors: FieldErrors = {};
   const statusId = choice(
     formData.get("status_id"), "status_id", "Status", allowed.status, errors, true,
@@ -41,7 +41,7 @@ export async function changeStatusAction(
 
   if (statusId === null) return { errors, message: "Choose a status." };
 
-  if (isExitStatus(statusId)) {
+  if (isExitStatus(org, statusId)) {
     const offboardedOn = date(
       formData.get("offboarded_on"), "offboarded_on", "Offboarding date", errors,
     );
@@ -71,6 +71,7 @@ export async function changeStatusAction(
     }
 
     offboardCarrier(
+      org,
       {
         carrierId,
         statusId,
@@ -88,13 +89,13 @@ export async function changeStatusAction(
       },
       user.id,
     );
-  } else if (isExitStatus(carrier.status_id)) {
-    reactivateCarrier(carrierId, statusId, user.id, note);
+  } else if (isExitStatus(org, carrier.status_id)) {
+    reactivateCarrier(org, carrierId, statusId, user.id, note);
   } else {
-    changeStatus(carrierId, statusId, user.id, note);
+    changeStatus(org, carrierId, statusId, user.id, note);
   }
 
-  if (note) createNote({ carrierId, userId: user.id, body: note });
+  if (note) createNote({ org, carrierId, userId: user.id, body: note });
 
   revalidatePath(`/carriers/${carrierId}`);
   revalidatePath("/carriers");

@@ -28,10 +28,14 @@ const TENANT_SET = new Set<string>(TENANT_TABLES);
  * The id comes only from the server-side session (see auth.ts), never from a request.
  */
 export class Org {
-  constructor(readonly id: number) {
+  readonly id: number;
+  // A plain field rather than a TypeScript parameter property: Node's type-stripping
+  // loader (used by `node --test` and by scripts) does not support parameter properties.
+  constructor(id: number) {
     if (!Number.isInteger(id) || id <= 0) {
       throw new Error("Org requires a valid organization id derived from the session.");
     }
+    this.id = id;
   }
 }
 

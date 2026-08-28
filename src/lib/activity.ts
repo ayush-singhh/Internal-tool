@@ -1,5 +1,6 @@
 import "server-only";
 import { all, run } from "./db.ts";
+import type { Org } from "./tenant-db.ts";
 
 export type ActivityType =
   | "created" | "status" | "assignment" | "pricing" | "agreement"
@@ -20,6 +21,7 @@ export type ActivityRow = {
 
 /** Append-only. Nothing in the application updates or deletes an activity row. */
 export function recordActivity(entry: {
+  org: Org;
   carrierId: number;
   userId: number | null;
   type: ActivityType;
@@ -31,9 +33,10 @@ export function recordActivity(entry: {
 }) {
   run(
     `INSERT INTO carrier_activity
-       (carrier_id, user_id, type, field, old_value, new_value, summary, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (organization_id, carrier_id, user_id, type, field, old_value, new_value, summary, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
+      entry.org.id,
       entry.carrierId,
       entry.userId,
       entry.type,
@@ -46,27 +49,28 @@ export function recordActivity(entry: {
   );
 }
 
-export function carrierActivity(carrierId: number, limit = 200): ActivityRow[] {
+export function carrierActivity(org: Org, carrierId: number, limit = 200): ActivityRow[] {
   return all<ActivityRow>(
     `SELECT a.*, u.name AS user_name
        FROM carrier_activity a
        LEFT JOIN users u ON u.id = a.user_id
-      WHERE a.carrier_id = ?
+      WHERE a.organization_id = ? AND a.carrier_id = ?
       ORDER BY a.created_at DESC, a.id DESC
       LIMIT ?`,
-    [carrierId, limit],
+    [org.id, carrierId, limit],
   );
 }
 
-export function recentActivity(limit = 12): (ActivityRow & { legal_name: string })[] {
+export function recentActivity(org: Org, limit = 12): (ActivityRow & { legal_name: string })[] {
   return all<ActivityRow & { legal_name: string }>(
     `SELECT a.*, u.name AS user_name, c.legal_name
        FROM carrier_activity a
        LEFT JOIN users u ON u.id = a.user_id
        JOIN carriers c ON c.id = a.carrier_id
+      WHERE a.organization_id = ?
       ORDER BY a.created_at DESC, a.id DESC
       LIMIT ?`,
-    [limit],
+    [org.id, limit],
   );
 }
 
@@ -80,13 +84,13 @@ export type NoteRow = {
   user_name: string | null;
 };
 
-export function carrierNotes(carrierId: number): NoteRow[] {
+export function carrierNotes(org: Org, carrierId: number): NoteRow[] {
   return all<NoteRow>(
     `SELECT n.*, u.name AS user_name
        FROM carrier_notes n
        LEFT JOIN users u ON u.id = n.user_id
-      WHERE n.carrier_id = ?
+      WHERE n.organization_id = ? AND n.carrier_id = ?
       ORDER BY n.pinned DESC, n.created_at DESC, n.id DESC`,
-    [carrierId],
+    [org.id, carrierId],
   );
 }

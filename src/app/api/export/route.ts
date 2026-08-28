@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { listCarriers, type CarrierFilters } from "@/lib/carriers";
 import { parseFilters, parseListOptions, type RawParams } from "@/lib/query";
@@ -16,7 +16,7 @@ const GROUPS: Record<string, CarrierFilters["group"]> = {
 const MAX_ROWS = 50_000;
 
 export async function GET(request: Request) {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   if (!can(user, "export:run")) {
     return new Response("Not authorized", { status: 403 });
   }
@@ -27,6 +27,6 @@ export async function GET(request: Request) {
   const filters = parseFilters(params, path ? GROUPS[path] : undefined);
   const { sort, dir } = parseListOptions(params);
 
-  const { rows } = listCarriers(filters, { sort, dir, page: 1, pageSize: MAX_ROWS });
-  return csvResponse(carriersToCsv(rows), `carriers-${stamp()}.csv`);
+  const { rows } = listCarriers(org, filters, { sort, dir, page: 1, pageSize: MAX_ROWS });
+  return csvResponse(carriersToCsv(org, rows), `carriers-${stamp()}.csv`);
 }

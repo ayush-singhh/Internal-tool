@@ -2,6 +2,7 @@ import { ROLES, type Role } from "./constants.ts";
 
 export type SessionUser = {
   id: number;
+  organization_id: number;
   name: string;
   email: string;
   role: Role;

@@ -169,15 +169,21 @@ export function transaction<T>(fn: () => T): T {
   }
 }
 
-export function getSetting(key: string): string {
+export function getSetting(orgId: number, key: string): string {
   return (
-    get<{ value: string }>("SELECT value FROM app_settings WHERE key = ?", [key])?.value ??
+    get<{ value: string }>(
+      "SELECT value FROM app_settings WHERE organization_id = ? AND key = ?",
+      [orgId, key],
+    )?.value ??
     DEFAULT_SETTINGS[key] ??
     ""
   );
 }
 
-export function getSettings(): Record<string, string> {
-  const rows = all<{ key: string; value: string }>("SELECT key, value FROM app_settings");
+export function getSettings(orgId: number): Record<string, string> {
+  const rows = all<{ key: string; value: string }>(
+    "SELECT key, value FROM app_settings WHERE organization_id = ?",
+    [orgId],
+  );
   return { ...DEFAULT_SETTINGS, ...Object.fromEntries(rows.map((r) => [r.key, r.value])) };
 }

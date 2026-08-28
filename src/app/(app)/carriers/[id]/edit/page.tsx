@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { getCarrier } from "@/lib/carriers";
 import { carrierFormOptions } from "@/lib/form-options";
@@ -11,18 +11,19 @@ import { PageHeader } from "@/components/ui";
 export async function generateMetadata(
   props: PageProps<"/carriers/[id]/edit">,
 ): Promise<Metadata> {
+  const { org } = await requireOrg();
   const { id } = await props.params;
-  const carrier = getCarrier(Number(id));
+  const carrier = getCarrier(org, Number(id));
   return { title: carrier ? `Edit ${carrier.legal_name}` : "Edit Carrier" };
 }
 
 export default async function EditCarrierPage(props: PageProps<"/carriers/[id]/edit">) {
-  const user = await requireUser();
+  const { user, org } = await requireOrg();
   const { id } = await props.params;
   const carrierId = Number(id);
   if (!Number.isInteger(carrierId)) notFound();
 
-  const carrier = getCarrier(carrierId);
+  const carrier = getCarrier(org, carrierId);
   if (!carrier) notFound();
   if (!can(user, "carrier:edit", carrier)) redirect(`/carriers/${carrierId}`);
 
@@ -69,7 +70,7 @@ export default async function EditCarrierPage(props: PageProps<"/carriers/[id]/e
       <CarrierForm
         action={updateCarrierAction}
         mode="edit"
-        options={carrierFormOptions()}
+        options={carrierFormOptions(org)}
         defaults={defaults}
         carrierId={carrier.id}
         cancelHref={`/carriers/${carrier.id}`}

@@ -1,5 +1,6 @@
 import "server-only";
 import { all, get } from "./db.ts";
+import type { Org } from "./tenant-db.ts";
 import {
   activeByUser, carriersByAccountManager, carriersByDispatcher, carriersByFleetSize,
   carriersByLeadSource, carriersByPercentageBand, carriersByPlan, carriersByPricingType,
@@ -62,13 +63,14 @@ export type ReportResult = {
  * "active right now" is not a historical question.
  */
 function datedBreakdown(
+  org: Org,
   column: string,
   from: string | undefined,
   to: string | undefined,
   dateColumn = "c.onboarding_date",
 ): Slice[] {
-  const where: string[] = [`c.${column} IS NOT NULL`];
-  const params: unknown[] = [];
+  const where: string[] = ["c.organization_id = ?", `c.${column} IS NOT NULL`];
+  const params: unknown[] = [org.id];
   if (from) { where.push(`${dateColumn} >= ?`); params.push(from); }
   if (to) { where.push(`${dateColumn} <= ?`); params.push(to); }
 
@@ -82,6 +84,7 @@ function datedBreakdown(
 }
 
 export function runReport(
+  org: Org,
   key: ReportKey,
   range: { from?: string; to?: string } = {},
 ): ReportResult {
@@ -94,54 +97,54 @@ export function runReport(
 
   switch (key) {
     case "active_by_dispatcher":
-      rows = activeByUser("dispatcher_id");
+      rows = activeByUser(org, "dispatcher_id");
       break;
     case "active_by_account_manager":
-      rows = activeByUser("account_manager_id");
+      rows = activeByUser(org, "account_manager_id");
       break;
     case "by_status":
-      rows = dated ? datedBreakdown("status_id", from, to) : carriersByStatus();
+      rows = dated ? datedBreakdown(org, "status_id", from, to) : carriersByStatus(org, );
       break;
     case "by_lead_source":
-      rows = dated ? datedBreakdown("lead_source_id", from, to) : carriersByLeadSource();
+      rows = dated ? datedBreakdown(org, "lead_source_id", from, to) : carriersByLeadSource(org, );
       break;
     case "by_trailer_type":
-      rows = dated ? datedBreakdown("trailer_type_id", from, to) : carriersByTrailerType();
+      rows = dated ? datedBreakdown(org, "trailer_type_id", from, to) : carriersByTrailerType(org, );
       break;
     case "by_plan":
-      rows = dated ? datedBreakdown("plan_id", from, to) : carriersByPlan();
+      rows = dated ? datedBreakdown(org, "plan_id", from, to) : carriersByPlan(org, );
       break;
     case "by_pricing":
-      rows = dated ? datedBreakdown("pricing_type_id", from, to) : carriersByPricingType();
+      rows = dated ? datedBreakdown(org, "pricing_type_id", from, to) : carriersByPricingType(org, );
       break;
     case "by_fleet_size":
-      rows = carriersByFleetSize();
+      rows = carriersByFleetSize(org, );
       break;
     case "by_percentage":
-      rows = carriersByPercentageBand();
+      rows = carriersByPercentageBand(org, );
       break;
     case "offboarding_reasons":
       rows = dated
         ? all<{ label: string; n: number }>(
             `SELECT l.label AS label, COUNT(o.id) AS n
                FROM offboarding_records o JOIN lookups l ON l.id = o.reason_id
-              WHERE ${[from ? "o.offboarded_on >= ?" : null, to ? "o.offboarded_on <= ?" : null]
+              WHERE ${["o.organization_id = ?", from ? "o.offboarded_on >= ?" : null, to ? "o.offboarded_on <= ?" : null]
                 .filter(Boolean).join(" AND ")}
               GROUP BY l.id ORDER BY n DESC`,
-            [from, to].filter(Boolean),
+            [org.id, from, to].filter((v) => v !== undefined && v !== null),
           ).map((r) => ({ label: r.label, value: r.n }))
-        : offboardingReasons();
+        : offboardingReasons(org, );
       break;
     case "monthly_onboarding":
-      trend = onboardingTrend(24).filter((p) => inRange(p.month, from, to));
+      trend = onboardingTrend(org, 24).filter((p) => inRange(p.month, from, to));
       rows = trend.map((p) => ({ label: p.month, value: p.value }));
       break;
     case "monthly_offboarding":
-      trend = offboardingTrend(24).filter((p) => inRange(p.month, from, to));
+      trend = offboardingTrend(org, 24).filter((p) => inRange(p.month, from, to));
       rows = trend.map((p) => ({ label: p.month, value: p.value }));
       break;
     case "retention": {
-      const r = retention();
+      const r = retention(org, );
       const exited = r.onboarded - r.retained;
       rows = [
         { label: "Carriers ever onboarded", value: r.onboarded },
@@ -175,6 +178,6 @@ export function reportToCsvRows(result: ReportResult): unknown[][] {
   ];
 }
 
-export function reportCount(): number {
-  return get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers")!.n;
+export function reportCount(org: Org): number {
+  return get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers WHERE organization_id = ?", [org.id])!.n;
 }

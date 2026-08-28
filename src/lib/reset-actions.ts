@@ -1,6 +1,6 @@
 "use server";
 
-import { requireUser } from "./auth.ts";
+import { requireOrg } from "./auth.ts";
 import { assertCan } from "./permissions.ts";
 import { consumeReset, issueReset } from "./reset.ts";
 import { get } from "./db.ts";
@@ -11,14 +11,15 @@ export async function issueResetAction(
   _prev: IssueState,
   formData: FormData,
 ): Promise<IssueState> {
-  const admin = await requireUser();
+  const { user: admin, org } = await requireOrg();
   assertCan(admin, "team:manage");
 
   const userId = Number(formData.get("userId"));
   if (!Number.isInteger(userId)) return { error: "Unknown team member." };
 
+  // Org-scoped: an admin can only issue a reset for a member of their own organisation.
   const user = get<{ name: string; active: number }>(
-    "SELECT name, active FROM users WHERE id = ?", [userId],
+    "SELECT name, active FROM users WHERE organization_id = ? AND id = ?", [org.id, userId],
   );
   if (!user) return { error: "Unknown team member." };
   if (!user.active) return { error: "Reactivate this account before resetting its password." };

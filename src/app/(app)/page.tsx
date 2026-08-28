@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import {
   dashboardMetrics, carriersByStatus, carriersByDispatcher, carriersByAccountManager,
   carriersByLeadSource, carriersByPlan, carriersByPricingType,
@@ -15,13 +15,13 @@ import { BarList, TrendChart, StatTile } from "@/components/charts";
 import { Icon } from "@/components/icons";
 
 export default async function DashboardPage() {
-  const user = await requireUser();
-  const m = dashboardMetrics();
+  const { user, org } = await requireOrg();
+  const m = dashboardMetrics(org);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const statusHref = (value: string) => {
-    const id = idOf("status", value);
+    const id = idOf(org, "status", value);
     return id ? `/carriers?status=${id}` : "/carriers";
   };
 
@@ -50,9 +50,9 @@ export default async function DashboardPage() {
     );
   }
 
-  const attention = needsAttention();
+  const attention = needsAttention(org);
   const attentionCount = attentionTotal(attention);
-  const activity = recentActivity(10);
+  const activity = recentActivity(org, 10);
 
   return (
     <>
@@ -143,38 +143,38 @@ export default async function DashboardPage() {
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
             <CardHeader title="Carriers by status" subtitle="Every record, by current status" />
-            <BarList data={carriersByStatus()} showDots />
+            <BarList data={carriersByStatus(org)} showDots />
           </Card>
           <Card>
             <CardHeader title="Carriers by dispatcher" subtitle="Workload across the dispatch team" />
-            <BarList data={carriersByDispatcher()} limit={8} />
+            <BarList data={carriersByDispatcher(org)} limit={8} />
           </Card>
           <Card>
             <CardHeader title="Carriers by account manager" subtitle="Commercial ownership" />
-            <BarList data={carriersByAccountManager()} limit={8} />
+            <BarList data={carriersByAccountManager(org)} limit={8} />
           </Card>
           <Card>
             <CardHeader title="Carriers by lead source" subtitle="Where carriers come from" />
-            <BarList data={carriersByLeadSource()} limit={8} />
+            <BarList data={carriersByLeadSource(org)} limit={8} />
           </Card>
           <Card>
             <CardHeader title="Plan distribution" subtitle="Plans offered across the book" />
-            <BarList data={carriersByPlan()} />
+            <BarList data={carriersByPlan(org)} />
           </Card>
           <Card>
             <CardHeader title="Pricing distribution" subtitle="How carriers are charged" />
-            <BarList data={carriersByPricingType()} />
+            <BarList data={carriersByPricingType(org)} />
           </Card>
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
             <CardHeader title="Monthly onboarding" subtitle="Carriers onboarded, last 12 months" />
-            <TrendChart data={onboardingTrend()} label="Carriers onboarded per month" />
+            <TrendChart data={onboardingTrend(org)} label="Carriers onboarded per month" />
           </Card>
           <Card>
             <CardHeader title="Monthly offboarding" subtitle="Carriers offboarded, last 12 months" />
-            <TrendChart data={offboardingTrend()} label="Carriers offboarded per month" />
+            <TrendChart data={offboardingTrend(org)} label="Carriers offboarded per month" />
           </Card>
         </div>
 
