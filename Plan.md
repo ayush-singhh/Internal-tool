@@ -106,16 +106,27 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started
 - [x] **Guaranteed by test: offboarding never deletes a carrier** — the record survives,
       stays searchable, appears under Offboarded, and leaves the Active count
 
-## Phase 7 — Dashboard 🔨
+## Phase 7 — Dashboard ✅
 
-- [ ] Eleven live metric tiles
-- [ ] Seven charts (status, dispatcher, account manager, lead source, plan, onboarding
-      trend, offboarding trend) as inline SVG/CSS
-- [ ] Recent Activity feed
-- [ ] Needs Attention queue driven by Settings thresholds
-- [ ] Tests: Needs Attention rules
+- [x] Eleven live metric tiles — **each verified equal to its own SQL count**
+- [x] Seven charts as inline SVG/CSS: status, dispatcher, account manager, lead source,
+      plan, pricing, plus onboarding and offboarding 12-month trends
+- [x] Recent Activity feed across all carriers
+- [x] Needs Attention queue — 8 rules, thresholds read from Settings, empty rules omitted
+- [x] Tests: 11 cases including threshold changes moving items in and out of the queue
+      — **76/76 passing overall**
+- [x] `npm run build` clean
 
-## Phase 8 — Reports & Export ⬜
+### Chart colour decision
+Ran the palette validator rather than eyeballing it. Encoding the seven statuses as
+seven hues **failed**: purple↔blue separate by ΔE 1.3 for deuteranopia (indistinguishable),
+and orange↔amber by 6.7 even with full colour vision. So the charts do not encode identity
+in colour at all — every bar is one validated hue (`#3a67ac`: passes lightness band,
+chroma floor and 3:1 contrast) and identity comes from the direct text label on each row.
+The small status dot beside a label echoes the badge language used elsewhere but is never
+the only carrier of meaning.
+
+## Phase 8 — Reports & Export 🔨
 
 - [ ] Thirteen report views with date filtering
 - [ ] CSV export of any report
