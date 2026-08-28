@@ -182,6 +182,37 @@ Now rebuilt from local components and verified identical across UTC-8 → UTC+14
 
 ---
 
+## Post-build: driven in a real browser
+
+Launched the app and drove it end to end with headless Chromium — signing in through the
+actual login form (every earlier check had injected a session row directly), then walking
+login → dashboard → table → filters → profile → note → status/offboarding dialog →
+add carrier → validation → reports → team → settings → import → mobile → sign-out.
+**Zero console or network errors.** A full CSV import was completed through the UI:
+3 created, 0 failed, 1 flagged, 46 → 49 carriers.
+
+### Two real bugs this found, both fixed
+
+**1. Custom CSS was unlayered, silently overriding Tailwind utilities app-wide.**
+Unlayered CSS beats every `@layer`, so `.field` won against utilities like `pl-8` and
+`w-36` wherever they touched the same property — visibly, the search placeholder sat
+underneath the magnifier icon. Moved `globals.css` into `@layer base / components /
+utilities`, restoring normal precedence. Verified: padding-left 11.2px → 32px.
+
+**2. Every dropdown lost its value when a submit was rejected.**
+React resets the form after a form action completes, and that reset lands *after* the
+re-render. A text input survives it (`defaultValue` is a real DOM property React
+re-applies with the echoed value) and an uncontrolled `<select>` is restored to its
+`defaultValue` — but a *controlled* select is reset to its first option while React still
+believes it holds the old value, so React sees no change and never corrects it. Someone
+fixing a duplicate MC number would silently lose their plan, pricing type and billing
+frequency. Every select is now uncontrolled, with the billing-frequency auto-fill driven
+through a ref. Verified: all 8 fields survive a rejected submit.
+
+Two further "failures" turned out to be faults in the test driver, not the app — a probe
+that fought the browser's own email validation, and a row count read before navigation
+finished. Both re-checked and correct.
+
 ## Deferred by design
 
 Recorded so "later" is a decision rather than an oversight.

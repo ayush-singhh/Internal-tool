@@ -82,7 +82,7 @@ export function Text({
 
 export function Select({
   name, label, options, defaultValue, error, hint, required,
-  placeholder = "Select…", onChange, value, className = "",
+  placeholder = "Select…", onChange, value, className = "", ref,
 }: {
   name: string;
   label: string;
@@ -95,10 +95,12 @@ export function Select({
   onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void;
   value?: string;
   className?: string;
+  ref?: React.Ref<HTMLSelectElement>;
 }) {
   return (
     <FieldRow label={label} name={name} error={error} hint={hint} required={required} className={className}>
       <select
+        ref={ref}
         id={name}
         name={name}
         defaultValue={value === undefined ? defaultValue : undefined}

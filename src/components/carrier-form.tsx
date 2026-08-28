@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import Link from "next/link";
 import { FormSection, Select, Text, TextArea, type FormOption } from "./form-fields";
 import { Icon } from "./icons";
@@ -57,8 +57,32 @@ export function CarrierForm({
   const v = (name: string) => state.values?.[name] ?? defaults[name] ?? "";
   const err = (name: string) => state.errors?.[name];
 
+  /**
+   * React resets the form once a form action completes, and that reset lands after the
+   * re-render. A text input survives it because `defaultValue` is a real DOM property
+   * React re-applies with the echoed value, and an uncontrolled `<select>` is restored
+   * to its `defaultValue` — but a *controlled* select is reset to its first option while
+   * React still believes it holds the old value, so React sees no change and never
+   * corrects it. A carrier rejected for a duplicate MC would silently lose its plan,
+   * pricing type and billing frequency.
+   *
+   * Every select is therefore uncontrolled. `pricingTypeId` is only a shadow copy used
+   * to decide which money field to show, and the billing-frequency select is nudged
+   * through a ref rather than owned by React.
+   */
   const [pricingTypeId, setPricingTypeId] = useState(v("pricing_type_id"));
-  const [frequencyId, setFrequencyId] = useState(v("billing_frequency_id"));
+  const frequencyRef = useRef<HTMLSelectElement>(null);
+
+  // Each server response remounts the fields so the echoed values are applied afresh.
+  // React's documented "adjust state during render" pattern — it runs only when a new
+  // response arrives, never while someone is typing.
+  const [seenState, setSeenState] = useState(state);
+  const [version, setVersion] = useState(0);
+  if (seenState !== state) {
+    setSeenState(state);
+    setVersion((n) => n + 1);
+    setPricingTypeId(state.values?.pricing_type_id ?? defaults.pricing_type_id ?? "");
+  }
 
   const pricingSlug =
     options.pricing_type.find((o) => String(o.id) === pricingTypeId)?.value ?? "";
@@ -71,9 +95,9 @@ export function CarrierForm({
     setPricingTypeId(id);
     const slug = options.pricing_type.find((o) => String(o.id) === id)?.value ?? "";
     const impliedSlug = IMPLIED_FREQUENCY[slug];
-    if (impliedSlug) {
+    if (impliedSlug && frequencyRef.current) {
       const match = options.billing_frequency.find((o) => o.value === impliedSlug);
-      if (match) setFrequencyId(String(match.id));
+      if (match) frequencyRef.current.value = String(match.id);
     }
   }
 
@@ -156,6 +180,7 @@ export function CarrierForm({
         </div>
       )}
 
+      <div key={version} className="space-y-4">
       <FormSection step={1} title="Basic Information">
         <Text name="legal_name" label="Lead Legal Name" required defaultValue={v("legal_name")} error={err("legal_name")} placeholder="Ironline Freight LLC" />
         <Text name="owner_name" label="Owner Name" defaultValue={v("owner_name")} error={err("owner_name")} placeholder="Andre Okafor" />
@@ -199,16 +224,16 @@ export function CarrierForm({
           name="pricing_type_id"
           label="Pricing Type"
           options={options.pricing_type}
-          value={pricingTypeId}
+          defaultValue={v("pricing_type_id")}
           onChange={onPricingTypeChange}
           error={err("pricing_type_id")}
         />
         <Select
+          ref={frequencyRef}
           name="billing_frequency_id"
           label="Billing Frequency"
           options={options.billing_frequency}
-          value={frequencyId}
-          onChange={(e) => setFrequencyId(e.target.value)}
+          defaultValue={v("billing_frequency_id")}
           error={err("billing_frequency_id")}
           hint="Set automatically from the pricing type"
         />
@@ -248,6 +273,7 @@ export function CarrierForm({
           className="sm:col-span-2"
         />
       </FormSection>
+      </div>
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur-sm sm:px-6 lg:pl-[calc(248px+2rem)] lg:pr-8">
         <div className="flex items-center justify-end gap-2">

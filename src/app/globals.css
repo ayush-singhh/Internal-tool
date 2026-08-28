@@ -47,73 +47,88 @@
   --radius-card: 0.625rem;
 }
 
-html {
-  color-scheme: light;
+/* Everything below sits in a Tailwind layer on purpose.
+   Unlayered CSS beats *every* @layer, so an unlayered `.field` silently overrides
+   utilities like `pl-8` and `w-36` wherever they touch the same property. Putting
+   these in `base` / `components` / `utilities` restores the normal precedence:
+   a utility on the element always wins. */
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink-900);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Consistent keyboard focus everywhere, including inside dark surfaces. */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Thin scrollbars so dense tables don't lose rows to chrome. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-300) transparent;
+  }
 }
 
-body {
-  background: var(--color-canvas);
-  color: var(--color-ink-900);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
+@layer components {
+  /* Form controls: one look, defined once, rather than repeated class soup. */
+  .field {
+    width: 100%;
+    border: 1px solid var(--color-line-strong);
+    background: var(--color-surface);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.875rem;
+    line-height: 1.35rem;
+    color: var(--color-ink-900);
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .field::placeholder { color: var(--color-ink-400); }
+  .field:hover:not(:disabled) { border-color: var(--color-ink-400); }
+  .field:focus {
+    outline: none;
+    border-color: var(--color-brand-500);
+    box-shadow: 0 0 0 3px rgb(58 103 172 / 0.14);
+  }
+  .field:disabled { background: var(--color-ink-50); color: var(--color-ink-500); }
+  .field[aria-invalid="true"] {
+    border-color: #dc2626;
+    box-shadow: 0 0 0 3px rgb(220 38 38 / 0.12);
+  }
+  select.field {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%236b7585' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    padding-right: 2rem;
+  }
+  .field-sm {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.82rem;
+  }
+  .label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--color-ink-600);
+    margin-bottom: 0.3rem;
+  }
 }
 
-/* Numbers in tiles, tables and reports must align vertically. */
-.tnum {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
+@layer utilities {
+  /* Numbers in tiles, tables and reports must align vertically. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
 }
-
-/* Consistent keyboard focus everywhere, including inside dark surfaces. */
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-brand-500);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-/* Form controls: one look, defined once, rather than repeated class soup. */
-.field {
-  width: 100%;
-  border: 1px solid var(--color-line-strong);
-  background: var(--color-surface);
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.7rem;
-  font-size: 0.875rem;
-  line-height: 1.35rem;
-  color: var(--color-ink-900);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
-}
-.field::placeholder { color: var(--color-ink-400); }
-.field:hover:not(:disabled) { border-color: var(--color-ink-400); }
-.field:focus {
-  outline: none;
-  border-color: var(--color-brand-500);
-  box-shadow: 0 0 0 3px rgb(58 103 172 / 0.14);
-}
-.field:disabled { background: var(--color-ink-50); color: var(--color-ink-500); }
-.field[aria-invalid="true"] {
-  border-color: #dc2626;
-  box-shadow: 0 0 0 3px rgb(220 38 38 / 0.12);
-}
-select.field {
-  appearance: none;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%236b7585' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.6rem center;
-  padding-right: 2rem;
-}
-.field-sm {
-  padding: 0.4rem 0.7rem;
-  font-size: 0.82rem;
-}
-.label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--color-ink-600);
-  margin-bottom: 0.3rem;
-}
-
-/* Thin scrollbars so dense tables don't lose rows to chrome. */
-* { scrollbar-width: thin; scrollbar-color: var(--color-ink-300) transparent; }
