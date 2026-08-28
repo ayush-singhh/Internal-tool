@@ -126,14 +126,20 @@ chroma floor and 3:1 contrast) and identity comes from the direct text label on 
 The small status dot beside a label echoes the badge language used elsewhere but is never
 the only carrier of meaning.
 
-## Phase 8 — Reports & Export 🔨
+## Phase 8 — Reports & Export ✅
 
-- [ ] Thirteen report views with date filtering
-- [ ] CSV export of any report
-- [ ] CSV export of the filtered carrier list
-- [ ] Tests: CSV serializer round-trip
+- [x] Thirteen reports grouped as Team / Portfolio / Commercial / Movement
+- [x] Date filtering, applied to the date that actually matters per report — offboarding
+      reports filter on when a carrier *left*, not when it joined
+- [x] Reports that describe the present (active workload) say so instead of pretending
+      the date range applies
+- [x] Every report renders as a chart **and** a table, so no figure is gated behind colour
+- [x] CSV export of any report; CSV export of the filtered carrier list (Phase 3)
+- [x] Tests: 12 cases including a CSV round trip over **all thirteen** reports
+      — **88/88 passing overall**
+- [x] `npm run build` clean
 
-## Phase 9 — Import ⬜
+## Phase 9 — Import 🔨
 
 - [ ] CSV upload + RFC 4180 parser
 - [ ] Column mapping UI with auto-suggested matches

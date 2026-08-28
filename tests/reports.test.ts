@@ -1,0 +1,194 @@
+import { test, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+const DB = path.join(tmpdir(), `carrier-hub-reports-${process.pid}.db`);
+process.env.CARRIER_DB_PATH = DB;
+
+let db: typeof import("../src/lib/db.ts");
+let reports: typeof import("../src/lib/reports.ts");
+let write: typeof import("../src/lib/carrier-write.ts");
+let off: typeof import("../src/lib/offboard-write.ts");
+let csv: typeof import("../src/lib/csv.ts");
+let ids: Record<string, number>;
+let alice: number;
+let bob: number;
+
+before(async () => {
+  db = await import("../src/lib/db.ts");
+  reports = await import("../src/lib/reports.ts");
+  write = await import("../src/lib/carrier-write.ts");
+  off = await import("../src/lib/offboard-write.ts");
+  csv = await import("../src/lib/csv.ts");
+
+  const now = new Date().toISOString();
+  for (const [n, e] of [["Alice", "ra@x.test"], ["Bob", "rb@x.test"]]) {
+    db.run(
+      `INSERT INTO users (name, email, password_hash, role, active, created_at, updated_at)
+       VALUES (?, ?, 'x', 'dispatcher', 1, ?, ?)`, [n, e, now, now],
+    );
+  }
+  alice = db.get<{ id: number }>("SELECT id FROM users WHERE email='ra@x.test'")!.id;
+  bob = db.get<{ id: number }>("SELECT id FROM users WHERE email='rb@x.test'")!.id;
+
+  const look = (k: string, v: string) =>
+    db.get<{ id: number }>("SELECT id FROM lookups WHERE kind=? AND value=?", [k, v])!.id;
+  ids = {
+    active: look("status", "active"),
+    inactive: look("status", "inactive"),
+    royal: look("plan", "royal"),
+    imperial: look("plan", "imperial"),
+    referral: look("lead_source", "referral"),
+    coldCall: look("lead_source", "cold_call"),
+    reason: look("offboard_reason", "rates_too_low"),
+  };
+
+  let n = 0;
+  const make = (fields: Record<string, unknown>) =>
+    write.createCarrier(
+      {
+        legal_name: `Report Fixture ${++n}`,
+        mc_number: String(500000 + n),
+        status_id: ids.active,
+        ...fields,
+      },
+      alice,
+    );
+
+  // 3 active for Alice, 2 active for Bob, 1 inactive for Alice.
+  make({ dispatcher_id: alice, onboarding_date: "2025-01-10", plan_id: ids.royal, lead_source_id: ids.referral, truck_count: 1, percentage: 9 });
+  make({ dispatcher_id: alice, onboarding_date: "2025-06-15", plan_id: ids.royal, lead_source_id: ids.referral, truck_count: 4, percentage: 11 });
+  make({ dispatcher_id: alice, onboarding_date: "2026-02-20", plan_id: ids.imperial, lead_source_id: ids.coldCall, truck_count: 30, percentage: 14 });
+  make({ dispatcher_id: bob, onboarding_date: "2025-03-05", plan_id: ids.royal, lead_source_id: ids.coldCall, truck_count: 8, percentage: 16 });
+  make({ dispatcher_id: bob, onboarding_date: "2026-01-11", plan_id: ids.imperial, lead_source_id: ids.referral, truck_count: 60 });
+  const leaver = make({ dispatcher_id: alice, onboarding_date: "2025-02-02", plan_id: ids.royal, lead_source_id: ids.referral, truck_count: 2 });
+  off.offboardCarrier(
+    {
+      carrierId: leaver, statusId: ids.inactive, offboardedOn: "2026-03-15",
+      reasonId: ids.reason, categoryId: null, finalStatusId: null, handledBy: alice,
+      lastLoadDate: null, outstandingBalance: null, subscriptionCancelled: false,
+      agreementClosed: false, canReturn: true, notes: null,
+    },
+    alice,
+  );
+});
+
+after(() => {
+  for (const s of ["", "-wal", "-shm"]) rmSync(`${DB}${s}`, { force: true });
+});
+
+const rowsOf = (key: Parameters<typeof reports.runReport>[0], range = {}) =>
+  new Map(reports.runReport(key, range).rows.map((r) => [r.label, r.value]));
+
+test("all thirteen reports are defined and each one runs", () => {
+  assert.equal(reports.REPORTS.length, 13);
+  for (const def of reports.REPORTS) {
+    const result = reports.runReport(def.key);
+    assert.equal(result.def.key, def.key);
+    assert.ok(Array.isArray(result.rows), `${def.key} returns rows`);
+  }
+});
+
+test("an unknown report key falls back instead of throwing", () => {
+  assert.equal(reports.parseReportKey("../../etc/passwd"), "active_by_dispatcher");
+  assert.equal(reports.parseReportKey(undefined), "active_by_dispatcher");
+  assert.equal(reports.parseReportKey("by_status"), "by_status");
+});
+
+test("active-by-dispatcher counts only active carriers", () => {
+  const rows = rowsOf("active_by_dispatcher");
+  assert.equal(rows.get("Alice"), 3, "the offboarded one is excluded");
+  assert.equal(rows.get("Bob"), 2);
+});
+
+test("breakdowns total to the number of carriers they cover", () => {
+  const status = reports.runReport("by_status");
+  assert.equal(status.total, 6, "all six carriers");
+  const byPlan = reports.runReport("by_plan");
+  assert.equal(byPlan.total, 6);
+});
+
+test("a date range narrows a breakdown", () => {
+  const all = rowsOf("by_lead_source");
+  assert.equal(all.get("Referral"), 4);
+
+  const only2025 = rowsOf("by_lead_source", { from: "2025-01-01", to: "2025-12-31" });
+  assert.equal(only2025.get("Referral"), 3, "the 2026 referral is excluded");
+  assert.equal(only2025.get("Cold Call"), 1);
+
+  const narrow = reports.runReport("by_lead_source", { from: "2026-01-01" });
+  assert.equal(narrow.total, 2);
+});
+
+test("an empty range yields an empty report rather than an error", () => {
+  const result = reports.runReport("by_plan", { from: "2030-01-01", to: "2030-12-31" });
+  assert.deepEqual(result.rows, []);
+  assert.equal(result.total, 0);
+});
+
+test("fleet size groups into bands and accounts for every carrier", () => {
+  const rows = rowsOf("by_fleet_size");
+  assert.equal(rows.get("1 truck"), 1);
+  assert.equal(rows.get("2–5"), 2);
+  assert.equal(rows.get("6–10"), 1);
+  assert.equal(rows.get("26–50"), 1);
+  assert.equal(rows.get("51+"), 1);
+  assert.equal(reports.runReport("by_fleet_size").total, 6);
+});
+
+test("percentage bands cover only carriers with a percentage", () => {
+  const rows = rowsOf("by_percentage");
+  assert.equal(rows.get("Under 8%"), 0);
+  assert.equal(rows.get("8–10%"), 1);
+  assert.equal(rows.get("10–12%"), 1);
+  assert.equal(rows.get("12–15%"), 1);
+  assert.equal(rows.get("Over 15%"), 1);
+  assert.equal(reports.runReport("by_percentage").total, 4, "the carrier with no rate is excluded");
+});
+
+test("monthly trends return a continuous series with no gaps", () => {
+  const result = reports.runReport("monthly_onboarding");
+  assert.ok(result.trend, "trend reports carry a series");
+  const months = result.trend!.map((p) => p.month);
+  assert.deepEqual([...months].sort(), months, "months are in order");
+  for (let i = 1; i < months.length; i++) {
+    assert.notEqual(months[i], months[i - 1], "no duplicate months");
+  }
+  assert.ok(result.trend!.every((p) => Number.isInteger(p.value)), "zero-filled, never undefined");
+});
+
+test("offboarding reasons respect the offboarding date, not the onboarding date", () => {
+  assert.equal(rowsOf("offboarding_reasons").get("Rates Too Low"), 1);
+  assert.equal(
+    reports.runReport("offboarding_reasons", { from: "2026-03-01", to: "2026-03-31" }).total, 1,
+  );
+  assert.equal(
+    reports.runReport("offboarding_reasons", { from: "2025-01-01", to: "2025-12-31" }).total, 0,
+    "filtered on when they left, not when they joined",
+  );
+});
+
+test("retention reports the share still with us", () => {
+  const rows = rowsOf("retention");
+  assert.equal(rows.get("Carriers ever onboarded"), 6);
+  assert.equal(rows.get("Still with us"), 5);
+  assert.equal(rows.get("Departed"), 1);
+  assert.equal(rows.get("Retention rate (%)"), 83.3);
+});
+
+test("every report exports as a CSV that parses back to the same numbers", () => {
+  for (const def of reports.REPORTS) {
+    const result = reports.runReport(def.key);
+    const text = csv.toCsv(reports.reportToCsvRows(result));
+    const parsed = csv.parseCsv(text);
+
+    assert.deepEqual(parsed[0], [def.dimension, "Carriers"], `${def.key} header`);
+    assert.equal(parsed.length - 1, result.rows.length, `${def.key} row count`);
+    for (let i = 0; i < result.rows.length; i++) {
+      assert.equal(parsed[i + 1]![0], result.rows[i]!.label, `${def.key} label ${i}`);
+      assert.equal(Number(parsed[i + 1]![1]), result.rows[i]!.value, `${def.key} value ${i}`);
+    }
+  }
+});
