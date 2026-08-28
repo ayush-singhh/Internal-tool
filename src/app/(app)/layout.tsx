@@ -1,5 +1,6 @@
 import { requireOrg } from "@/lib/auth";
 import { navCounts } from "@/lib/nav";
+import { can } from "@/lib/permissions";
 import { AppShell } from "@/components/app-shell";
 import type { Role } from "@/lib/constants";
 
@@ -13,6 +14,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     <AppShell
       user={{ name: user.name, email: user.email, role: user.role as Role }}
       counts={navCounts(org)}
+      canAdmin={can(user, "settings:manage")}
     >
       {children}
     </AppShell>

@@ -52,21 +52,24 @@ function initials(name: string) {
 export function AppShell({
   user,
   counts,
+  canAdmin,
   children,
 }: {
   user: { name: string; email: string; role: Role };
   counts: NavCounts;
+  /** Decided by the layout with `can()`, so a new role never has to be remembered here. */
+  canAdmin: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const isAdmin = user.role === "admin";
+
 
   const nav = (
     <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
       {GROUPS.map((group, gi) => {
         const items = group.items.filter(
-          (item) => isAdmin || !["/team", "/settings", "/import"].includes(item.href),
+          (item) => canAdmin || !["/team", "/settings", "/import"].includes(item.href),
         );
         if (items.length === 0) return null;
         return (

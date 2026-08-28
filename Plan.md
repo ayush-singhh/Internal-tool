@@ -238,8 +238,23 @@ and `MIGRATION-PLAN.md`.
 - [x] Tests: legacy verify + rehash flagging + the guard accepts the in-place upgrade —
       **172 passing**; `npm run build` clean
 
+### Two-factor authentication (TOTP) ✅
+- [x] Migration 7: `users.mfa_secret/mfa_activated_at/mfa_last_step`, `sessions.mfa_pending`,
+      `mfa_recovery_codes`
+- [x] `totp.ts` — RFC 6238 in ~40 lines of `node:crypto`, pinned to the RFC's own vectors
+- [x] Enrolment confirmed by a code before it activates; QR rendered server-side to a
+      `data:` URI, so the secret is never shipped as text to an unenrolled browser
+- [x] Ten single-use recovery codes (80 bits, SHA-256 stored), shown exactly once
+- [x] Replay prevention — a time step is accepted once; codes rate-limited on the existing
+      login throttle
+- [x] Pending sessions: a password on an enrolled account opens nothing until the code
+- [x] `login.ts` split out of `auth.ts` so the sign-in rules are testable (AI Rules §8) —
+      which also covers the argon2 rehash-on-login path
+- [x] Fixed on the way: `can()` never knew the `owner` role, so every new tenant's owner
+      was locked out of Settings, Team and Import
+- [x] Tests: **198 passing**; verified over HTTP that a pending session opens no page
+
 ### Still to do (later phases)
-- [ ] TOTP MFA + recovery codes (argon2 + qrcode already installed)
 - [ ] Secure signup + organisation creation + email verification (SMTP)
 - [ ] Invitations (single-use, tenant-bound tokens)
 - [ ] RBAC UI for owner/admin/member

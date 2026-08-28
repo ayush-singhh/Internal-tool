@@ -1,13 +1,17 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getCurrentUser, isFirstRun } from "@/lib/auth";
+import { getCurrentUser, getPendingLogin, isFirstRun } from "@/lib/auth";
 import { Logo } from "@/components/logo";
-import { LoginForm } from "./login-form";
+import { LoginForm, VerifyForm } from "./login-form";
+import { signOutAction } from "@/lib/session-actions";
 
 export const metadata: Metadata = { title: "Sign in" };
 
 export default async function LoginPage() {
   if (await getCurrentUser()) redirect("/");
+  // A password that has been accepted but not yet confirmed by a code. Same route, so
+  // there is no second URL that has to be guarded separately.
+  const pending = await getPendingLogin();
   const firstRun = isFirstRun();
 
   return (
@@ -53,20 +57,30 @@ export default async function LoginPage() {
           </div>
 
           <h2 className="text-xl font-semibold tracking-tight text-ink-900">
-            Sign in to Carrier Hub
+            {pending ? "One more step" : "Sign in to Carrier Hub"}
           </h2>
           <p className="mt-1.5 mb-7 text-sm text-ink-500">
-            Use the account issued to you by your administrator.
+            {pending
+              ? `Two-factor authentication is on for ${pending.email}.`
+              : "Use the account issued to you by your administrator."}
           </p>
 
-          <LoginForm />
+          {pending ? <VerifyForm /> : <LoginForm />}
 
-          <p className="mt-5 text-xs leading-relaxed text-ink-500">
-            Forgotten your password? Ask an administrator to send you a reset link — they
-            can issue one from the Team page without ever seeing your password.
-          </p>
+          {pending ? (
+            <form action={signOutAction} className="mt-5">
+              <button type="submit" className="text-xs text-ink-500 underline hover:text-ink-800">
+                Cancel and sign in as someone else
+              </button>
+            </form>
+          ) : (
+            <p className="mt-5 text-xs leading-relaxed text-ink-500">
+              Forgotten your password? Ask an administrator to send you a reset link — they
+              can issue one from the Team page without ever seeing your password.
+            </p>
+          )}
 
-          {firstRun && (
+          {firstRun && !pending && (
             <div className="mt-7 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-xs leading-relaxed text-amber-900">
               <p className="font-semibold">First run</p>
               <p className="mt-1">

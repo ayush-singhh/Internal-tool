@@ -309,6 +309,38 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 7,
+    name: "TOTP multi-factor authentication",
+    up: (db) => {
+      // The secret and its activation live on the user row: one row per user either way,
+      // and every read of it already happens while holding a user id.
+      addColumn(db, "users", "mfa_secret", "TEXT");
+      addColumn(db, "users", "mfa_activated_at", "TEXT");
+      // The last accepted time step. A code is valid for 30 seconds, which is long enough
+      // to be replayed by someone watching the wire, so a step is accepted only once.
+      addColumn(db, "users", "mfa_last_step", "INTEGER");
+
+      // A session that has passed the password but not the second factor. It exists so the
+      // second step has somewhere to hold state, and getCurrentUser() refuses it, so it
+      // grants nothing at all until the code is confirmed.
+      addColumn(db, "sessions", "mfa_pending", "INTEGER NOT NULL DEFAULT 0");
+
+      // Single-use codes for a lost phone. Stored as SHA-256 like a reset token: the code
+      // itself carries 80 bits of entropy, so the digest is not worth attacking offline,
+      // and a lookup by digest stays a single indexed read.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+          code_hash  TEXT PRIMARY KEY,
+          user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL,
+          used_at    TEXT
+        )`);
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_recovery_user ON mfa_recovery_codes (user_id)",
+      );
+    },
+  },
 ];
 
 export function addColumn(

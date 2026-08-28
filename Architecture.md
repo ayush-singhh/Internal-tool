@@ -39,7 +39,10 @@ src/
     constants.ts   controlled vocabularies, roles, default settings
     db.ts          connection, schema, seeding, query helpers (all/get/run)
     password.ts    argon2id hash + verify (also verifies retired scrypt hashes)
+    login.ts       what signing in decides: lock, hash check, rehash, second factor due
     auth.ts        session create/read/destroy, requireUser, permission checks
+    totp.ts        RFC 6238 codes + base32 (pure, no database)
+    mfa.ts         enrolment, the sign-in check, recovery codes
     carriers.ts    carrier queries, mutations, activity logging
     format.ts      phone / date / pricing display formatting
     csv.ts         CSV parse + serialize
@@ -130,7 +133,22 @@ append-only — nothing in the UI edits or deletes it.
   in `password.ts` is the discriminator.
 - Sessions: opaque 256-bit random IDs in HTTP-only, `SameSite=Lax` cookies, with a
   server-side expiry row. Logout deletes the row.
-- Authorization is re-checked inside every Server Action.
+- **Two-factor authentication (TOTP)**, per user, self-service. A password on an enrolled
+  account buys only a `mfa_pending` session: `getCurrentUser()` refuses one, so it opens
+  no page and reads no data until a code confirms it, and it expires in 10 minutes.
+  Confirming issues a *new* session id rather than promoting the pending one.
+  - The secret is confirmed by a code before activation, so a scan that silently failed
+    cannot lock its owner out.
+  - A time step is accepted once (`users.mfa_last_step` only moves forward), so a code
+    seen in flight cannot be replayed inside its own 30 seconds.
+  - Ten single-use recovery codes, 80 bits each, stored as SHA-256 like a reset token.
+  - The code step runs on the same throttle counters as the password step, so guessing
+    six digits is bounded by the account lock.
+  - The QR is rendered to a `data:` URI on the server: the secret reaches the browser
+    only as that image and the base32 string for manual entry, and only while enrolling.
+- Authorization is re-checked inside every Server Action. `can()` in `permissions.ts` is
+  the only place a role is turned into a decision — `owner` holds everything `admin` does,
+  and the shell asks `can()` rather than comparing role strings.
 - All SQL uses bound parameters.
 - The database file lives outside the served tree and is git-ignored.
 

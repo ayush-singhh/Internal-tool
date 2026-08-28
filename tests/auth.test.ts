@@ -36,6 +36,7 @@ const user = (id: number, role: SessionUser["role"]): SessionUser => ({
   id, organization_id: 1, role, name: "T", email: "t@x.com", active: 1,
 });
 
+const owner = user(0, "owner");
 const admin = user(1, "admin");
 const dispatcher = user(2, "dispatcher");
 const manager = user(3, "account_manager");
@@ -49,6 +50,15 @@ test("admin can do everything", () => {
     assert.equal(can(admin, a), true, a);
   }
   assert.equal(can(admin, "carrier:edit", theirs), true);
+});
+
+test("an owner holds everything an admin does", () => {
+  // Tenancy introduced this role and every new organisation's first user has it, so an
+  // owner who cannot reach Settings or Team is an organisation nobody can administer.
+  for (const a of ["carrier:delete", "import:run", "team:manage", "settings:manage"] as const) {
+    assert.equal(can(owner, a), true, a);
+  }
+  assert.equal(can(owner, "carrier:edit", theirs), true);
 });
 
 test("everyone signed in can view and export", () => {

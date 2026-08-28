@@ -6,7 +6,7 @@ import {
   setPasswordAction, type AdminState,
 } from "@/lib/admin-actions";
 import { issueResetAction, type IssueState } from "@/lib/reset-actions";
-import { ROLE_LABELS, type Role } from "@/lib/constants";
+import { ROLE_LABELS, ROLES, type Role } from "@/lib/constants";
 import { Badge } from "./ui";
 import { Icon } from "./icons";
 import { Text } from "./form-fields";
@@ -73,7 +73,10 @@ export function TeamManager({ team, currentUserId }: { team: TeamRow[]; currentU
   const editRef = useRef<HTMLDialogElement>(null);
   const pwRef = useRef<HTMLDialogElement>(null);
 
-  const activeAdmins = team.filter((t) => t.role === "admin" && t.active).length;
+  // Mirrors setTeamMemberActive: an organisation must keep one active owner or admin.
+  const activeAdmins = team.filter(
+    (t) => (t.role === ROLES.ADMIN || t.role === ROLES.OWNER) && t.active,
+  ).length;
 
   return (
     <div className="space-y-4">
@@ -151,9 +154,9 @@ export function TeamManager({ team, currentUserId }: { team: TeamRow[]; currentU
                       <input type="hidden" name="active" value={m.active ? "0" : "1"} />
                       <button
                         type="submit"
-                        disabled={m.active === 1 && m.role === "admin" && activeAdmins <= 1}
+                        disabled={m.active === 1 && (m.role === ROLES.ADMIN || m.role === ROLES.OWNER) && activeAdmins <= 1}
                         title={
-                          m.active === 1 && m.role === "admin" && activeAdmins <= 1
+                          m.active === 1 && (m.role === ROLES.ADMIN || m.role === ROLES.OWNER) && activeAdmins <= 1
                             ? "The last active administrator cannot be deactivated"
                             : undefined
                         }

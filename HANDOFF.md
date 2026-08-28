@@ -4,7 +4,7 @@ This file is the resume point for a fresh session. It is kept current at the end
 working session. For the full picture read, in order: `PRD.md` → `Architecture.md` →
 `AI Rules.md` → `Plan.md` → `MIGRATION-PLAN.md`.
 
-**Last updated:** 2026-08-28, after the argon2id password migration.
+**Last updated:** 2026-08-28, after TOTP two-factor authentication.
 
 ---
 
@@ -17,7 +17,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 172 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 198 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -27,6 +27,27 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ## What is DONE
 
+### Two-factor authentication (TOTP) ✅
+
+- Self-service in Settings: enrol → scan → **confirm with a code before it activates**
+- `src/lib/totp.ts` is pure RFC 6238 (~40 lines of `node:crypto`), pinned to the RFC's
+  own test vectors; `src/lib/mfa.ts` holds enrolment, the sign-in check and recovery codes
+- A password on an enrolled account creates a **pending** session (`sessions.mfa_pending`,
+  10-minute expiry). `getCurrentUser()` refuses one, so it opens nothing. `/login` renders
+  the code prompt for that browser — same route, no second URL to guard
+- Confirming issues a fresh session id; the pending one is deleted
+- Replay: `users.mfa_last_step` only moves forward, so a code works once
+- 10 recovery codes, 80 bits each, SHA-256 stored, single-use, shown once at activation
+- Code guesses run on the existing login throttle (account + IP)
+- `src/lib/login.ts` was split out of `auth.ts` so the sign-in rules are testable — auth.ts
+  imports `next/headers` and cannot be imported by `node --test`
+
+**Fixed on the way:** `can()` in `permissions.ts` never knew the `owner` role that the
+multi-tenant phase introduced, so every new tenant's owner was locked out of Settings,
+Team and Import. `owner` now holds everything `admin` does, the shell asks `can()` instead
+of comparing role strings, and the team page's "last administrator" guard counts owners
+the way `team.ts` already did.
+
 ### Password hashing — Argon2id ✅
 
 - `src/lib/password.ts` hashes with Argon2id via `@node-rs/argon2`, at the library's
@@ -34,8 +55,7 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 - Old `scrypt$…` hashes still verify, so no existing account is locked out
 - `needsRehash()` flags them; `signIn()` re-hashes to argon2id on the next successful
   login (`src/lib/auth.ts`) — the only moment the plaintext exists
-- `signIn()` itself has no unit test (it imports `next/headers`); the pieces are tested,
-  including that the tenant guard accepts the in-place `UPDATE users` under `systemQuery`
+- Covered end to end by `tests/login.test.ts` once `login.ts` was split out of `auth.ts`
 
 ### Multi-tenant Phase 2 — tenant isolation ✅
 
@@ -61,29 +81,25 @@ Table classification (global / tenant-owned / user-owned) is documented in
 
 In `Plan.md` under "Phase 12 … Still to do". Suggested order:
 
-1. **TOTP MFA + recovery codes.** `qrcode` installed (render the otpauth URI to a data: URI
-   server-side — secret never leaves the server). Enrollment → verify-before-activate →
-   require OTP at login → hashed recovery codes → rate-limited OTP → replay prevention
-   (store last-used step). New `mfa_*` tables via a new migration.
-2. **Secure signup + organisation creation + email verification.** `createOrganization()`
+1. **Secure signup + organisation creation + email verification.** `createOrganization()`
    in `provision.ts` already builds an org+owner+vocabularies atomically. Needs a signup
    route, email verification tokens, and SMTP (see decision 3 below).
-3. **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`).
-4. **Session hardening** — rotation on privilege change, device/session list, revoke.
-5. **RBAC UI** for owner/admin/member.
-6. **Generalised audit log** + rate limiting beyond login (throttle.ts is login-only today).
-7. **Security headers / CSP.**
-8. **Platform support role** — see decision 4.
+2. **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`).
+3. **Session hardening** — rotation on privilege change, device/session list, revoke.
+4. **RBAC UI** for owner/admin/member.
+5. **Generalised audit log** + rate limiting beyond login (throttle.ts is login-only today).
+6. **Security headers / CSP.**
+7. **Platform support role** — see decision 4.
 
 ---
 
 ## Decisions already made (do not re-litigate)
 
 1. **Password hashing:** Argon2id via `@node-rs/argon2` (prebuilt binaries). **Done.**
-2. **TOTP QR:** the `qrcode` package, rendered server-side (installed).
-2. **Email:** hand-rolled pluggable SMTP over `node:tls` behind a `Mailer` interface,
+2. **TOTP QR:** the `qrcode` package, rendered server-side. **Done.**
+3. **Email:** hand-rolled pluggable SMTP over `node:tls` behind a `Mailer` interface,
    configured by `SMTP_URL`; refuse to start in production if unset. (Not built yet.)
-3. **Platform support role:** the owner asked for standing access to look inside any
+4. **Platform support role:** the owner asked for standing access to look inside any
    tenant's data. They requested it be **unlogged and hidden from customers**. That specific
    design (deliberately concealed, tamper-free cross-tenant access to third-party PII) was
    **declined**. What to build instead, agreed as the workable version: **standing,
@@ -126,6 +142,10 @@ never touch `data/carrier-hub.db`**.
 - **`src/lib/auth.ts` cannot be imported by a test** — it imports `next/headers`, which
   does not resolve outside the Next runtime. Logic that needs a test goes in a module
   auth.ts imports, not in auth.ts.
+- **`qrcode` ships no types** — `src/types/qrcode.d.ts` declares the one call used, rather
+  than adding `@types/qrcode`.
+- **Regenerating recovery codes is not built.** Running out means turning the second
+  factor off with the last one and enrolling again.
 - **`carrierNotes` lives in `activity.ts`**, not `notes.ts` (easy to mis-import).
 - **Migration ordering:** migration 5 only creates/backfills an org when data already
   exists; a fresh DB gets its bootstrap org from `seed()` in `db.ts`. Don't make both create one.
@@ -140,9 +160,11 @@ never touch `data/carrier-hub.db`**.
 |---|---|
 | `src/lib/tenant-db.ts` | `Org` class + `tenantTablesLackingScope()` (the guard's predicate) + `TENANT_TABLES` |
 | `src/lib/db.ts` | connection, the fail-closed `guard()`, `systemQuery()`, `all/get/run`, per-org settings helpers |
-| `src/lib/migrations.ts` | versioned migrations incl. 5 (tenancy) and 6 (composite FKs) |
+| `src/lib/migrations.ts` | versioned migrations incl. 5 (tenancy), 6 (composite FKs), 7 (MFA) |
 | `src/lib/provision.ts` | `createOrganization()` + `seedOrganizationData()` — the only place an org is made |
-| `src/lib/auth.ts` | `requireOrg()` → `{ user, org }` from the session |
+| `src/lib/auth.ts` | sessions and cookies: `requireOrg()`, `getPendingLogin()`, `completeSecondFactor()` |
+| `src/lib/login.ts` | the sign-in rules with no request context — the testable half of `signIn()` |
+| `src/lib/totp.ts` / `src/lib/mfa.ts` | RFC 6238 codes / enrolment, the sign-in check, recovery codes |
 | `tests/cross-tenant.test.ts` | the 16-attack adversarial isolation suite |
 | `tests/helpers.ts` | `seedOrg()` / `lookupId()` fixtures for multi-tenant tests |
 

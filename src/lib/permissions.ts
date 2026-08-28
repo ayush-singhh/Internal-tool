@@ -40,7 +40,9 @@ export function can(
   carrier?: CarrierScope | null,
 ): boolean {
   if (!user || !user.active) return false;
-  if (user.role === ROLES.ADMIN) return true;
+  // An owner is the person who created the tenant, so they hold everything an admin
+  // does. Tenancy added the role; this is the only place that decides what it means.
+  if (user.role === ROLES.ADMIN || user.role === ROLES.OWNER) return true;
 
   const assigned =
     !!carrier &&

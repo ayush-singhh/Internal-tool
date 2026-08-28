@@ -4,13 +4,15 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { all, get, run, systemQuery } from "./db.ts";
-import { hashPassword, needsRehash, verifyPassword } from "./password.ts";
+import { passwordStep, secondFactorStep } from "./login.ts";
 import type { SessionUser } from "./permissions.ts";
 import { Org } from "./tenant-db.ts";
-import { checkLogin, describeLockout, recordAttempt } from "./throttle.ts";
 
 const COOKIE = "ch_session";
 const SESSION_DAYS = 14;
+/** How long the half-finished sign-in of an MFA account survives. Long enough to open
+ *  an authenticator app and read a code; short enough that walking away ends it. */
+const MFA_PENDING_MINUTES = 10;
 
 /** Best-effort client address. Trusts the proxy header, which is correct behind one and
  *  harmless without: throttling is defence in depth, not an authorization decision. */
@@ -24,51 +26,29 @@ async function clientIp(): Promise<string | null> {
 export async function signIn(
   email: string,
   password: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const ip = await clientIp();
+): Promise<{ ok: true; mfaRequired: boolean } | { ok: false; error: string }> {
+  const step = passwordStep(email, password, await clientIp());
+  if (!step.ok) return step;
 
-  // Checked before any password work, so a locked account costs no hashing time either.
-  const verdict = checkLogin(email, ip);
-  if (!verdict.allowed) return { ok: false, error: describeLockout(verdict) };
-
-  const user = systemQuery(() =>
-    get<{ id: number; password_hash: string; active: number }>(
-      "SELECT id, password_hash, active FROM users WHERE email = ?",
-      [email.trim().toLowerCase()],
-    ),
-  );
-
-  // Same message either way — don't reveal which addresses exist.
-  const invalid = { ok: false as const, error: "Incorrect email or password." };
-  if (!user || !verifyPassword(password, user.password_hash)) {
-    recordAttempt(email, ip, false);
-    return invalid;
-  }
-  if (!user.active) {
-    recordAttempt(email, ip, false);
-    return { ok: false, error: "This account has been deactivated." };
-  }
-  recordAttempt(email, ip, true);
-
-  // Retire a pre-argon2 hash now, while the plaintext is in hand. A login is the only
-  // moment an old hash can be upgraded, and it happens exactly once per account.
-  if (needsRehash(user.password_hash)) {
-    systemQuery(() =>
-      run("UPDATE users SET password_hash = ? WHERE id = ?", [hashPassword(password), user.id]),
-    );
-  }
-
-  const id = randomBytes(32).toString("hex");
+  // With a second factor on, the password buys only a pending session: getCurrentUser()
+  // refuses it, so it opens no page and reads no data until a code confirms it.
   const now = new Date();
-  const expires = new Date(now.getTime() + SESSION_DAYS * 86400_000);
-  run("INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)", [
-    id,
-    user.id,
-    now.toISOString(),
-    expires.toISOString(),
-  ]);
+  const expires = new Date(
+    now.getTime() + (step.mfaRequired ? MFA_PENDING_MINUTES * 60_000 : SESSION_DAYS * 86400_000),
+  );
+  await issueSession(step.userId, expires, step.mfaRequired);
   run("DELETE FROM sessions WHERE expires_at < ?", [now.toISOString()]);
+  return { ok: true, mfaRequired: step.mfaRequired };
+}
 
+/** Writes a session row and puts its id in the cookie. The id is fresh every time, so
+ *  completing MFA replaces the pending id rather than promoting it. */
+async function issueSession(userId: number, expires: Date, pending: boolean): Promise<string> {
+  const id = randomBytes(32).toString("hex");
+  run(
+    "INSERT INTO sessions (id, user_id, created_at, expires_at, mfa_pending) VALUES (?, ?, ?, ?, ?)",
+    [id, userId, new Date().toISOString(), expires.toISOString(), pending ? 1 : 0],
+  );
   (await cookies()).set(COOKIE, id, {
     httpOnly: true,
     sameSite: "lax",
@@ -76,6 +56,48 @@ export async function signIn(
     path: "/",
     expires,
   });
+  return id;
+}
+
+export type PendingLogin = { sessionId: string; userId: number; email: string; name: string };
+
+/** The half-finished sign-in this browser is holding, if any. Drives the code prompt. */
+export async function getPendingLogin(): Promise<PendingLogin | null> {
+  const id = (await cookies()).get(COOKIE)?.value;
+  if (!id) return null;
+  const row = systemQuery(() =>
+    get<{ user_id: number; email: string; name: string; expires_at: string }>(
+      `SELECT s.user_id, s.expires_at, u.email, u.name
+         FROM sessions s JOIN users u ON u.id = s.user_id
+        WHERE s.id = ? AND s.mfa_pending = 1`,
+      [id],
+    ),
+  );
+  if (!row) return null;
+  if (new Date(row.expires_at) < new Date()) {
+    run("DELETE FROM sessions WHERE id = ?", [id]);
+    return null;
+  }
+  return { sessionId: id, userId: row.user_id, email: row.email, name: row.name };
+}
+
+/**
+ * The second half of an MFA sign-in. Throttled on the same counters as the password
+ * step, so guessing six digits is limited by the account lock, not by how fast codes
+ * can be posted.
+ */
+export async function completeSecondFactor(
+  code: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const pending = await getPendingLogin();
+  if (!pending) return { ok: false, error: "That sign-in expired. Start again." };
+
+  const step = secondFactorStep(pending.userId, pending.email, code, await clientIp());
+  if (!step.ok) return step;
+
+  // A fresh id: the one issued before the code was confirmed never becomes a full session.
+  await issueSession(pending.userId, new Date(Date.now() + SESSION_DAYS * 86400_000), false);
+  run("DELETE FROM sessions WHERE id = ?", [pending.sessionId]);
   return { ok: true };
 }
 
@@ -96,7 +118,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     get<SessionUser & { expires_at: string }>(
       `SELECT u.id, u.organization_id, u.name, u.email, u.role, u.active, s.expires_at
          FROM sessions s JOIN users u ON u.id = s.user_id
-        WHERE s.id = ?`,
+        WHERE s.id = ? AND s.mfa_pending = 0`,
       [id],
     ),
   );
