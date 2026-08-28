@@ -5,6 +5,9 @@ phase to finish. Status is updated as part of the phase it describes.
 
 Legend: ✅ done · 🔨 in progress · ⬜ not started
 
+**All ten phases complete.** 126 tests passing, production build clean, permission matrix
+verified over HTTP for every role.
+
 ---
 
 ## Phase 0 — Foundation ✅
@@ -160,13 +163,22 @@ midnight, and `toISOString()` then rolls the calendar day backwards in any timez
 of UTC — which would have silently shifted every named-month date in the real migration.
 Now rebuilt from local components and verified identical across UTC-8 → UTC+14.
 
-## Phase 10 — Team & Settings 🔨
+## Phase 10 — Team & Settings ✅
 
-- [ ] Team list with role, status and assigned carrier counts
-- [ ] Create/edit team member, deactivate, reset password (admin only)
-- [ ] Settings: Needs Attention thresholds, company name
-- [ ] Settings: manage lookup vocabularies
-- [ ] Final pass: permission matrix verified end to end, `npm run build` clean
+- [x] Team list with role, active state and live assigned-carrier counts
+- [x] Create / edit / deactivate / reactivate a team member, set a password (admin only)
+- [x] **The last active administrator cannot be deactivated or demoted** — the lockout guard
+- [x] Deactivating revokes sessions immediately but keeps the account and its history,
+      and leaves their carriers assigned until someone reassigns them
+- [x] Changing your own password keeps you signed in here and signs out everywhere else
+- [x] Settings: Needs Attention thresholds and company name, with validation and
+      "restore defaults"
+- [x] Settings: retire / restore any dropdown value, with usage counts — a retired value
+      disappears from new records but stays on the carriers already using it
+- [x] Tests: 16 cases — **126/126 passing overall**
+- [x] Permission matrix verified end to end over HTTP across all four roles
+- [x] `npm run build` clean
+- [x] README written for the people who have to run this
 
 ---
 
