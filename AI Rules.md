@@ -87,6 +87,16 @@ Needs Attention rules, pricing formatting — leaves one runnable check behind:
 a small `node --test` file under `tests/`. No framework, no fixtures, no
 per-function suites.
 
+**Write logic goes in a plain module; the Server Action is a thin auth wrapper.**
+`requireUser()` needs a request context that `node --test` does not have, so a mutation
+buried inside an action cannot be tested. Put it in `src/lib/<thing>.ts` taking an explicit
+`userId`, and let `src/lib/<thing>-actions.ts` authenticate and delegate
+(`notes.ts` / `note-actions.ts` is the reference pair).
+
+Tests run with `node --conditions=react-server` so `server-only` resolves, and set
+`CARRIER_DB_PATH` to a temp file before importing anything — **tests never touch
+`data/carrier-hub.db`**.
+
 ## 9. Keep the docs honest
 
 Finishing a phase means updating `Plan.md` in the same change. If a decision in

@@ -63,15 +63,18 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started
 - `ORDER BY ... DESC COLLATE NOCASE` is invalid SQLite → collation now precedes direction
 - A corrupt column cookie collapsed the table to one column → falls back to defaults
 
-## Phase 4 — Carrier Profile 🔨
+## Phase 4 — Carrier Profile ✅
 
-- [ ] Profile page: Overview, Contact, Regulatory/Equipment, Onboarding, Commercial
-- [ ] Offboarding section, rendered only when a record exists
-- [ ] Internal notes — add, list, attribute, timestamp
-- [ ] Activity history timeline with date, time and user
-- [ ] Review-flag banner for import-flagged records
+- [x] Profile page: Overview, Contact, Regulatory & Equipment, Onboarding, Commercial, Record
+- [x] Offboarding section rendered only for exited carriers — verified absent on active ones
+- [x] Internal notes — add, list, attribute, timestamp, mark important (pins + logs)
+- [x] Activity history timeline with date, time, user and old → new value diffs
+- [x] Review-flag banner for import-flagged records
+- [x] Write logic split from Server Actions (`notes.ts` vs `note-actions.ts`) so it is
+      testable without request context — the pattern Phase 5 reuses for carrier writes
+- [x] Tests: 8 note/activity cases against a throwaway database — **25/25 passing overall**
 
-## Phase 5 — Add / Edit Carrier ⬜
+## Phase 5 — Add / Edit Carrier 🔨
 
 - [ ] Nine-section create form with dropdowns, date pickers, auto-formatting
 - [ ] Server-side validation for every rule in PRD §5
