@@ -123,10 +123,19 @@ test("status_changed_at only moves when the status actually moves", () => {
   const original = carriers.getCarrier(id)!.status_changed_at;
 
   write.updateCarrier(id, { owner_name: "Someone Else" }, userA);
-  assert.equal(carriers.getCarrier(id)!.status_changed_at, original, "unchanged by other edits");
+  assert.equal(
+    carriers.getCarrier(id)!.status_changed_at, original,
+    "unchanged by an unrelated edit",
+  );
 
   write.updateCarrier(id, { status_id: ids.active }, userA);
-  assert.notEqual(carriers.getCarrier(id)!.status_changed_at, original);
+  const afterStatusChange = carriers.getCarrier(id)!;
+  // Asserting the invariant rather than "the string differs": two writes can land in
+  // the same millisecond, which would make a timestamp comparison flaky.
+  assert.equal(
+    afterStatusChange.status_changed_at, afterStatusChange.updated_at,
+    "a status change stamps status_changed_at with the same instant as the edit",
+  );
 });
 
 test("each kind of change is filed under the right activity type", () => {

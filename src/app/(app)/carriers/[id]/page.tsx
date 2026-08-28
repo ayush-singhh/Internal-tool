@@ -7,7 +7,8 @@ import { getOffboarding } from "@/lib/offboarding";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { OFFBOARDING_STATUSES } from "@/lib/constants";
-import { lookup } from "@/lib/lookups";
+import { lookup, options as lookupOptions, idsOf } from "@/lib/lookups";
+import { all } from "@/lib/db";
 import {
   formatDate, formatDateTime, formatMoney, formatPhone, formatPricing, pluralize,
 } from "@/lib/format";
@@ -15,6 +16,7 @@ import { Badge, Card, CardHeader, Field } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { CarrierNotes } from "@/components/carrier-notes";
 import { ActivityTimeline } from "@/components/activity-timeline";
+import { StatusDialog } from "@/components/status-dialog";
 
 export async function generateMetadata(
   props: PageProps<"/carriers/[id]">,
@@ -60,6 +62,19 @@ export default async function CarrierProfilePage(props: PageProps<"/carriers/[id
   const isExited = OFFBOARDING_STATUSES.includes(d.status?.value ?? "");
 
   const editable = can(user, "carrier:edit", carrier);
+  const canOffboard = can(user, "carrier:offboard", carrier);
+
+  const toOptions = (kind: Parameters<typeof lookupOptions>[0]) =>
+    lookupOptions(kind).map((l) => ({ id: l.id, label: l.label, value: l.value }));
+  const statusOptions = {
+    status: toOptions("status"),
+    users: all<{ id: number; name: string }>(
+      "SELECT id, name FROM users WHERE active = 1 ORDER BY name",
+    ).map((u) => ({ id: u.id, label: u.name })),
+    offboard_reason: toOptions("offboard_reason"),
+    offboard_category: toOptions("offboard_category"),
+    final_status: toOptions("final_status"),
+  };
   const pricing = formatPricing({
     pricingType: d.pricingType?.label ?? null,
     planName: null,
@@ -98,6 +113,17 @@ export default async function CarrierProfilePage(props: PageProps<"/carriers/[id
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {canOffboard && (
+            <StatusDialog
+              carrierId={carrier.id}
+              currentStatusId={carrier.status_id}
+              currentStatusLabel={d.status?.label ?? "No status"}
+              exitStatusIds={idsOf("status", OFFBOARDING_STATUSES)}
+              options={statusOptions}
+              currentUserId={user.id}
+              existing={offboarding ?? null}
+            />
+          )}
           {editable && (
             <Link
               href={`/carriers/${carrier.id}/edit`}

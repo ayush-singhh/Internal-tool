@@ -91,15 +91,22 @@ Legend: ✅ done · 🔨 in progress · ⬜ not started
       detection, patch isolation, activity typing — **54/54 passing overall**
 - [x] `npm run build` clean
 
-## Phase 6 — Status & Offboarding 🔨
+## Phase 6 — Status & Offboarding ✅
 
-- [ ] Status change action with automatic activity entry
-- [ ] Offboarding workflow triggered by the four exit statuses
-- [ ] Full offboarding capture form
-- [ ] Reactivation path back to an active status
-- [ ] Guarantee: offboarding never deletes a carrier
+- [x] Status change action with an automatic, attributed activity entry
+- [x] Offboarding workflow opens automatically for Inactive / Suspended / Blacklisted /
+      Carrier Back-off, inside the same dialog and the same submission
+- [x] Full capture: date, reason, category, handler, final status, last load date,
+      outstanding balance, subscription cancelled, agreement closed, can return, notes
+- [x] Cancelling the subscription in the workflow updates the carrier's subscription field
+- [x] Re-running the workflow revises the record rather than duplicating it
+- [x] Reactivation path logged as its own activity type, keeping the offboarding record
+- [x] Native `<dialog>` — focus trapping, Esc-to-close and backdrop with no library
+- [x] Tests: 11 cases — **65/65 passing overall**, verified stable over 5 consecutive runs
+- [x] **Guaranteed by test: offboarding never deletes a carrier** — the record survives,
+      stays searchable, appears under Offboarded, and leaves the Active count
 
-## Phase 7 — Dashboard ⬜
+## Phase 7 — Dashboard 🔨
 
 - [ ] Eleven live metric tiles
 - [ ] Seven charts (status, dispatcher, account manager, lead source, plan, onboarding
