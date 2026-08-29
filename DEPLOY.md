@@ -129,6 +129,42 @@ through the Import screen or the Add Carrier form.
 - Deleting the demo organisation is a row in `organizations`; everything it owns is
   removed with it by the composite foreign keys.
 
+## Growing on it
+
+The thing that decides everything here is that **the database is a file**. Not a server —
+a file, on a disk, attached to one machine.
+
+**What that costs you.** Two instances writing one SQLite file over a network volume
+corrupts it, so there is exactly one machine, and each deploy has a few seconds of
+downtime while the volume moves to the new one. The limit you will hit is *availability*,
+never throughput: SQLite does thousands of writes a second on a laptop, and a CRM for
+dispatch companies is nowhere near that. Do not move off it because of load. Move off it
+when a few seconds of deploy downtime, or a second region, actually costs you something.
+
+**What it buys you.** Customer two through two hundred share the same container and the
+same database file. Your hosting cost is flat while your revenue is not, and there is no
+per-tenant infrastructure to provision, monitor or forget about. That is the payoff from
+the isolation work — every query is scoped, the guard refuses one that is not, and the
+composite foreign keys mean the database itself will not let one tenant reference another.
+
+**Where it will actually hurt, in order.**
+
+1. **Backups are on the same disk as the thing they back up.** `npm run backup` is sound —
+   `VACUUM INTO`, integrity-checked, reopened and counted before it is accepted — but
+   nothing runs it on a schedule and nothing copies it off the machine. Lose the volume
+   and you lose both. Before there is money involved: a cron job and a copy to somewhere
+   else. This is the single highest-value hour you can spend.
+2. **Nothing tells you when it breaks.** A customer hitting a 500 is invisible from here.
+3. **Deploys are not zero-downtime** and cannot be while the volume is attached to one
+   machine. Deploy when nobody is dispatching.
+4. **A forgotten password is a dead end** for an owner who signed up themselves. First
+   item in `Plan.md`.
+
+**If you do outgrow it**, the move is Postgres, and it is contained on purpose: every
+query lives in `src/lib/*.ts`, pages compose them and never build SQL. Fly.io also has
+LiteFS if you want SQLite replicas instead — the reason to prefer Fly over the others is
+that it leaves both doors open.
+
 ## Fly.io instead
 
 Same Dockerfile, no repo connection:
