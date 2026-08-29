@@ -15,6 +15,36 @@ So it needs a real Node process and a **disk that survives a restart**.
   Fly.io, Render, or your own VPS. The steps below are Railway, because it deploys
   straight from the GitHub repo.
 
+## Hosting it on GitHub itself
+
+**GitHub Pages cannot run this.** Pages serves static files; this app renders on a server
+and writes to a database on every save. There is no configuration that changes that.
+
+**GitHub Codespaces can**, and it is a real answer for a demo. A Codespace is a container
+with a real Node process, and a forwarded port can be made public — giving a URL anyone
+can open, on your existing GitHub account, for nothing.
+
+1. On the repo: **Code → Codespaces → Create codespace on `multi-tenant`**.
+2. `.devcontainer/devcontainer.json` installs, seeds the demo organisation and starts the
+   app on port 3001. Give it a couple of minutes the first time.
+3. **Ports panel → right-click 3001 → Port Visibility → Public.** It is private until you
+   do this, and a private URL asks your client to sign in to GitHub.
+4. Send them the `https://<codespace-name>-3001.app.github.dev` URL.
+
+What to know before you rely on it:
+
+- **It stops when idle** (30 minutes by default), and the URL goes dead until you reopen
+  the Codespace. Fine for a demo you are on a call for; not for "have a poke this week".
+- **The free allowance is 60 core-hours a month.** A 2-core machine left running spends it
+  in about thirty hours.
+- **The data lives in the Codespace.** Delete it and your client's test records go with it.
+- **Confirmation emails are printed, not sent.** In development the mailer writes the
+  message to the terminal, so if your client signs up you have to copy the link out of the
+  Codespace terminal and send it to them. To have it actually send, add `SMTP_URL` and
+  `MAIL_FROM` as Codespace secrets — see the SMTP section below.
+
+For anything your client uses unattended, use a real host instead:
+
 ## Railway, once
 
 1. **railway.app → New Project → Deploy from GitHub repo → `ayush-singhh/Internal-tool`.**

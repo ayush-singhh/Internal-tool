@@ -1,0 +1,24 @@
+{
+  "name": "Carrier Hub",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-24-bookworm",
+
+  "// why": [
+    "Runs the whole app inside a GitHub Codespace, seeded with the demo organisation, so",
+    "a URL can be handed to someone without deploying anywhere. See DEPLOY.md — a Codespace",
+    "stops when idle and burns the free monthly allowance while it runs, so it suits a demo",
+    "you are present for, not a trial someone pokes at over a week."
+  ],
+
+  "postCreateCommand": "npm ci && npm run seed:demo",
+  "postAttachCommand": "npm run dev:demo",
+
+  "forwardPorts": [3001],
+  "portsAttributes": {
+    "3001": { "label": "Carrier Hub", "onAutoForward": "notify" }
+  },
+
+  "remoteEnv": {
+    "SIGNUP_OPEN": "1",
+    "APP_URL": "https://${localEnv:CODESPACE_NAME}-3001.app.github.dev"
+  }
+}

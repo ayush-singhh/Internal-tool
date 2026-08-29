@@ -14,6 +14,10 @@ export default async function LoginPage() {
   // A password that has been accepted but not yet confirmed by a code. Same route, so
   // there is no second URL that has to be guarded separately.
   const pending = await getPendingLogin();
+  // With signup open this is a product anyone can start using, not an internal tool that
+  // hands out accounts. Pointing a visitor at an administrator they do not have is worse
+  // than saying nothing.
+  const open = signupOpen();
   const firstRun = isFirstRun();
 
   return (
@@ -48,7 +52,9 @@ export default async function LoginPage() {
         </div>
 
         <p className="relative text-xs text-ink-500">
-          Internal system · Authorized personnel only
+          {open
+            ? "Carrier operations software for dispatch companies"
+            : "Internal system · Authorized personnel only"}
         </p>
       </aside>
 
@@ -64,7 +70,9 @@ export default async function LoginPage() {
           <p className="mt-1.5 mb-7 text-sm text-ink-500">
             {pending
               ? `Two-factor authentication is on for ${pending.email}.`
-              : "Use the account issued to you by your administrator."}
+              : open
+                ? "Sign in to your company's account."
+                : "Use the account issued to you by your administrator."}
           </p>
 
           {pending ? <VerifyForm /> : <LoginForm />}
@@ -77,22 +85,29 @@ export default async function LoginPage() {
             </form>
           ) : (
             <>
-              <p className="mt-5 text-xs leading-relaxed text-ink-500">
-                Forgotten your password? Ask an administrator to send you a reset link — they
-                can issue one from the Team page without ever seeing your password.
-              </p>
-              {signupOpen() && (
-                <p className="mt-3 text-xs text-ink-500">
-                  New company?{" "}
-                  <Link href="/signup" className="underline hover:text-ink-800">
-                    Create an account
-                  </Link>
+              {open ? (
+                <>
+                  <p className="mt-5 text-sm text-ink-600">
+                    New company?{" "}
+                    <Link href="/signup" className="font-semibold text-brand-600 hover:text-brand-700">
+                      Create an account
+                    </Link>
+                  </p>
+                  <p className="mt-3 text-xs leading-relaxed text-ink-500">
+                    Forgotten your password? Ask whoever set up your company&rsquo;s account
+                    to send you a reset link.
+                  </p>
+                </>
+              ) : (
+                <p className="mt-5 text-xs leading-relaxed text-ink-500">
+                  Forgotten your password? Ask an administrator to send you a reset link — they
+                  can issue one from the Team page without ever seeing your password.
                 </p>
               )}
             </>
           )}
 
-          {firstRun && !pending && (
+          {firstRun && !pending && process.env.NODE_ENV !== "production" && (
             <div className="mt-7 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-xs leading-relaxed text-amber-900">
               <p className="font-semibold">First run</p>
               <p className="mt-1">

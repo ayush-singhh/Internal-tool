@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     default: "Carrier Management Hub",
     template: "%s · Carrier Hub",
   },
-  description: "Internal carrier CRM and operations dashboard.",
+  description: "Carrier CRM and operations dashboard for dispatch companies.",
   robots: { index: false, follow: false },
 };
 
