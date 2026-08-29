@@ -26,10 +26,18 @@ export const RULES: Record<"email" | "ip", ThrottleRule> = {
   ip: { max: 30, windowMinutes: 15 },
 };
 
-/** Creating organisations is the one unauthenticated write in the product, so it gets its
- *  own limit. Three an hour is far above what a real person needs and far below what
- *  makes a spam run worth starting. */
+/** Creating organisations is an unauthenticated write, so it gets its own limit. Three an
+ *  hour is far above what a real person needs and far below what makes a spam run worth
+ *  starting. */
 export const SIGNUP_RULE: ThrottleRule = { max: 3, windowMinutes: 60 };
+
+/** Asking for a reset link is unauthenticated too, and it puts mail in somebody else's
+ *  inbox — so it is limited per address as well as per host. Someone must not be able to
+ *  bury a person in reset mail, or use ours to send it. */
+export const RESET_RULE: Record<"email" | "ip", ThrottleRule> = {
+  email: { max: 3, windowMinutes: 60 },
+  ip: { max: 10, windowMinutes: 60 },
+};
 
 export type ThrottleVerdict =
   | { allowed: true }
@@ -92,24 +100,32 @@ export function recordAttempt(email: string, ip: string | null, succeeded: boole
   }
 }
 
-/** Signups are counted in the same table under their own key. They are not sign-in
- *  failures, so `recentFailures()` filters them back out of the administrator's view. */
-export function checkSignup(ip: string | null): ThrottleVerdict {
-  if (!ip) return { allowed: true };
-  const { count, oldest } = failuresSince(`signup:${ip}`, windowStart(SIGNUP_RULE.windowMinutes));
-  if (count < SIGNUP_RULE.max || !oldest) return { allowed: true };
-  const unlocksAt = new Date(oldest).getTime() + SIGNUP_RULE.windowMinutes * 60_000;
+/**
+ * The limit for an unauthenticated action that is not a sign-in — creating an
+ * organisation, asking for a reset link. Counted in the same table under a key of its
+ * own, and filtered back out of `recentFailures()`, because they are not failed sign-ins
+ * and showing them to an administrator as some would be a lie.
+ *
+ * `scope` only decides which sentence `describeLockout` writes.
+ */
+export function checkBurst(
+  key: string,
+  rule: ThrottleRule,
+  scope: "email" | "ip" = "ip",
+): ThrottleVerdict {
+  const { count, oldest } = failuresSince(key, windowStart(rule.windowMinutes));
+  if (count < rule.max || !oldest) return { allowed: true };
+  const unlocksAt = new Date(oldest).getTime() + rule.windowMinutes * 60_000;
   return {
     allowed: false,
     retryAfterSeconds: Math.max(1, Math.ceil((unlocksAt - Date.now()) / 1000)),
-    scope: "ip",
+    scope,
   };
 }
 
-export function recordSignup(ip: string | null): void {
-  if (!ip) return;
+export function recordBurst(key: string): void {
   run("INSERT INTO login_attempts (identifier, succeeded, attempted_at) VALUES (?, 0, ?)", [
-    `signup:${ip}`, new Date().toISOString(),
+    key, new Date().toISOString(),
   ]);
 }
 
@@ -126,7 +142,7 @@ export function recentFailures(limit = 20) {
   return all<{ identifier: string; attempts: number; last: string }>(
     `SELECT identifier, COUNT(*) AS attempts, MAX(attempted_at) AS last
        FROM login_attempts
-      WHERE succeeded = 0 AND attempted_at >= ? AND identifier NOT LIKE 'signup:%'
+      WHERE succeeded = 0 AND attempted_at >= ? AND (identifier LIKE 'email:%' OR identifier LIKE 'ip:%')
       GROUP BY identifier
       ORDER BY attempts DESC, last DESC
       LIMIT ?`,

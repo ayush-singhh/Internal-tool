@@ -280,11 +280,11 @@ and `MIGRATION-PLAN.md`.
 
 Then, in this order, and why — see `HANDOFF.md` for the same list with the reasoning:
 
-1. [ ] **Self-serve password reset.** Signup opened a dead end: an owner is the top of
-       their own organisation, so "ask an administrator" has no answer. `reset.ts` and
-       `mailer.ts` already do the work; it needs a route with `/signup`'s no-enumeration
-       answer. Mail the administrator-issued link too, instead of returning it to be
-       copied out of the Team page by hand.
+1. [x] ~~**Self-serve password reset**~~ — `/forgot` asks for a link, answering the same
+       way for every address; limited per address and per host; the administrator's link is
+       now mailed where a relay is configured and only handed over where one is not; and
+       consuming a link confirms an unconfirmed address, so signing up and forgetting is no
+       longer a permanent dead end. **221 tests.**
 2. [ ] **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`).
        Today an owner adds a colleague by inventing a password for them.
 3. [ ] **Security headers / CSP** — cheap, and the first thing a customer's security

@@ -93,15 +93,18 @@ export default async function LoginPage() {
                       Create an account
                     </Link>
                   </p>
-                  <p className="mt-3 text-xs leading-relaxed text-ink-500">
-                    Forgotten your password? Ask whoever set up your company&rsquo;s account
-                    to send you a reset link.
+                  <p className="mt-3 text-xs text-ink-500">
+                    <Link href="/forgot" className="underline hover:text-ink-800">
+                      Forgotten your password?
+                    </Link>
                   </p>
                 </>
               ) : (
                 <p className="mt-5 text-xs leading-relaxed text-ink-500">
-                  Forgotten your password? Ask an administrator to send you a reset link — they
-                  can issue one from the Team page without ever seeing your password.
+                  <Link href="/forgot" className="underline hover:text-ink-800">
+                    Forgotten your password?
+                  </Link>{" "}
+                  An administrator can also send you a link from the Team page.
                 </p>
               )}
             </>

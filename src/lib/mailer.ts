@@ -166,6 +166,12 @@ export function mailer(): Mailer {
   return (mail) => sendOverSmtp(new URL(url), from, mail);
 }
 
+/** Whether a relay is configured. Where it is not, a link has to be handed over by some
+ *  other means, and the UI says so rather than claiming to have sent something. */
+export function mailConfigured(): boolean {
+  return Boolean(process.env.SMTP_URL && process.env.MAIL_FROM);
+}
+
 /** The public origin, used to build links that are mailed out. Never taken from the
  *  request's Host header: a poisoned Host would send a real token to another domain. */
 export function appUrl(): string {

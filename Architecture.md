@@ -42,6 +42,7 @@ src/
     password.ts    argon2id hash + verify (also verifies retired scrypt hashes)
     login.ts       what signing in decides: lock, hash check, rehash, second factor due
     signup.ts      self-serve organisation creation + email confirmation links
+    reset.ts       password reset links — asked for, or issued by an administrator
     mailer.ts      SMTP client and message building; logs instead when unconfigured
     auth.ts        session create/read/destroy, requireUser, permission checks
     totp.ts        RFC 6238 codes + base32 (pure, no database)
@@ -157,6 +158,24 @@ append-only — nothing in the UI edits or deletes it.
   and the shell asks `can()` rather than comparing role strings.
 - All SQL uses bound parameters.
 - The database file lives outside the served tree and is git-ignored.
+
+### Forgotten passwords
+
+Two routes to the same single-use token. An administrator issues one for somebody in
+their organisation, and it is **mailed** where a relay is configured — handed back for
+them to pass on only where one is not, rather than pretending it was sent. Anyone can ask
+for their own at `/forgot`, which is the only route an owner has, since there is nobody
+above them.
+
+`/forgot` answers identically for every address, like `/signup`: unknown and deactivated
+accounts are sent nothing and told the same thing. It is limited per address as well as
+per host, because it puts mail in somebody else's inbox and must not become a way to bury
+them in it.
+
+Setting a password from a link also **confirms the address** if it was not already —
+clicking a link sent there proves exactly what the confirmation link proves, and without
+it somebody who signed up, never confirmed and then forgot their password would be stuck
+for good.
 
 ### Signing up
 

@@ -4,7 +4,7 @@ import { get, run, systemQuery, transaction } from "./db.ts";
 import { appUrl, type Mailer } from "./mailer.ts";
 import { hashPassword } from "./password.ts";
 import { createOrganization } from "./provision.ts";
-import { checkSignup, describeLockout, recordSignup } from "./throttle.ts";
+import { SIGNUP_RULE, checkBurst, describeLockout, recordBurst } from "./throttle.ts";
 import { email as validEmail, str, type FieldErrors } from "./validate.ts";
 
 /**
@@ -63,9 +63,9 @@ export async function startSignup(
   if (password !== String(fields.confirm ?? "")) errors.confirm = "The passwords do not match.";
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
-  const verdict = checkSignup(ip);
+  const verdict = ip ? checkBurst(`signup:${ip}`, SIGNUP_RULE) : { allowed: true as const };
   if (!verdict.allowed) return { ok: false, errors: { form: describeLockout(verdict) } };
-  recordSignup(ip);
+  if (ip) recordBurst(`signup:${ip}`);
 
   // Looked up across every organisation: signing in finds an account by email alone, so
   // the same address in two tenants would leave one of them unable to sign in at all.

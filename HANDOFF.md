@@ -17,7 +17,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 216 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 221 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -26,6 +26,20 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 ---
 
 ## What is DONE
+
+### Self-serve password reset ✅
+
+- `/forgot` asks for a link. Same answer for every address, like `/signup` — unknown and
+  deactivated accounts are sent nothing and told the same thing.
+- Limited **per address** as well as per host: the endpoint puts mail in someone else's
+  inbox, so it must not become a way to bury them in it. `throttle.ts` grew a generic
+  `checkBurst`/`recordBurst` for this; signup now uses it too.
+- The administrator's link from the Team page is **mailed** where a relay is configured,
+  and only handed back to be passed on where one is not. A send failure falls back to the
+  link with the reason attached, rather than losing the reset they asked for.
+- Consuming a reset link **confirms the address** if it was not already. Clicking a link
+  sent there proves what the confirmation link proves, and without this someone who signed
+  up, never confirmed and then forgot their password was stuck for good.
 
 ### Self-serve signup + email verification ✅
 
@@ -111,24 +125,17 @@ Mirrored in `Plan.md` under "Phase 12 … Still to do".
 
 Everything after this is a recommendation with reasons, not a queue.
 
-1. **Self-serve password reset.** Signup opened a dead end: an owner is the top of their
-   own organisation, so the login page's "ask an administrator" has no answer for them.
-   Every piece exists — `reset.ts` issues and consumes single-use tokens, `mailer.ts` can
-   now send them — so this is a "forgot password" route giving the same answer for every
-   address that `/signup` does. While in there, **mail** the administrator-issued link
-   instead of returning it to be copied out of the Team page and pasted into a chat
-   window (`reset-actions.ts` → `IssueState.link`). One session's work.
-2. **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`). Today
+1. **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`). Today
    an owner adds a colleague by inventing a password for them and handing it over by hand.
    This is what turns "a person signed up" into "a company is using it".
-3. **Security headers / CSP.** One config block, and the first question on every B2B
+2. **Security headers / CSP.** One config block, and the first question on every B2B
    security review you will be sent once real dispatch companies are buying this.
-4. **Platform support role** — see decision 4. Still the only sanctioned way to look
+3. **Platform support role** — see decision 4. Still the only sanctioned way to look
    inside a tenant, and it is the thing the owner actually asked for.
-5. **RBAC UI** for owner/admin/member.
-6. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
+4. **RBAC UI** for owner/admin/member.
+5. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
    completing MFA is already done.)
-7. **Generalised audit log** + rate limiting beyond login and signup.
+6. **Generalised audit log** + rate limiting beyond login and signup.
 
 Smaller, and only worth a detour when they get in the way:
 

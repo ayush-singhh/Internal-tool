@@ -256,7 +256,8 @@ function PasswordForm({
           <h3 className="text-sm font-semibold text-ink-900">Send a reset link</h3>
           <p className="mt-0.5 text-xs text-ink-500">
             {member.name} chooses their own password. You never see it. The link works once
-            and expires in 24 hours.
+            and expires in 24 hours — emailed to them where mail is configured, and handed
+            to you to pass on where it is not.
           </p>
         </div>
         {link.error && (
@@ -264,7 +265,11 @@ function PasswordForm({
             {link.error}
           </p>
         )}
-        {link.link ? (
+        {link.sentTo ? (
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+            Sent to {link.sentTo}. Nothing to copy — the link went straight to {link.forName}.
+          </p>
+        ) : link.link ? (
           <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
             <p className="text-xs font-medium text-emerald-900">
               One-time link for {link.forName} — copy it now, it is not shown again.

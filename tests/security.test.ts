@@ -11,6 +11,7 @@ process.env.CARRIER_DB_PATH = DB;
 let db: typeof import("../src/lib/db.ts");
 let throttle: typeof import("../src/lib/throttle.ts");
 let reset: typeof import("../src/lib/reset.ts");
+let login: typeof import("../src/lib/login.ts");
 let pw: typeof import("../src/lib/password.ts");
 let userId: number;
 let orgId: number;
@@ -19,6 +20,7 @@ before(async () => {
   db = await import("../src/lib/db.ts");
   throttle = await import("../src/lib/throttle.ts");
   reset = await import("../src/lib/reset.ts");
+  login = await import("../src/lib/login.ts");
   pw = await import("../src/lib/password.ts");
 
   const now = new Date().toISOString();
@@ -146,6 +148,76 @@ test("a legacy scrypt hash is upgraded in place, exactly as signIn does it", () 
   )!.password_hash;
   assert.equal(pw.needsRehash(hash), false, "the stored hash is now argon2id");
   assert.equal(pw.verifyPassword("original-password", hash), true, "the password still works");
+});
+
+// ── asking for your own link ─────────────────────────────────────────────────
+// The only route to a new password for an owner, who has no administrator above them.
+
+const sent: { to: string; subject: string; text: string }[] = [];
+const collect = async (mail: { to: string; subject: string; text: string }) => {
+  sent.push(mail);
+};
+const linkIn = (text: string) => text.match(/https?:\/\/\S+/)![0];
+
+test("asking for a link as a real user sends one that works", async () => {
+  sent.length = 0;
+  process.env.APP_URL = "https://hub.example.test";
+  assert.equal((await reset.requestReset("target@x.test", "203.0.113.5", collect)).ok, true);
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.to, "target@x.test");
+  const token = linkIn(sent[0]!.text).split("/").pop()!;
+  assert.equal(reset.consumeReset(token, "a-brand-new-password").ok, true);
+  assert.equal(
+    pw.verifyPassword("a-brand-new-password", db.get<{ password_hash: string }>(
+      "SELECT password_hash FROM users WHERE organization_id = ? AND id = ?", [orgId, userId],
+    )!.password_hash),
+    true,
+  );
+});
+
+test("an unknown address is answered the same way, and sends nothing", async () => {
+  sent.length = 0;
+  const result = await reset.requestReset("nobody@x.test", "203.0.113.6", collect);
+  assert.deepEqual(result, { ok: true }, "indistinguishable from an address that exists");
+  assert.equal(sent.length, 0, "so the form cannot be used to ask who has an account");
+});
+
+test("a deactivated account is answered the same way, and sends nothing", async () => {
+  sent.length = 0;
+  db.run("UPDATE users SET active = 0 WHERE organization_id = ? AND id = ?", [orgId, userId]);
+  const result = await reset.requestReset("target@x.test", "203.0.113.7", collect);
+  db.run("UPDATE users SET active = 1 WHERE organization_id = ? AND id = ?", [orgId, userId]);
+  assert.deepEqual(result, { ok: true });
+  assert.equal(sent.length, 0);
+});
+
+test("one address cannot be buried in reset mail", async () => {
+  sent.length = 0;
+  for (let i = 0; i < 3; i++) {
+    assert.equal((await reset.requestReset("target@x.test", `203.0.113.${20 + i}`, collect)).ok, true);
+  }
+  const blocked = await reset.requestReset("target@x.test", "203.0.113.30", collect);
+  assert.equal(blocked.ok, false, "the fourth in an hour is refused");
+  assert.equal(sent.length, 3, "and never reaches the mailer");
+});
+
+test("a link proves the address, so an unconfirmed account is not stuck for good", async () => {
+  sent.length = 0;
+  db.run("UPDATE users SET email_verified_at = NULL WHERE organization_id = ? AND id = ?", [orgId, userId]);
+  assert.equal(login.passwordStep("target@x.test", "original-password", null).ok, false);
+
+  await reset.requestReset("target@x.test", "203.0.113.40", collect);
+  const token = linkIn(sent[0]!.text).split("/").pop()!;
+  assert.equal(reset.consumeReset(token, "confirmed-by-the-link").ok, true);
+
+  assert.ok(
+    db.get<{ email_verified_at: string | null }>(
+      "SELECT email_verified_at FROM users WHERE organization_id = ? AND id = ?", [orgId, userId],
+    )!.email_verified_at,
+    "clicking a link mailed to that address proves what confirmation proves",
+  );
+  assert.equal(login.passwordStep("target@x.test", "confirmed-by-the-link", null).ok, true);
 });
 
 test("a reset link sets the password and the raw token is never stored", () => {
