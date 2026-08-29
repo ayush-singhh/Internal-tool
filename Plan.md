@@ -314,20 +314,20 @@ Then, in this order, and why — see `HANDOFF.md` for the same list with the rea
 - [x] Demo seeder made tenant-aware — it creates its own organisation via `provision.ts`
       instead of writing unscoped rows the guard now refuses; `DEPLOY.md` covers putting
       the app in front of a client
+- [x] ~~**Recovery codes can be regenerated**~~ — a "Get new recovery codes" action in
+      Settings, gated on the same proof `disable` requires, replaces the whole set in one
+      transaction and shows the new ten once. **269 tests.**
+- [x] ~~**Server errors are no longer invisible**~~ — Next's `onRequestError` hook writes
+      every uncaught server error to `error_log` (message, digest, path, method, route
+      type), surfaced on `/support` for the one audience that already sees across tenants.
+      Node-only; a proxy-level error on the Edge runtime isn't caught. **273 tests.**
+- [x] ~~**Billing decision, settled**~~ — manual invoicing. Reused `organizations.status`
+      (existed since migration 5, unused) rather than a new column; `ORG_STATUS` gives it
+      trial/active/past_due/suspended; set only by `npm run set-billing-status`, out of
+      band like `support-user.ts`, never from `/support` itself, which stays read-only.
+      No enforcement — a label to read, not a gate.
 
-Smaller, whenever they get in the way:
-
-- [ ] Recovery codes cannot be regenerated — running out means turning MFA off with the
-      last one and enrolling again.
-- [ ] Nothing reports errors. A customer hitting a 500 is invisible from here.
-
-### Open question — not a phase, a decision
-
-**Nothing in this repository charges anybody.** Every "billing" in these docs is the
-*carriers'* commercial terms, not our customers' subscriptions. Manual invoicing is a
-perfectly good answer for the number of tenants involved, but it should be a decision
-rather than an omission — and it wants settling before the platform support role, since
-"which tenants are paid up" tends to want a column.
+Smaller, whenever they get in the way: none currently.
 
 ---
 

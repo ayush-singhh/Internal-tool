@@ -4,7 +4,8 @@ This file is the resume point for a fresh session. It is kept current at the end
 working session. For the full picture read, in order: `PRD.md` → `Architecture.md` →
 `AI Rules.md` → `Plan.md` → `MIGRATION-PLAN.md`.
 
-**Last updated:** 2026-08-29, after self-serve signup and email verification.
+**Last updated:** 2026-08-29, after the billing decision (manual invoicing) and server
+error reporting.
 
 ---
 
@@ -17,7 +18,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 266 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 273 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -26,6 +27,56 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 ---
 
 ## What is DONE
+
+### Billing decision — settled: manual invoicing ✅
+
+**Nothing in this repository charges anybody**, and that stays true. Every other
+"billing" in these docs is the *carriers'* commercial terms, not our customers'
+subscriptions. Decided 2026-08-29: manual invoicing, tracked by a status on
+`organizations` rather than a payment integration.
+
+- `organizations.status` already existed (migration 5, always `'active'` until now, read
+  nowhere) — reused rather than adding a column. `ORG_STATUS` in `constants.ts` gives it
+  four values: `trial`, `active`, `past_due`, `suspended`.
+- Set only by `npm run set-billing-status -- <org-slug-or-id> <status>`, out of band, the
+  same shape as `scripts/support-user.ts`. **No write path from `/support` or anywhere a
+  customer or a support account can reach** — `/support` is read-only by construction
+  (see the platform support section below), and this does not get an exception.
+- Shown as a coloured badge in the `/support` tenant list — the one place it's useful to
+  see every tenant's standing at a glance.
+- **No enforcement.** A `suspended` org still signs in and works exactly as before; this
+  is a label for whoever is invoicing to read, not a gate. Building the gate (block
+  sign-in, banner, whatever) is a separate, later decision if manual tracking turns out
+  not to be enough.
+
+### Server errors are no longer invisible ✅
+
+- Next's `onRequestError` hook (`instrumentation.ts`) catches every uncaught error in a
+  Server Component, Route Handler or Server Action and writes it to `error_log`: message,
+  digest, path, method, route type, when. **Node-only** — `error_log` needs
+  `node:sqlite`, which does not exist on the Edge runtime `proxy.ts` runs on, so a proxy
+  error still reaches the platform's own logs but not this table.
+- Genuinely global, like `sessions` — a request can fail before any organisation is
+  resolved (a broken `/login` attempt, a bad proxy match), so there is often nothing to
+  attach it to. Not in `TENANT_TABLES`; queried through `systemQuery()` like the other
+  global tables, by convention rather than necessity.
+- Surfaced as a third card on `/support` — same audience as the access log already there
+  (platform support, MFA required), because a stack trace can name any tenant.
+- **Recording never throws**, same reason `audit.record()` doesn't.
+- Verified end to end against a real 500: a temporary throwing route, hit over HTTP,
+  produced a row with the exact message/digest/path/method/route-type, and the
+  `/support` card rendered it.
+
+### Recovery codes can be regenerated ✅
+
+- Settings has a "Get new recovery codes" action next to "Turn off two-factor", behind
+  the same proof: a working authenticator code (or an unused recovery code) required
+  first, so a borrowed session cannot mint itself a fresh set.
+- `regenerateRecoveryCodes()` in `mfa.ts` deletes every existing code — spent or not —
+  and inserts ten new ones in one transaction, mirroring `activate()`'s own code-issuing
+  step. Shown once, exactly like the original set. Logged as `mfa.recovery_regenerated`.
+- This was the "recovery codes cannot be regenerated" item on the smaller-later list;
+  it is done and off the list.
 
 ### Audit log ✅
 
@@ -235,19 +286,8 @@ Mirrored in `Plan.md` under "Phase 12 … Still to do".
 
 Smaller, and only worth a detour when they get in the way:
 
-- **Recovery codes cannot be regenerated.** Running out means turning MFA off with the
-  last one and enrolling again.
-- **Nothing reports errors.** A customer hitting a 500 is invisible from here.
 - `next build` fails with `ENOTEMPTY` on `.next/standalone` on a rebuild often enough to
-  notice; `rm -rf .next` fixes it. Next's bug, not ours.
-
-### Not on any list — a decision, not a phase
-
-**Nothing in this repository charges anybody.** Every "billing" in these docs is the
-*carriers'* commercial terms, not our customers' subscriptions. Manual invoicing is a
-perfectly good answer at this number of tenants, but it should be a decision rather than an
-omission — and it wants settling before the platform support role, since "which tenants are
-paid up" tends to want a column on `organizations`.
+  notice; `rm -rf .next` fixes it (sometimes twice). Next's bug, not ours.
 
 ---
 
@@ -310,8 +350,6 @@ never touch `data/carrier-hub.db`**.
   auth.ts imports, not in auth.ts.
 - **`qrcode` ships no types** — `src/types/qrcode.d.ts` declares the one call used, rather
   than adding `@types/qrcode`.
-- **Regenerating recovery codes is not built.** Running out means turning the second
-  factor off with the last one and enrolling again.
 - **`carrierNotes` lives in `activity.ts`**, not `notes.ts` (easy to mis-import).
 - **Migration ordering:** migration 5 only creates/backfills an org when data already
   exists; a fresh DB gets its bootstrap org from `seed()` in `db.ts`. Don't make both create one.
