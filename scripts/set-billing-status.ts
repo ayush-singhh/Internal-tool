@@ -8,8 +8,14 @@
  * charges anybody, invoicing is manual, and no code path a customer or a support account
  * can reach should be able to mark itself paid up. Whoever sends the invoice runs this.
  */
-const [orgRef, status] = process.argv.slice(2);
-if (!orgRef || !status) {
+// No static import in this file (everything below is a dynamic await import()), so
+// without this TS treats it as a script rather than a module: top-level await is
+// refused, and a top-level `const status` collides with the ambient DOM global
+// window.status — hence `export {}` here and `newStatus` below rather than `status`.
+export {};
+
+const [orgRef, newStatus] = process.argv.slice(2);
+if (!orgRef || !newStatus) {
   console.error(
     "Usage: node --conditions=react-server scripts/set-billing-status.ts <org-slug-or-id> <status>",
   );
@@ -20,8 +26,8 @@ const { get, run, systemQuery } = await import("../src/lib/db.ts");
 const { ORG_STATUS } = await import("../src/lib/constants.ts");
 
 const allowed = new Set<string>(Object.values(ORG_STATUS));
-if (!allowed.has(status)) {
-  console.error(`Unknown status "${status}". Use one of: ${[...allowed].join(", ")}`);
+if (!allowed.has(newStatus)) {
+  console.error(`Unknown status "${newStatus}". Use one of: ${[...allowed].join(", ")}`);
   process.exit(1);
 }
 
@@ -38,5 +44,5 @@ if (!org) {
   process.exit(1);
 }
 
-systemQuery(() => run("UPDATE organizations SET status = ? WHERE id = ?", [status, org.id]));
-console.log(`${org.name}: ${org.status} -> ${status}`);
+systemQuery(() => run("UPDATE organizations SET status = ? WHERE id = ?", [newStatus, org.id]));
+console.log(`${org.name}: ${org.status} -> ${newStatus}`);
