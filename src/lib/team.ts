@@ -1,4 +1,5 @@
 import "server-only";
+import { randomBytes } from "node:crypto";
 import { all, get, run, systemQuery } from "./db.ts";
 import type { Org } from "./tenant-db.ts";
 import { hashPassword } from "./password.ts";
@@ -12,13 +13,17 @@ export type TeamMember = {
   phone: string | null;
   active: number;
   created_at: string;
+  /** NULL until they have followed a link sent to that address — which is exactly what an
+   *  invitation that has not been accepted looks like. No separate table, no second state
+   *  to keep in step with this one. */
+  email_verified_at: string | null;
   dispatching: number;
   managing: number;
 };
 
 export function listTeam(org: Org): TeamMember[] {
   return all<TeamMember>(
-    `SELECT u.id, u.name, u.email, u.role, u.phone, u.active, u.created_at,
+    `SELECT u.id, u.name, u.email, u.role, u.phone, u.active, u.created_at, u.email_verified_at,
             (SELECT COUNT(*) FROM carriers c WHERE c.organization_id = u.organization_id AND c.dispatcher_id = u.id)      AS dispatching,
             (SELECT COUNT(*) FROM carriers c WHERE c.organization_id = u.organization_id AND c.account_manager_id = u.id) AS managing
        FROM users u
@@ -34,12 +39,24 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MIN_PASSWORD = 8;
 const VALID_ROLES = new Set<string>(Object.values(ROLES));
 
+/**
+ * Adds somebody to an organisation.
+ *
+ * With no password this is an **invitation**: the account is created with one nobody
+ * knows — 32 random bytes, never shown, never used — and left unconfirmed, so it cannot
+ * be signed into. The caller then mails a link, and setting a password through it both
+ * confirms the address and turns the row into a real account. That is why an invitation
+ * needs no table of its own: an unconfirmed member *is* an outstanding invitation.
+ *
+ * With a password it is the old direct route, for an account that has no mailbox to send
+ * anything to.
+ */
 export function createTeamMember(org: Org, input: {
   name: string;
   email: string;
   role: string;
   phone?: string | null;
-  password: string;
+  password?: string;
 }): TeamResult {
   const name = input.name.trim().slice(0, 120);
   const email = input.email.trim().toLowerCase().slice(0, 254);
@@ -47,7 +64,8 @@ export function createTeamMember(org: Org, input: {
   if (!name) return { ok: false, error: "Name is required." };
   if (!EMAIL.test(email)) return { ok: false, error: "Enter a valid email address." };
   if (!VALID_ROLES.has(input.role)) return { ok: false, error: "Choose a valid role." };
-  if (input.password.length < MIN_PASSWORD) {
+  const invited = !input.password;
+  if (!invited && input.password!.length < MIN_PASSWORD) {
     return { ok: false, error: `Password must be at least ${MIN_PASSWORD} characters.` };
   }
   // Checked across every organisation, not just this one: signing in looks an account up
@@ -62,9 +80,12 @@ export function createTeamMember(org: Org, input: {
     `INSERT INTO users (organization_id, name, email, password_hash, role, phone, active,
                         email_verified_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-    // An administrator typed this address and its password, so there is nothing to confirm.
-    [org.id, name, email, hashPassword(input.password), input.role, input.phone?.trim() || null,
-     now, now, now],
+    // An invited account is unconfirmed and its password is unguessable, so the link is
+    // the only way in. One typed by an administrator has nothing left to confirm.
+    [org.id, name, email,
+     hashPassword(input.password ?? randomBytes(32).toString("base64url")),
+     input.role, input.phone?.trim() || null,
+     invited ? null : now, now, now],
   );
   return { ok: true, id: get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id };
 }

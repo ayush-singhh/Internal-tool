@@ -18,6 +18,8 @@ export type TeamRow = {
   role: Role;
   phone: string | null;
   active: number;
+  /** Null while an invitation is still outstanding — see `TeamMember` in team.ts. */
+  email_verified_at: string | null;
   dispatching: number;
   managing: number;
 };
@@ -128,9 +130,13 @@ export function TeamManager({ team, currentUserId }: { team: TeamRow[]; currentU
                 <td className="tnum px-4 py-2.5 text-right text-ink-700">{m.dispatching}</td>
                 <td className="tnum px-4 py-2.5 text-right text-ink-700">{m.managing}</td>
                 <td className="px-4 py-2.5">
-                  <Badge tone={m.active ? "green" : "slate"}>
-                    {m.active ? "Active" : "Deactivated"}
-                  </Badge>
+                  {!m.active ? (
+                    <Badge tone="slate">Deactivated</Badge>
+                  ) : m.email_verified_at ? (
+                    <Badge tone="green">Active</Badge>
+                  ) : (
+                    <Badge tone="amber">Invited</Badge>
+                  )}
                 </td>
                 <td className="px-4 py-2.5">
                   <div className="flex items-center justify-end gap-1.5">
@@ -179,7 +185,7 @@ export function TeamManager({ team, currentUserId }: { team: TeamRow[]; currentU
         and their carriers stay assigned until reassigned.
       </p>
 
-      <Dialog ref={addRef} title="Add team member">
+      <Dialog ref={addRef} title="Invite a team member">
         <form action={addAction} className="space-y-4">
           <Banner state={addState} />
           <div className="grid gap-4 sm:grid-cols-2">
@@ -190,10 +196,13 @@ export function TeamManager({ team, currentUserId }: { team: TeamRow[]; currentU
               <RoleSelect name="role" />
             </div>
             <Text name="phone" label="Phone" type="tel" defaultValue={addState.values?.phone} />
-            <Text name="password" label="Temporary password" type="password" required
-              hint="At least 8 characters. They can change it after signing in." className="sm:col-span-2" />
           </div>
-          <DialogActions dialogRef={addRef} pending={adding} label="Add team member" />
+          <p className="text-xs leading-relaxed text-ink-500">
+            They get an email with a link and choose their own password, so nobody has to
+            invent one and send it over chat. The link lasts seven days, and until it is
+            used the account cannot be signed into.
+          </p>
+          <DialogActions dialogRef={addRef} pending={adding} label="Send invitation" />
         </form>
       </Dialog>
 
@@ -253,11 +262,15 @@ function PasswordForm({
       <form action={issueAction} className="space-y-3">
         <input type="hidden" name="userId" value={member.id} />
         <div>
-          <h3 className="text-sm font-semibold text-ink-900">Send a reset link</h3>
+          <h3 className="text-sm font-semibold text-ink-900">
+            {member.email_verified_at ? "Send a reset link" : "Resend the invitation"}
+          </h3>
           <p className="mt-0.5 text-xs text-ink-500">
-            {member.name} chooses their own password. You never see it. The link works once
-            and expires in 24 hours — emailed to them where mail is configured, and handed
-            to you to pass on where it is not.
+            {member.email_verified_at
+              ? `${member.name} chooses their own password. You never see it.`
+              : `${member.name} has not used their invitation yet. This replaces it with a new link.`}{" "}
+            The link works once and expires in 24 hours — emailed where mail is configured,
+            and handed to you to pass on where it is not.
           </p>
         </div>
         {link.error && (

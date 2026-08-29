@@ -285,8 +285,9 @@ Then, in this order, and why — see `HANDOFF.md` for the same list with the rea
        now mailed where a relay is configured and only handed over where one is not; and
        consuming a link confirms an unconfirmed address, so signing up and forgetting is no
        longer a permanent dead end. **221 tests.**
-2. [ ] **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`).
-       Today an owner adds a colleague by inventing a password for them.
+2. [x] ~~**Invitations**~~ — adding a member now sends a link instead of inventing a
+       password. No new table: an invitation is a member with no confirmed address and an
+       unguessable password, shown as *Invited* until they accept. **224 tests.**
 3. [ ] **Security headers / CSP** — cheap, and the first thing a customer's security
        review asks about.
 4. [ ] **Platform support role** (read-only, internally audited) per the owner's decision.

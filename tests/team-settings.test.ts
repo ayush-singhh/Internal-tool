@@ -45,6 +45,65 @@ const add = (over: Partial<Parameters<typeof team.createTeamMember>[1]> = {}) =>
     role: "dispatcher", password: "dispatch2026", ...over,
   });
 
+// ── Invitations ──────────────────────────────────────────────────────────────
+// An invitation is not a table. It is a member with no confirmed address and a password
+// nobody knows, which is why nothing has to keep the two in step.
+
+test("an invited member cannot be signed into until they use their link", async () => {
+  const login = await import("../src/lib/login.ts");
+  const reset = await import("../src/lib/reset.ts");
+  const result = add({ email: "invited@x.test", password: undefined });
+  assert.ok(result.ok);
+  if (!result.ok) return;
+
+  const row = db.get<{ password_hash: string; email_verified_at: string | null; active: number }>(
+    "SELECT password_hash, email_verified_at, active FROM users WHERE organization_id = ? AND id = ?",
+    [orgId, result.id],
+  )!;
+  assert.equal(row.email_verified_at, null, "an outstanding invitation");
+  assert.equal(row.active, 1, "the account exists and holds its role and assignments");
+  assert.ok(row.password_hash.startsWith("$argon2"), "a real hash of a password nobody has");
+
+  // The only way in is the link.
+  assert.equal(login.passwordStep("invited@x.test", "", null).ok, false);
+  assert.equal(login.passwordStep("invited@x.test", "dispatch2026", null).ok, false);
+
+  const { token } = reset.issueReset(result.id, ownerId());
+  assert.equal(reset.consumeReset(token, "my own password").ok, true);
+  assert.equal(login.passwordStep("invited@x.test", "my own password", null).ok, true);
+  assert.ok(
+    db.get<{ email_verified_at: string | null }>(
+      "SELECT email_verified_at FROM users WHERE organization_id = ? AND id = ?", [orgId, result.id],
+    )!.email_verified_at,
+    "accepting the invitation confirms the address",
+  );
+});
+
+test("an invitation shows in the team list as invited, not active", () => {
+  const invited = add({ email: "pending@x.test", password: undefined });
+  const joined = add({ email: "joined@x.test", password: "a real password" });
+  assert.ok(invited.ok && joined.ok);
+
+  const rows = team.listTeam(org);
+  assert.equal(rows.find((r) => r.email === "pending@x.test")!.email_verified_at, null);
+  assert.ok(rows.find((r) => r.email === "joined@x.test")!.email_verified_at);
+});
+
+test("two invitations to the same address are refused, in any organisation", async () => {
+  const { seedOrg } = await import("./helpers.ts");
+  assert.ok(add({ email: "once@x.test", password: undefined }).ok);
+
+  const second = add({ email: "once@x.test", password: undefined });
+  assert.equal(second.ok, false, "not twice in this organisation");
+
+  const other = seedOrg(db, `Rival ${Math.random().toString(36).slice(2, 6)}`);
+  const { Org } = await import("../src/lib/tenant-db.ts");
+  const elsewhere = team.createTeamMember(new Org(other.id), {
+    name: "Marcus Reed", email: "once@x.test", role: "dispatcher",
+  });
+  assert.equal(elsewhere.ok, false, "and not in another one either — sign-in finds by address alone");
+});
+
 // ── Team ─────────────────────────────────────────────────────────────────────
 
 test("a new team member can sign in with the password they were given", () => {

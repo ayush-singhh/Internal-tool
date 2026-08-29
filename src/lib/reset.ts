@@ -28,10 +28,14 @@ const digest = (token: string) => createHash("sha256").update(token).digest("hex
 
 export type IssuedReset = { token: string; expiresAt: string; path: string };
 
-export function issueReset(userId: number, issuedBy: number | null): IssuedReset {
+export function issueReset(
+  userId: number,
+  issuedBy: number | null,
+  ttlHours = TTL_HOURS,
+): IssuedReset {
   const token = randomBytes(TOKEN_BYTES).toString("base64url");
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + TTL_HOURS * 3_600_000).toISOString();
+  const expiresAt = new Date(now.getTime() + ttlHours * 3_600_000).toISOString();
 
   // password_resets is a pre-auth table authorised by the token; the calling admin action
   // has already confirmed the target user belongs to the admin's organisation.

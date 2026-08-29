@@ -159,6 +159,19 @@ append-only — nothing in the UI edits or deletes it.
 - All SQL uses bound parameters.
 - The database file lives outside the served tree and is git-ignored.
 
+### Invitations
+
+An invitation is **not a table**. Adding someone with no password creates their account
+with one nobody knows — 32 random bytes, never shown — and no confirmed address, so it
+cannot be signed into; the administrator's link is then mailed, and setting a password
+through it confirms the address and turns the row into a real account.
+
+That means an unaccepted invitation and an unconfirmed member are the same state, with
+nothing to keep in step: the team list shows it as *Invited*, the role and any carrier
+assignments are already recorded, and resending is the reset link the page already had.
+The link lasts seven days rather than a day, because an invitation has to survive a
+holiday, and it grants nothing until it is used.
+
 ### Forgotten passwords
 
 Two routes to the same single-use token. An administrator issues one for somebody in

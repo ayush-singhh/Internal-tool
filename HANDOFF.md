@@ -17,7 +17,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 221 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 224 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -26,6 +26,19 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 ---
 
 ## What is DONE
+
+### Invitations ✅
+
+- Adding a team member **sends a link** instead of inventing a password and handing it
+  over. Seven-day expiry — an invitation has to survive a holiday, and it grants nothing
+  until it is used.
+- **No new table.** `createTeamMember` with no password creates the account with 32 random
+  bytes as its password and no confirmed address, so it cannot be signed into; accepting
+  the link sets the password and confirms the address in one step. An unaccepted
+  invitation and an unconfirmed member are therefore the same state, with nothing to keep
+  in step — the list shows *Invited*, and resending is the reset link the page already had.
+- The direct-password route still exists for an account with no mailbox: invite, then
+  "set a password directly" in the same dialog.
 
 ### Self-serve password reset ✅
 
@@ -125,17 +138,14 @@ Mirrored in `Plan.md` under "Phase 12 … Still to do".
 
 Everything after this is a recommendation with reasons, not a queue.
 
-1. **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`). Today
-   an owner adds a colleague by inventing a password for them and handing it over by hand.
-   This is what turns "a person signed up" into "a company is using it".
-2. **Security headers / CSP.** One config block, and the first question on every B2B
+1. **Security headers / CSP.** One config block, and the first question on every B2B
    security review you will be sent once real dispatch companies are buying this.
-3. **Platform support role** — see decision 4. Still the only sanctioned way to look
+2. **Platform support role** — see decision 4. Still the only sanctioned way to look
    inside a tenant, and it is the thing the owner actually asked for.
-4. **RBAC UI** for owner/admin/member.
-5. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
+3. **RBAC UI** for owner/admin/member.
+4. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
    completing MFA is already done.)
-6. **Generalised audit log** + rate limiting beyond login and signup.
+5. **Generalised audit log** + rate limiting beyond login and signup.
 
 Smaller, and only worth a detour when they get in the way:
 
