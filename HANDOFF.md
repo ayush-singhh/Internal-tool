@@ -17,7 +17,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 238 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 249 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -26,6 +26,26 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 ---
 
 ## What is DONE
+
+### Automated, verified, off-machine backups ✅
+
+- A timer in `src/instrumentation.ts` runs them daily (`BACKUP_EVERY_HOURS`). Not on boot:
+  a restart loop would otherwise fill the disk. A timer in the server rather than cron,
+  because the process holding the file is the only thing that can copy it.
+- Each snapshot is `VACUUM INTO` (safe while the database is written to), then **reopened**
+  — integrity-checked, row-counted, ledger read — before it is accepted.
+- **`BACKUP_S3_URL` is what makes it a backup.** Uploads speak the S3 API through
+  hand-rolled SigV4 in `src/lib/s3.ts` (~60 lines, no AWS SDK), so R2, B2, Wasabi, MinIO
+  and AWS all work. **The signer is asserted against AWS's own published test vector** —
+  otherwise a wrong signature only shows up as a 403 from a provider at 3am.
+- A failed upload never costs the local copy and never stops the schedule; it is reported
+  loudly, and `npm run backup` exits non-zero on it.
+- `npm run restore -- <file>` verifies the backup *before* replacing anything, moves the
+  live database aside instead of deleting it, and clears the stale WAL so SQLite cannot
+  replay the old tail onto the restored file. **Rehearsed once, for real:** every carrier
+  deleted from a copy of the demo database, restored, all 46 back.
+- Fixed on the way: backup filenames had minute resolution, so two in one minute failed
+  with a raw `VACUUM INTO` error — exactly what you would hit re-running after a failure.
 
 ### Platform support role ✅ — built as agreed, not as first asked
 
@@ -167,15 +187,8 @@ Table classification (global / tenant-owned / user-owned) is documented in
 
 Mirrored in `Plan.md` under "Phase 12 … Still to do".
 
-> **0. AUTOMATED OFF-BOX BACKUPS — do this before anything else.** Decided on 2026-08-29,
-> deliberately deferred, and it outranks every item below. `npm run backup` is sound but
-> **nothing runs it on a schedule and its output sits on the same disk as the database it
-> copies** — one lost volume loses the data and every backup of it at the same moment.
-> Needs: a schedule (host cron, or a timer in the container), a copy off the machine
-> (object storage, or anywhere that is not that disk), and a restore actually tried once.
-> Do not let a paying customer put real carrier records in there until this exists.
-
-Everything after this is a recommendation with reasons, not a queue.
+Item 0 — automated off-box backups — is **done**. What is left is a recommendation with
+reasons, not a queue.
 
 1. **RBAC UI** for owner/admin/member.
 2. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on

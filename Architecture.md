@@ -46,6 +46,9 @@ src/
     mailer.ts      SMTP client and message building; logs instead when unconfigured
     security-headers.ts  the CSP and friends, as data so they can be asserted
     support.ts     the only cross-tenant reads in the product, each one recorded
+    backup.ts      snapshot, verify, upload, rotate — one implementation, two callers
+    backup-schedule.ts  the timer, kept out of the Edge bundle it could never run in
+    s3.ts          SigV4 signing and a PUT, so backups can leave the machine
     auth.ts        session create/read/destroy, requireUser, permission checks
     totp.ts        RFC 6238 codes + base32 (pure, no database)
     mfa.ts         enrolment, the sign-in check, recovery codes

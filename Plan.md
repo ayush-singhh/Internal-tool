@@ -272,11 +272,13 @@ and `MIGRATION-PLAN.md`.
 
 ### Still to do (later phases)
 
-0. [ ] **AUTOMATED OFF-BOX BACKUPS — highest priority, agreed 2026-08-29.** `npm run
-       backup` verifies its own output, but nothing schedules it and the copies land on
-       the same disk as the database. Losing that disk loses both at once. Needs a
-       schedule, a copy off the machine, and one rehearsed restore. **This outranks
-       everything below it**, and it comes before a paying customer stores anything real.
+0. [x] ~~**AUTOMATED OFF-BOX BACKUPS**~~ — a timer in `instrumentation.ts` (daily,
+       `BACKUP_EVERY_HOURS`), each snapshot reopened and verified, then uploaded to any
+       S3-compatible store via hand-rolled SigV4 (`BACKUP_S3_URL`). `scripts/restore.ts`
+       verifies before replacing and keeps the old database. **The restore was rehearsed
+       against a real database with every carrier deleted; all 46 came back.** Fixed on
+       the way: minute-resolution filenames made two backups in one minute fail with a raw
+       SQLite error. **249 tests.**
 
 Then, in this order, and why — see `HANDOFF.md` for the same list with the reasoning:
 
