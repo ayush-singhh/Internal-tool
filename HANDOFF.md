@@ -154,7 +154,11 @@ paid up" tends to want a column on `organizations`.
 2. **TOTP QR:** the `qrcode` package, rendered server-side. **Done.**
 3. **Email:** hand-rolled SMTP over `node:tls`, configured by `SMTP_URL`, refusing to
    start in production when signup is open without it. **Done** — `src/lib/mailer.ts`.
-4. **Platform support role:** the owner asked for standing access to look inside any
+4. **Hosting: Fly.io**, chosen 2026-08-29. One machine, one volume at `/data`, config in
+   `fly.toml`. Not Vercel (ephemeral disk destroys a SQLite database) and not GitHub Pages
+   (static only). **Never scale past one machine** — a second gets its own empty volume
+   and silently splits the product in two. `DEPLOY.md` has the walkthrough.
+5. **Platform support role:** the owner asked for standing access to look inside any
    tenant's data. They requested it be **unlogged and hidden from customers**. That specific
    design (deliberately concealed, tamper-free cross-tenant access to third-party PII) was
    **declined**. What to build instead, agreed as the workable version: **standing,

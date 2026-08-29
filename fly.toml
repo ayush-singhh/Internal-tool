@@ -1,0 +1,58 @@
+# Fly.io deployment. See DEPLOY.md for the walkthrough.
+#
+# ONE MACHINE, ALWAYS. The database is a file on the volume below, and a volume attaches
+# to exactly one machine. A second machine would get its own empty volume and its own
+# database: no corruption, no error, just two half-populated copies of your product with
+# customers landing randomly in one or the other. `fly scale count 1` is not a tuning
+# knob here, it is a correctness requirement.
+
+app = "carrier-hub"
+
+# Where the machine runs. Pick the region your customers are in, not the one you are in —
+# every page is rendered on the server, so their latency is the round trip to this box.
+# iad = Virginia, ord = Chicago, lhr = London, bom = Mumbai. `fly platform regions` lists them.
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# The database and its backups live here and survive deploys and restarts. Everything
+# else in the container is thrown away on every deploy.
+[[mounts]]
+  source = "carrier_data"
+  destination = "/data"
+
+[env]
+  # Non-secret configuration. Secrets go through `fly secrets set` so they are never in git.
+  PORT = "3000"
+  SIGNUP_OPEN = "1"
+  # Must match the URL people actually visit — it is what goes into confirmation emails.
+  APP_URL = "https://carrier-hub.fly.dev"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_start_machines = true
+  # Kept running rather than stopped when idle. Flip auto_stop_machines to "stop" and
+  # min_machines_running to 0 to pay only for the seconds it serves — at the price of a
+  # few seconds' wait on the first request after a quiet spell.
+  auto_stop_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/login"
+
+# 512 MB against a measured 47 MB in use: ten times the headroom, for about a dollar a
+# month more than the smallest size. Not the place to economise.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+# No [deploy] release_command for the migrations on purpose: a release machine runs
+# WITHOUT the volume mounted, so migrations would build a schema in a container that is
+# then thrown away. The Dockerfile's CMD runs them in the machine that has the disk,
+# before it serves anything.

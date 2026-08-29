@@ -45,7 +45,7 @@ What to know before you rely on it:
 
 For anything your client uses unattended, use a real host instead:
 
-## Railway, once
+## Railway instead
 
 1. **railway.app → New Project → Deploy from GitHub repo → `ayush-singhh/Internal-tool`.**
    Authorise Railway on the repo if it asks — it is private.
@@ -166,16 +166,58 @@ query lives in `src/lib/*.ts`, pages compose them and never build SQL. Fly.io al
 LiteFS if you want SQLite replicas instead — the reason to prefer Fly over the others is
 that it leaves both doors open.
 
-## Fly.io instead
+## Fly.io, once
 
-Same Dockerfile, no repo connection:
+`fly.toml` is committed, so this is mostly copy and paste. Install the CLI first:
+`brew install flyctl && fly auth signup`.
 
 ```bash
-brew install flyctl && fly auth signup
-fly launch --no-deploy               # keep the Dockerfile it finds
-fly volumes create carrier_data --size 1
-# fly.toml: mount carrier_data at /data
-fly secrets set ADMIN_EMAIL=... ADMIN_PASSWORD=... APP_URL=https://<app>.fly.dev \
-  SIGNUP_OPEN=1 SMTP_URL=... MAIL_FROM=...
+fly launch --no-deploy --copy-config     # keeps the committed fly.toml, creates the app
+fly volumes create carrier_data --size 1 --region iad    # the disk the database lives on
+
+# Secrets never go in fly.toml — it is in git. These are set once and remembered.
+fly secrets set \
+  ADMIN_EMAIL=you@yourcompany.com \
+  ADMIN_PASSWORD='something you have not used anywhere else' \
+  SMTP_URL='smtps://you%40gmail.com:APP_PASSWORD@smtp.gmail.com:465' \
+  MAIL_FROM='Carrier Hub <you@gmail.com>'
+
 fly deploy
+fly scale count 1        # see the warning below — check this after every scaling change
+fly open                 # your URL
 ```
+
+Then edit `APP_URL` in `fly.toml` to the URL `fly open` gave you and `fly deploy` again —
+it is what goes into confirmation emails, and it starts out as a guess at your app name.
+
+Give your client something to look at:
+
+```bash
+fly ssh console -C "node --conditions=react-server /app/scripts/seed-demo.ts"
+```
+
+### The one thing that will bite you
+
+**Never run more than one machine.** The database is a file on that volume, and a volume
+attaches to exactly one machine. A second machine does not share it — it gets its own
+empty volume and its own database. Nothing errors, nothing corrupts; you simply have two
+half-populated copies of your product and customers landing randomly in one or the other,
+which you will discover from a support email a fortnight later.
+
+`fly scale count 1` after any scaling change. `fly status` should always show one machine.
+
+To grow, grow *upward*: `fly scale vm shared-cpu-2x --memory 1024`.
+
+### Everyday commands
+
+```bash
+fly logs                 # what it is doing, and the reason it refused to start
+fly ssh console          # a shell inside the running machine
+fly status               # machine count — should be 1
+fly deploy               # ship; a few seconds of downtime while the volume moves
+fly ssh console -C "node /app/scripts/backup.ts"    # a verified snapshot into /data/backups
+```
+
+That last one is manual, and its output lands on the same disk as the database — which is
+item 0 in `Plan.md` and the thing to fix before a customer stores anything real.
+
