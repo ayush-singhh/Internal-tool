@@ -12,7 +12,8 @@
     "backup": "node scripts/backup.ts",
     "restore": "node scripts/restore.ts",
     "migrate": "node scripts/migrate.ts",
-    "support-user": "node --conditions=react-server scripts/support-user.ts"
+    "support-user": "node --conditions=react-server scripts/support-user.ts",
+    "set-billing-status": "node --conditions=react-server scripts/set-billing-status.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.1.0",

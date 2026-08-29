@@ -160,6 +160,23 @@ export const ROLES = {
 
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
+/**
+ * An organisation's billing standing — "who is paid up," tracked by hand.
+ *
+ * Nothing in this application charges anybody: `organizations.status` is set only by
+ * `scripts/set-billing-status.ts`, run by whoever sends the invoice, not by any code path
+ * a customer or a support account can reach. `/support` stays read-only by construction;
+ * this does not get a write path there. See HANDOFF.md's billing decision.
+ */
+export const ORG_STATUS = {
+  TRIAL: "trial",
+  ACTIVE: "active",
+  PAST_DUE: "past_due",
+  SUSPENDED: "suspended",
+} as const;
+
+export type OrgStatus = (typeof ORG_STATUS)[keyof typeof ORG_STATUS];
+
 export const ROLE_LABELS: Record<Role, string> = {
   support: "Platform Support",
   owner: "Owner",

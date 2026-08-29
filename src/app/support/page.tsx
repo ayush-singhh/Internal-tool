@@ -4,9 +4,17 @@ import { requireUser } from "@/lib/auth";
 import { listTenants, recentAccess } from "@/lib/support";
 import { recentErrors } from "@/lib/errors";
 import { relativeTime } from "@/lib/format";
-import { Card, CardHeader } from "@/components/ui";
+import { ORG_STATUS, type OrgStatus, type Tone } from "@/lib/constants";
+import { Badge, Card, CardHeader } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Organisations", robots: { index: false } };
+
+const STATUS_TONE: Record<OrgStatus, Tone> = {
+  [ORG_STATUS.TRIAL]: "blue",
+  [ORG_STATUS.ACTIVE]: "green",
+  [ORG_STATUS.PAST_DUE]: "amber",
+  [ORG_STATUS.SUSPENDED]: "red",
+};
 
 export default async function SupportIndexPage() {
   await requireUser();
@@ -45,7 +53,11 @@ export default async function SupportIndexPage() {
                     </Link>
                     <span className="ml-2 font-mono text-xs text-ink-400">{t.slug}</span>
                   </td>
-                  <td className="px-4 py-2.5 text-ink-600">{t.status}</td>
+                  <td className="px-4 py-2.5">
+                    <Badge tone={STATUS_TONE[t.status as OrgStatus] ?? "slate"}>
+                      {t.status.replace("_", " ")}
+                    </Badge>
+                  </td>
                   <td className="tnum px-4 py-2.5 text-right text-ink-700">{t.users}</td>
                   <td className="tnum px-4 py-2.5 text-right text-ink-700">{t.carriers}</td>
                   <td className="px-4 py-2.5 text-ink-500">
