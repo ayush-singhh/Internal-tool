@@ -20,6 +20,9 @@ export function proxy(request: NextRequest): NextResponse {
   // Next reads the policy back off the request to nonce its own script tags.
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
+  // The path, for pages that must record what was looked at (see lib/support.ts). A
+  // Server Component cannot otherwise see the URL it is rendering.
+  requestHeaders.set("x-pathname", request.nextUrl.pathname);
   requestHeaders.set("Content-Security-Policy", headers["Content-Security-Policy"]!);
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });

@@ -40,6 +40,10 @@ export function can(
   carrier?: CarrierScope | null,
 ): boolean {
   if (!user || !user.active) return false;
+  // Platform support is not a role *inside* an organisation. Their access is read-only,
+  // recorded, and lives entirely under /support — they get nothing here, including view,
+  // so a support session that somehow reached a tenant page still sees nothing.
+  if (user.role === ROLES.SUPPORT) return false;
   // An owner is the person who created the tenant, so they hold everything an admin
   // does. Tenancy added the role; this is the only place that decides what it means.
   if (user.role === ROLES.ADMIN || user.role === ROLES.OWNER) return true;

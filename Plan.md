@@ -293,7 +293,9 @@ Then, in this order, and why — see `HANDOFF.md` for the same list with the rea
        referrer and permissions policies. The policy itself lives in
        `src/lib/security-headers.ts` as data, asserted by test so it cannot quietly rot.
        **231 tests.**
-4. [ ] **Platform support role** (read-only, internally audited) per the owner's decision.
+4. [x] ~~**Platform support role**~~ — `/support`, read-only by construction (no forms, no
+       actions), every view recorded in `support_access_log`, second factor required, and
+       the role ungrantable from inside any organisation. **238 tests.**
 5. [ ] **RBAC UI** for owner/admin/member.
 6. [ ] **Session hardening**: device/session list and revoke (rotation is done).
 7. [ ] **Generalised audit log** + rate limiting beyond login and signup.

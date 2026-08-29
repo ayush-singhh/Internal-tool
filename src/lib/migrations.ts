@@ -364,6 +364,30 @@ export const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 9,
+    name: "platform support access log",
+    up: (db) => {
+      // Every cross-tenant read by a platform support account, recorded server-side.
+      // Deliberately NOT tenant-owned and deliberately not surfaced in the customer UI:
+      // it is the internal record that makes standing access accountable, not a feature
+      // customers read. Nothing in the app deletes from it.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS support_access_log (
+          id              INTEGER PRIMARY KEY,
+          user_id         INTEGER NOT NULL REFERENCES users(id),
+          organization_id INTEGER NOT NULL REFERENCES organizations(id),
+          path            TEXT NOT NULL,
+          created_at      TEXT NOT NULL
+        )`);
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_support_log_time ON support_access_log (created_at DESC)",
+      );
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_support_log_org ON support_access_log (organization_id, created_at DESC)",
+      );
+    },
+  },
 ];
 
 export function addColumn(

@@ -37,7 +37,12 @@ export type TeamResult = { ok: true; id: number } | { ok: false; error: string }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MIN_PASSWORD = 8;
-const VALID_ROLES = new Set<string>(Object.values(ROLES));
+// Every role an organisation may assign — which is every role except platform support.
+// That one crosses tenant boundaries, so letting a customer's administrator grant it
+// would be a privilege escalation out of their own organisation.
+const VALID_ROLES = new Set<string>(
+  Object.values(ROLES).filter((role) => role !== ROLES.SUPPORT),
+);
 
 /**
  * Adds somebody to an organisation.

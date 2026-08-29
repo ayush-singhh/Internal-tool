@@ -24,13 +24,15 @@ export type TeamRow = {
   managing: number;
 };
 
-const ROLE_OPTIONS = (Object.keys(ROLE_LABELS) as Role[]).map((r, i) => ({
-  id: i,
-  label: ROLE_LABELS[r],
-  value: r,
-}));
+// Platform support is left out on purpose: it crosses organisations, so an organisation's
+// administrator must not be able to grant it. `team.ts` refuses it too — this only keeps
+// the UI honest about what it offers.
+const ROLE_OPTIONS = (Object.keys(ROLE_LABELS) as Role[])
+  .filter((r) => r !== ROLES.SUPPORT)
+  .map((r, i) => ({ id: i, label: ROLE_LABELS[r], value: r }));
 
 const ROLE_TONE: Record<Role, "purple" | "blue" | "green" | "slate" | "amber"> = {
+  support: "purple",
   owner: "amber",
   admin: "purple",
   dispatcher: "blue",

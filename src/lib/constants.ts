@@ -146,6 +146,11 @@ export const LOOKUPS: SeedLookup[] = [
 ];
 
 export const ROLES = {
+  /** Platform staff, not a customer's employee: read-only access to any organisation,
+   *  recorded in support_access_log. Never assignable from the Team page — an
+   *  organisation's administrator must not be able to mint one. Created out of band by
+   *  `scripts/support-user.ts`. */
+  SUPPORT: "support",
   OWNER: "owner",
   ADMIN: "admin",
   DISPATCHER: "dispatcher",
@@ -156,6 +161,7 @@ export const ROLES = {
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
 export const ROLE_LABELS: Record<Role, string> = {
+  support: "Platform Support",
   owner: "Owner",
   admin: "Admin",
   dispatcher: "Dispatcher",

@@ -17,7 +17,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 231 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 238 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -26,6 +26,27 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 ---
 
 ## What is DONE
+
+### Platform support role ✅ — built as agreed, not as first asked
+
+- `/support` is the only cross-tenant surface: an organisation list, one tenant's
+  carriers, one carrier's full record.
+- **Read-only by construction.** Those pages have no form and import no Server Action, so
+  there is no write path to guard. This matters: `filter-actions.ts` has two write actions
+  with *no* permission check by design (saved filters are user-owned), so `can()` alone
+  would not have made a session read-only — and a shared flag could not work either, since
+  one process serves many requests at once and it would leak between them.
+- `can()` denies a support account **everything** inside a tenant, view included.
+- **Every view recorded** in `support_access_log` (who, whose data, path, when), written
+  before the data is read. Not tenant-owned, and not surfaced in the customer UI — it is
+  the internal record that makes standing access reviewable.
+- **Second factor required**: `/support` redirects to `/support/account` until it is on.
+- **Ungrantable from inside the product** — `team.ts` refuses the role and the picker omits
+  it, or a customer's administrator could escalate out of their own organisation.
+  `npm run support-user -- email@example.com "Name"` creates one, out of band.
+- Reads use the ordinary scoped queries with an `Org` for the tenant being viewed, so the
+  guard and composite FKs still apply. Verified over HTTP: a customer's admin gets **404**,
+  a support account without MFA is sent to enrol, and both views landed in the log.
 
 ### Security headers / CSP ✅
 
@@ -156,12 +177,10 @@ Mirrored in `Plan.md` under "Phase 12 … Still to do".
 
 Everything after this is a recommendation with reasons, not a queue.
 
-1. **Platform support role** — see decision 4. Still the only sanctioned way to look
-   inside a tenant, and it is the thing the owner actually asked for.
-2. **RBAC UI** for owner/admin/member.
-3. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
+1. **RBAC UI** for owner/admin/member.
+2. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
    completing MFA is already done.)
-4. **Generalised audit log** + rate limiting beyond login and signup.
+3. **Generalised audit log** + rate limiting beyond login and signup.
 
 Smaller, and only worth a detour when they get in the way:
 

@@ -45,6 +45,7 @@ src/
     reset.ts       password reset links — asked for, or issued by an administrator
     mailer.ts      SMTP client and message building; logs instead when unconfigured
     security-headers.ts  the CSP and friends, as data so they can be asserted
+    support.ts     the only cross-tenant reads in the product, each one recorded
     auth.ts        session create/read/destroy, requireUser, permission checks
     totp.ts        RFC 6238 codes + base32 (pure, no database)
     mfa.ts         enrolment, the sign-in check, recovery codes
@@ -219,6 +220,34 @@ customer, and "resend my link" needs no separate route. Signups are rate-limited
 One address belongs to one organisation. The schema allows the same address in two tenants,
 but signing in looks an account up by email alone, so the application refuses to create
 one: both `signup.ts` and `team.ts` check across every organisation before inserting a user.
+
+### Platform support access
+
+One surface, `/support`, reaches across organisations. Its shape was a decision rather
+than a default:
+
+- **Standing access, no customer approval gate.** Support that has to wait for permission
+  is not support.
+- **Read only — by construction, not by a flag.** The pages under `/support` render markup
+  with no forms and import no Server Action, so there is no write path to guard. A shared
+  "read-only" flag would not have worked: one process serves many requests at once and the
+  flag would leak between them. `can()` additionally denies a support account *everything*
+  inside a tenant, so a support session that somehow reached an ordinary page sees nothing.
+- **Every view recorded** in `support_access_log` — who, whose data, which path, when —
+  written before the data is read, so a render that fails is still a recorded look. The
+  table is not tenant-owned and is deliberately **not surfaced in the customer UI**: it
+  exists so the access can be reviewed internally.
+- **A second factor is required.** `/support` stays shut until the account has one.
+- **The role cannot be granted from inside the product.** `team.ts` refuses it and the
+  role picker omits it, because an organisation's administrator granting a role that
+  crosses organisations would be an escalation out of their own tenant.
+  `scripts/support-user.ts` creates one, run by whoever has the server.
+- Reads go through the ordinary scoped query functions with an `Org` for the tenant being
+  viewed, so the guard and the composite foreign keys still apply — support borrows
+  authority, it does not switch it off.
+
+Emergency access that leaves no trace remains out of band: SQL on the server, by someone
+with the disk.
 
 ## Multi-tenancy (Option B) — implemented
 
