@@ -213,3 +213,45 @@ test("a recovery code can also turn it off — the lost-phone path", () => {
   assert.equal(mfa.disable(org.ownerId, result.recoveryCodes[0]!).ok, true);
   assert.equal(mfa.mfaState(org.ownerId).active, false);
 });
+
+// ── regenerating recovery codes ──────────────────────────────────────────────
+
+test("regenerating needs a working code, and retires the old set", () => {
+  const secret = activated();
+  assert.equal(mfa.regenerateRecoveryCodes(org.ownerId, "000000").ok, false, "a guess issues nothing");
+
+  const before = db.get<{ code_hash: string }>(
+    "SELECT code_hash FROM mfa_recovery_codes WHERE user_id = ? LIMIT 1", [org.ownerId],
+  )!.code_hash;
+
+  const result = mfa.regenerateRecoveryCodes(org.ownerId, codeAt(secret, currentStep() + 1));
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.recoveryCodes.length, 10);
+  assert.equal(mfa.mfaState(org.ownerId).recoveryRemaining, 10, "still ten, none pre-spent");
+
+  const after = db.all<{ code_hash: string }>(
+    "SELECT code_hash FROM mfa_recovery_codes WHERE user_id = ?", [org.ownerId],
+  );
+  assert.ok(!after.some((row) => row.code_hash === before), "the old hash is gone");
+});
+
+test("an old recovery code is dead once new ones are issued", () => {
+  mfa.beginEnrollment(org.ownerId);
+  const secret = secretOf(org.ownerId);
+  const first = mfa.activate(org.ownerId, codeAt(secret, currentStep()));
+  assert.equal(first.ok, true);
+  if (!first.ok) return;
+
+  const regenerated = mfa.regenerateRecoveryCodes(org.ownerId, codeAt(secret, currentStep() + 1));
+  assert.equal(regenerated.ok, true);
+  if (!regenerated.ok) return;
+
+  assert.equal(mfa.verifySecondFactor(org.ownerId, first.recoveryCodes[0]!), false, "retired");
+  assert.equal(mfa.verifySecondFactor(org.ownerId, regenerated.recoveryCodes[0]!), true, "the new one works");
+});
+
+test("regenerating while the second factor is off is refused", () => {
+  const result = mfa.regenerateRecoveryCodes(org.ownerId, "000000");
+  assert.equal(result.ok, false);
+});

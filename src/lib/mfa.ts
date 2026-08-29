@@ -168,6 +168,38 @@ export function disable(userId: number, submitted: string): MfaResult {
   return { ok: true };
 }
 
+export type RegenerateResult =
+  | { ok: true; recoveryCodes: string[] }
+  | { ok: false; error: string };
+
+/** Replaces every recovery code, spent or not. Needs a working second factor first —
+ *  same proof `disable` requires — so a borrowed session cannot mint itself a fresh set. */
+export function regenerateRecoveryCodes(userId: number, submitted: string): RegenerateResult {
+  const row = readUser(userId);
+  if (!row?.mfa_activated_at) return { ok: false, error: "Two-factor authentication is off." };
+  if (!verifySecondFactor(userId, submitted)) {
+    return { ok: false, error: "That code is not right." };
+  }
+
+  const codes = Array.from({ length: RECOVERY_CODE_COUNT }, () =>
+    grouped(base32(randomBytes(RECOVERY_CODE_BYTES))),
+  );
+  const now = new Date().toISOString();
+
+  systemQuery(() =>
+    transaction(() => {
+      run("DELETE FROM mfa_recovery_codes WHERE user_id = ?", [userId]);
+      for (const code of codes) {
+        run(
+          "INSERT INTO mfa_recovery_codes (code_hash, user_id, created_at) VALUES (?, ?, ?)",
+          [digest(code), userId, now],
+        );
+      }
+    }),
+  );
+  return { ok: true, recoveryCodes: codes };
+}
+
 /**
  * The sign-in check: a current authenticator code, or one recovery code, once.
  * Callers throttle — this is reached only behind the login rate limit.

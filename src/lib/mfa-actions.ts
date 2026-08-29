@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { AUDIT, record } from "./audit.ts";
 import { requireUser } from "./auth.ts";
-import { activate, beginEnrollment, cancelEnrollment, disable } from "./mfa.ts";
+import { activate, beginEnrollment, cancelEnrollment, disable, regenerateRecoveryCodes } from "./mfa.ts";
 
 /**
  * Two-factor authentication is self-service: every action here acts on the signed-in
@@ -49,4 +49,18 @@ export async function disableAction(
     actor: user.email, action: AUDIT.MFA_DISABLED, subject: user.email });
   revalidatePath("/settings");
   return { ok: "Two-factor authentication is off. Your password is now the only factor." };
+}
+
+export async function regenerateRecoveryCodesAction(
+  _prev: MfaFormState,
+  formData: FormData,
+): Promise<MfaFormState> {
+  const user = await requireUser();
+  const result = regenerateRecoveryCodes(user.id, String(formData.get("code") ?? ""));
+  if (!result.ok) return { error: result.error };
+  record({ organizationId: user.organization_id, userId: user.id,
+    actor: user.email, action: AUDIT.MFA_RECOVERY_REGENERATED, subject: user.email });
+  revalidatePath("/settings");
+  // Shown once, like the original set — they are not stored in a readable form.
+  return { ok: "New recovery codes issued. The old ones no longer work.", recoveryCodes: result.recoveryCodes };
 }
