@@ -56,6 +56,12 @@ COPY --from=build --chown=carrier:nodejs /app/.next/static ./.next/static
 # Kept so `npm run migrate` and `npm run backup` work inside the container.
 COPY --from=build --chown=carrier:nodejs /app/src/lib ./src/lib
 COPY --from=build --chown=carrier:nodejs /app/scripts ./scripts
+# Next's standalone trace inlines `server-only`'s check into the compiled app and never
+# treats the package itself as a runtime dependency, so it is missing from the pruned
+# node_modules above. Any script that imports db.ts (which imports tenant-db.ts, which
+# imports "server-only") needs the real package on disk — `--conditions=react-server`
+# only makes it resolve to a no-op, it does not make Node able to find it at all.
+COPY --from=build --chown=carrier:nodejs /app/node_modules/server-only ./node_modules/server-only
 
 RUN mkdir -p /data && chown -R carrier:nodejs /data
 VOLUME /data
