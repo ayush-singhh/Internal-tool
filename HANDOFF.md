@@ -99,19 +99,43 @@ Table classification (global / tenant-owned / user-owned) is documented in
 
 ## What is NEXT (later SaaS phases — not started)
 
-In `Plan.md` under "Phase 12 … Still to do". Suggested order:
+Mirrored in `Plan.md` under "Phase 12 … Still to do". This order is a recommendation with
+reasons, not a queue — but the first one is a hole the last session punched, so start there.
 
-1. **Self-serve password reset.** Only an administrator can issue a reset link today, so a
-   signup owner who forgets their password has nobody to ask. Every piece exists —
-   `reset.ts` issues and consumes the tokens, `mailer.ts` can send them — it needs a
-   "forgot password" route with the same no-enumeration answer `/signup` gives.
-2. **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`).
-3. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
+1. **Self-serve password reset.** Signup opened a dead end: an owner is the top of their
+   own organisation, so the login page's "ask an administrator" has no answer for them.
+   Every piece exists — `reset.ts` issues and consumes single-use tokens, `mailer.ts` can
+   now send them — so this is a "forgot password" route giving the same answer for every
+   address that `/signup` does. While in there, **mail** the administrator-issued link
+   instead of returning it to be copied out of the Team page and pasted into a chat
+   window (`reset-actions.ts` → `IssueState.link`). One session's work.
+2. **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`). Today
+   an owner adds a colleague by inventing a password for them and handing it over by hand.
+   This is what turns "a person signed up" into "a company is using it".
+3. **Security headers / CSP.** One config block, and the first question on every B2B
+   security review you will be sent once real dispatch companies are buying this.
+4. **Platform support role** — see decision 4. Still the only sanctioned way to look
+   inside a tenant, and it is the thing the owner actually asked for.
+5. **RBAC UI** for owner/admin/member.
+6. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
    completing MFA is already done.)
-4. **RBAC UI** for owner/admin/member.
-5. **Generalised audit log** + rate limiting beyond login and signup.
-6. **Security headers / CSP.**
-7. **Platform support role** — see decision 4.
+7. **Generalised audit log** + rate limiting beyond login and signup.
+
+Smaller, and only worth a detour when they get in the way:
+
+- **Recovery codes cannot be regenerated.** Running out means turning MFA off with the
+  last one and enrolling again.
+- **Nothing reports errors.** A customer hitting a 500 is invisible from here.
+- `next build` fails with `ENOTEMPTY` on `.next/standalone` on a rebuild often enough to
+  notice; `rm -rf .next` fixes it. Next's bug, not ours.
+
+### Not on any list — a decision, not a phase
+
+**Nothing in this repository charges anybody.** Every "billing" in these docs is the
+*carriers'* commercial terms, not our customers' subscriptions. Manual invoicing is a
+perfectly good answer at this number of tenants, but it should be a decision rather than an
+omission — and it wants settling before the platform support role, since "which tenants are
+paid up" tends to want a column on `organizations`.
 
 ---
 

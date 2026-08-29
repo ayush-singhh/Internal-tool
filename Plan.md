@@ -271,14 +271,36 @@ and `MIGRATION-PLAN.md`.
       verified over HTTP that the link confirms an account and the closed route 404s
 
 ### Still to do (later phases)
-- [ ] Self-serve password reset (today only an administrator can issue a link — a
-      signup owner who forgets their password has nobody to ask)
-- [ ] Invitations (single-use, tenant-bound tokens)
-- [ ] RBAC UI for owner/admin/member
-- [ ] Session hardening: rotation, device list, revoke
-- [ ] Generalised audit log + rate limiting beyond login
-- [ ] Security headers / CSP
-- [ ] Platform support role (read-only, internally audited) per the owner's decision
+
+In this order, and why — see `HANDOFF.md` for the same list with the reasoning:
+
+1. [ ] **Self-serve password reset.** Signup opened a dead end: an owner is the top of
+       their own organisation, so "ask an administrator" has no answer. `reset.ts` and
+       `mailer.ts` already do the work; it needs a route with `/signup`'s no-enumeration
+       answer. Mail the administrator-issued link too, instead of returning it to be
+       copied out of the Team page by hand.
+2. [ ] **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`).
+       Today an owner adds a colleague by inventing a password for them.
+3. [ ] **Security headers / CSP** — cheap, and the first thing a customer's security
+       review asks about.
+4. [ ] **Platform support role** (read-only, internally audited) per the owner's decision.
+5. [ ] **RBAC UI** for owner/admin/member.
+6. [ ] **Session hardening**: device/session list and revoke (rotation is done).
+7. [ ] **Generalised audit log** + rate limiting beyond login and signup.
+
+Smaller, whenever they get in the way:
+
+- [ ] Recovery codes cannot be regenerated — running out means turning MFA off with the
+      last one and enrolling again.
+- [ ] Nothing reports errors. A customer hitting a 500 is invisible from here.
+
+### Open question — not a phase, a decision
+
+**Nothing in this repository charges anybody.** Every "billing" in these docs is the
+*carriers'* commercial terms, not our customers' subscriptions. Manual invoicing is a
+perfectly good answer for the number of tenants involved, but it should be a decision
+rather than an omission — and it wants settling before the platform support role, since
+"which tenants are paid up" tends to want a column.
 
 ---
 
