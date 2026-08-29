@@ -4,6 +4,9 @@ import { Logo } from "@/components/logo";
 import { ForgotForm } from "./forgot-form";
 
 export const metadata: Metadata = { title: "Forgotten password", robots: { index: false } };
+// The CSP nonce is minted per request and cannot be baked into a prerendered page, so
+// this one renders per request like every other route. See src/proxy.ts.
+export const dynamic = "force-dynamic";
 
 export default function ForgotPage() {
   return (

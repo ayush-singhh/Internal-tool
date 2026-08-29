@@ -44,6 +44,7 @@ src/
     signup.ts      self-serve organisation creation + email confirmation links
     reset.ts       password reset links — asked for, or issued by an administrator
     mailer.ts      SMTP client and message building; logs instead when unconfigured
+    security-headers.ts  the CSP and friends, as data so they can be asserted
     auth.ts        session create/read/destroy, requireUser, permission checks
     totp.ts        RFC 6238 codes + base32 (pure, no database)
     mfa.ts         enrolment, the sign-in check, recovery codes
@@ -158,6 +159,18 @@ append-only — nothing in the UI edits or deletes it.
   and the shell asks `can()` rather than comparing role strings.
 - All SQL uses bound parameters.
 - The database file lives outside the served tree and is git-ignored.
+- **Security headers on every response**, from `src/proxy.ts` (`middleware.ts` is
+  deprecated in Next 16 and renamed). The CSP carries a nonce minted per request and uses
+  `'strict-dynamic'`, so only scripts bearing that nonce run — an injected `<script>`
+  would have to guess a value that changes every time. `script-src` allows no inline
+  scripts at all; `style-src` does, because a nonce cannot cover the `style={{…}}`
+  attributes React emits and CSS is a far weaker vector. Also `frame-ancestors 'none'` and
+  `X-Frame-Options`, `nosniff`, a strict referrer policy, a `Permissions-Policy` denying
+  camera/microphone/geolocation/payment, and HSTS in production only, without `preload`.
+- **A nonce cannot be prerendered**, so every route renders per request. Next's built-in
+  404 is the exception and stays static: its scripts carry no nonce and are blocked, which
+  costs nothing because there is nothing on that page to hydrate. A route with something
+  to click must not be static while this policy is in force.
 
 ### Invitations
 

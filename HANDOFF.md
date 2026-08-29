@@ -17,7 +17,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 224 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 231 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -26,6 +26,24 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 ---
 
 ## What is DONE
+
+### Security headers / CSP ✅
+
+- `src/proxy.ts` — **not `middleware.ts`**, which Next 16 deprecated and renamed. Sets the
+  headers on every response.
+- The CSP mints a **nonce per request** and uses `'strict-dynamic'`: only scripts carrying
+  that nonce run, so `script-src` allows no inline script at all. `style-src` does allow
+  inline, because a nonce cannot cover the `style={{…}}` attributes React emits — a
+  deliberate trade, and commented as one.
+- Plus `frame-ancestors 'none'` + `X-Frame-Options`, `nosniff`, `Referrer-Policy`,
+  `Permissions-Policy`, and HSTS in production only, without `preload`.
+- **A nonce cannot be baked into a prerendered page**, so every route now renders per
+  request (`/forgot` needed `force-dynamic`). Next's built-in 404 is the one exception and
+  stays static — its scripts are blocked, which costs nothing, as there is nothing there to
+  hydrate. **Do not make a route with something to click static** while this is in force.
+- The policy is data in `src/lib/security-headers.ts` so it can be asserted: `proxy.ts`
+  imports `next/server`, which does not resolve under `node --test`, and security headers
+  are exactly the thing that rots one `'unsafe-inline'` at a time.
 
 ### Invitations ✅
 
@@ -138,14 +156,12 @@ Mirrored in `Plan.md` under "Phase 12 … Still to do".
 
 Everything after this is a recommendation with reasons, not a queue.
 
-1. **Security headers / CSP.** One config block, and the first question on every B2B
-   security review you will be sent once real dispatch companies are buying this.
-2. **Platform support role** — see decision 4. Still the only sanctioned way to look
+1. **Platform support role** — see decision 4. Still the only sanctioned way to look
    inside a tenant, and it is the thing the owner actually asked for.
-3. **RBAC UI** for owner/admin/member.
-4. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
+2. **RBAC UI** for owner/admin/member.
+3. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
    completing MFA is already done.)
-5. **Generalised audit log** + rate limiting beyond login and signup.
+4. **Generalised audit log** + rate limiting beyond login and signup.
 
 Smaller, and only worth a detour when they get in the way:
 

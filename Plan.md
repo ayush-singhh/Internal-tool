@@ -288,8 +288,11 @@ Then, in this order, and why — see `HANDOFF.md` for the same list with the rea
 2. [x] ~~**Invitations**~~ — adding a member now sends a link instead of inventing a
        password. No new table: an invitation is a member with no confirmed address and an
        unguessable password, shown as *Invited* until they accept. **224 tests.**
-3. [ ] **Security headers / CSP** — cheap, and the first thing a customer's security
-       review asks about.
+3. [x] ~~**Security headers / CSP**~~ — `src/proxy.ts` sets a nonce-per-request CSP with
+       `'strict-dynamic'` (no inline scripts at all), plus HSTS, nosniff, frame-ancestors,
+       referrer and permissions policies. The policy itself lives in
+       `src/lib/security-headers.ts` as data, asserted by test so it cannot quietly rot.
+       **231 tests.**
 4. [ ] **Platform support role** (read-only, internally audited) per the owner's decision.
 5. [ ] **RBAC UI** for owner/admin/member.
 6. [ ] **Session hardening**: device/session list and revoke (rotation is done).
