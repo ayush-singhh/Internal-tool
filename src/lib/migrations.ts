@@ -388,6 +388,18 @@ export const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 10,
+    name: "sessions remember where they came from",
+    up: (db) => {
+      // So somebody can look at their own list and recognise — or fail to recognise — a
+      // session, which is the only way "sign out the one I do not know" is possible.
+      addColumn(db, "sessions", "user_agent", "TEXT");
+      addColumn(db, "sessions", "ip", "TEXT");
+      addColumn(db, "sessions", "last_seen_at", "TEXT");
+      db.exec("UPDATE sessions SET last_seen_at = created_at WHERE last_seen_at IS NULL");
+    },
+  },
 ];
 
 export function addColumn(

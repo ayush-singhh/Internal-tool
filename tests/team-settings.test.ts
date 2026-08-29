@@ -195,6 +195,23 @@ test("editing changes only the fields given", () => {
   assert.equal(row.email, "editme@x.test", "email untouched");
 });
 
+test("an edit cannot take an address that exists in another organisation", async () => {
+  // The create path has checked across every organisation since signup shipped; the edit
+  // path checked only within one, so it could still produce the thing create refuses —
+  // and sign-in, which finds an account by address alone, would then be ambiguous.
+  const { seedOrg } = await import("./helpers.ts");
+  const elsewhere = seedOrg(db, `Rival ${Math.random().toString(36).slice(2, 6)}`, "taken@rival.test");
+  assert.ok(elsewhere.ownerId);
+
+  const mine = add({ email: "mine@x.test" });
+  assert.ok(mine.ok);
+  if (!mine.ok) return;
+
+  const result = team.updateTeamMember(org, mine.id, { email: "taken@rival.test" });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.error, /already uses that email/);
+});
+
 test("an edit cannot steal another member's email", () => {
   const a = add({ email: "taken@x.test" });
   const b = add({ email: "other@x.test" });

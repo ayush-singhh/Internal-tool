@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { all, get, run, systemQuery } from "./db.ts";
 import { passwordStep, secondFactorStep } from "./login.ts";
+import { touchSession } from "./sessions.ts";
 import type { SessionUser } from "./permissions.ts";
 import { Org } from "./tenant-db.ts";
 
@@ -45,9 +46,20 @@ export async function signIn(
  *  completing MFA replaces the pending id rather than promoting it. */
 async function issueSession(userId: number, expires: Date, pending: boolean): Promise<string> {
   const id = randomBytes(32).toString("hex");
+  const now = new Date().toISOString();
+  const h = await headers();
   run(
-    "INSERT INTO sessions (id, user_id, created_at, expires_at, mfa_pending) VALUES (?, ?, ?, ?, ?)",
-    [id, userId, new Date().toISOString(), expires.toISOString(), pending ? 1 : 0],
+    `INSERT INTO sessions (id, user_id, created_at, expires_at, mfa_pending,
+                           user_agent, ip, last_seen_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id, userId, now, expires.toISOString(), pending ? 1 : 0,
+      // Kept so the owner of the account can recognise their own sessions in the list —
+      // it is a label, never a check.
+      h.get("user-agent")?.slice(0, 300) ?? null,
+      await clientIp(),
+      now,
+    ],
   );
   (await cookies()).set(COOKIE, id, {
     httpOnly: true,
@@ -127,10 +139,17 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     run("DELETE FROM sessions WHERE id = ?", [id]);
     return null;
   }
+  touchSession(id);
   const { expires_at: _drop, ...user } = row;
   void _drop;
   return user;
 });
+
+/** The id in this browser's cookie, for the sessions list. Not a credential on its own —
+ *  every query using it is also scoped by user id. */
+export async function currentSessionId(): Promise<string | null> {
+  return (await cookies()).get(COOKIE)?.value ?? null;
+}
 
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();

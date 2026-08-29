@@ -17,7 +17,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 249 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 258 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -26,6 +26,27 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 ---
 
 ## What is DONE
+
+### Sessions you can see and end ✅
+
+- Settings lists every live session for the account: the browser it was issued to, the
+  address it came from, when it was last used, and which one is asking. Sign out one, or
+  everything except this browser.
+- Revocation is a `DELETE`, so it takes effect on the next request — there is no token
+  left working somewhere.
+- Every query in `sessions.ts` is scoped by `user_id`. A session id is unguessable, but
+  unguessable is not an authorisation check, and this is the one place other people's
+  session ids are handled at all.
+- `last_seen_at` is written at most once every five minutes, not once per request.
+- The device name is a dozen lines of pattern matching, not a UA-parsing dependency, and
+  the raw string is kept so nobody has to trust it. It is a label, never a check.
+
+**RBAC UI was already built** — the Team page assigns roles, invites, deactivates and
+resets, and `can()` is the one matrix. That item was stale. What was genuinely missing
+turned up while checking it: `updateTeamMember` checked email uniqueness only *within* an
+organisation while creation checked across all of them, so an **edit** could still create
+the same address in two tenants — which sign-in, finding an account by address alone,
+cannot resolve. Fixed, and pinned by a test.
 
 ### Automated, verified, off-machine backups ✅
 
@@ -190,10 +211,7 @@ Mirrored in `Plan.md` under "Phase 12 … Still to do".
 Item 0 — automated off-box backups — is **done**. What is left is a recommendation with
 reasons, not a queue.
 
-1. **RBAC UI** for owner/admin/member.
-2. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
-   completing MFA is already done.)
-3. **Generalised audit log** + rate limiting beyond login and signup.
+1. **Generalised audit log** + rate limiting beyond login and signup.
 
 Smaller, and only worth a detour when they get in the way:
 

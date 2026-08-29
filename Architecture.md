@@ -46,6 +46,7 @@ src/
     mailer.ts      SMTP client and message building; logs instead when unconfigured
     security-headers.ts  the CSP and friends, as data so they can be asserted
     support.ts     the only cross-tenant reads in the product, each one recorded
+    sessions.ts    the list of places an account is signed in, and ending one
     backup.ts      snapshot, verify, upload, rotate — one implementation, two callers
     backup-schedule.ts  the timer, kept out of the Edge bundle it could never run in
     s3.ts          SigV4 signing and a PUT, so backups can leave the machine
@@ -144,7 +145,11 @@ append-only — nothing in the UI edits or deletes it.
   the next successful login — the one moment the plaintext is available. `needsRehash()`
   in `password.ts` is the discriminator.
 - Sessions: opaque 256-bit random IDs in HTTP-only, `SameSite=Lax` cookies, with a
-  server-side expiry row. Logout deletes the row.
+  server-side expiry row. Logout deletes the row. Each row records the browser it was
+  issued to and when it was last used, so Settings can show **where the account is signed
+  in** and end any of it — revocation is a `DELETE`, so it takes effect on the next
+  request with no token left working anywhere. Every query there is scoped by `user_id`:
+  a session id is unguessable, but unguessable is not an authorisation check.
 - **Two-factor authentication (TOTP)**, per user, self-service. A password on an enrolled
   account buys only a `mfa_pending` session: `getCurrentUser()` refuses one, so it opens
   no page and reads no data until a code confirms it, and it expires in 10 minutes.

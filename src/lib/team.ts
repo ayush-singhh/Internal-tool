@@ -116,8 +116,12 @@ export function updateTeamMember(
   if (input.email !== undefined) {
     const email = input.email.trim().toLowerCase().slice(0, 254);
     if (!EMAIL.test(email)) return { ok: false, error: "Enter a valid email address." };
-    const clash = get<{ id: number }>(
-      "SELECT id FROM users WHERE organization_id = ? AND email = ? AND id != ?", [org.id, email, id],
+    // Across every organisation, for the same reason creation checks that way: sign-in
+    // finds an account by address alone, so the same one in two tenants leaves one of
+    // them unable to sign in at all. Checking only this organisation left the edit path
+    // able to create exactly what the create path refuses.
+    const clash = systemQuery(() =>
+      get<{ id: number }>("SELECT id FROM users WHERE email = ? AND id != ?", [email, id]),
     );
     if (clash) return { ok: false, error: "Someone already uses that email address." };
     sets.push("email = ?"); params.push(email);

@@ -298,8 +298,14 @@ Then, in this order, and why — see `HANDOFF.md` for the same list with the rea
 4. [x] ~~**Platform support role**~~ — `/support`, read-only by construction (no forms, no
        actions), every view recorded in `support_access_log`, second factor required, and
        the role ungrantable from inside any organisation. **238 tests.**
-5. [ ] **RBAC UI** for owner/admin/member.
-6. [ ] **Session hardening**: device/session list and revoke (rotation is done).
+5. [x] ~~**RBAC UI**~~ — this was already built and the item was stale: the Team page
+       assigns roles, invites, deactivates and resets, and `can()` is the single matrix.
+       What was genuinely missing was found while checking: `updateTeamMember` checked
+       email uniqueness only within one organisation while creation checked globally, so
+       an **edit** could still produce the ambiguous sign-in that creation refuses. Fixed.
+6. [x] ~~**Session hardening**~~ — Settings lists every live session with the browser it
+       was issued to, its address and when it was last used, marks the current one, and
+       ends one or all others. **258 tests.**
 7. [ ] **Generalised audit log** + rate limiting beyond login and signup.
 
 - [x] Demo seeder made tenant-aware — it creates its own organisation via `provision.ts`
