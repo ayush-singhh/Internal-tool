@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getCurrentUser, getPendingLogin, isFirstRun } from "@/lib/auth";
+import { signupOpen } from "@/lib/signup";
 import { Logo } from "@/components/logo";
 import { LoginForm, VerifyForm } from "./login-form";
 import { signOutAction } from "@/lib/session-actions";
@@ -74,10 +76,20 @@ export default async function LoginPage() {
               </button>
             </form>
           ) : (
-            <p className="mt-5 text-xs leading-relaxed text-ink-500">
-              Forgotten your password? Ask an administrator to send you a reset link — they
-              can issue one from the Team page without ever seeing your password.
-            </p>
+            <>
+              <p className="mt-5 text-xs leading-relaxed text-ink-500">
+                Forgotten your password? Ask an administrator to send you a reset link — they
+                can issue one from the Team page without ever seeing your password.
+              </p>
+              {signupOpen() && (
+                <p className="mt-3 text-xs text-ink-500">
+                  New company?{" "}
+                  <Link href="/signup" className="underline hover:text-ink-800">
+                    Create an account
+                  </Link>
+                </p>
+              )}
+            </>
           )}
 
           {firstRun && !pending && (

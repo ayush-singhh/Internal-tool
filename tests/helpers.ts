@@ -33,9 +33,11 @@ export function seedOrg(
     db.run("INSERT INTO app_settings (organization_id, key, value) VALUES (?, ?, ?)", [id, key, value]);
   }
   db.run(
-    `INSERT INTO users (organization_id, name, email, password_hash, role, active, created_at, updated_at)
-     VALUES (?, 'Owner', ?, 'x', ?, 1, ?, ?)`,
-    [id, ownerEmail, ROLES.OWNER, now, now],
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Owner', ?, 'x', ?, 1, ?, ?, ?)`,
+    // Confirmed, like every owner provision.ts makes: only self-signup leaves this unset.
+    [id, ownerEmail, ROLES.OWNER, now, now, now],
   );
   const ownerId = db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
   return { id, ownerId };

@@ -26,6 +26,11 @@ export const RULES: Record<"email" | "ip", ThrottleRule> = {
   ip: { max: 30, windowMinutes: 15 },
 };
 
+/** Creating organisations is the one unauthenticated write in the product, so it gets its
+ *  own limit. Three an hour is far above what a real person needs and far below what
+ *  makes a spam run worth starting. */
+export const SIGNUP_RULE: ThrottleRule = { max: 3, windowMinutes: 60 };
+
 export type ThrottleVerdict =
   | { allowed: true }
   | { allowed: false; retryAfterSeconds: number; scope: "email" | "ip" };
@@ -87,6 +92,27 @@ export function recordAttempt(email: string, ip: string | null, succeeded: boole
   }
 }
 
+/** Signups are counted in the same table under their own key. They are not sign-in
+ *  failures, so `recentFailures()` filters them back out of the administrator's view. */
+export function checkSignup(ip: string | null): ThrottleVerdict {
+  if (!ip) return { allowed: true };
+  const { count, oldest } = failuresSince(`signup:${ip}`, windowStart(SIGNUP_RULE.windowMinutes));
+  if (count < SIGNUP_RULE.max || !oldest) return { allowed: true };
+  const unlocksAt = new Date(oldest).getTime() + SIGNUP_RULE.windowMinutes * 60_000;
+  return {
+    allowed: false,
+    retryAfterSeconds: Math.max(1, Math.ceil((unlocksAt - Date.now()) / 1000)),
+    scope: "ip",
+  };
+}
+
+export function recordSignup(ip: string | null): void {
+  if (!ip) return;
+  run("INSERT INTO login_attempts (identifier, succeeded, attempted_at) VALUES (?, 0, ?)", [
+    `signup:${ip}`, new Date().toISOString(),
+  ]);
+}
+
 export function describeLockout(verdict: Extract<ThrottleVerdict, { allowed: false }>): string {
   const minutes = Math.ceil(verdict.retryAfterSeconds / 60);
   const wait = minutes <= 1 ? "a minute" : `${minutes} minutes`;
@@ -100,7 +126,7 @@ export function recentFailures(limit = 20) {
   return all<{ identifier: string; attempts: number; last: string }>(
     `SELECT identifier, COUNT(*) AS attempts, MAX(attempted_at) AS last
        FROM login_attempts
-      WHERE succeeded = 0 AND attempted_at >= ?
+      WHERE succeeded = 0 AND attempted_at >= ? AND identifier NOT LIKE 'signup:%'
       GROUP BY identifier
       ORDER BY attempts DESC, last DESC
       LIMIT ?`,

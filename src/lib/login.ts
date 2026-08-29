@@ -24,8 +24,11 @@ export function passwordStep(email: string, password: string, ip: string | null)
   if (!verdict.allowed) return { ok: false, error: describeLockout(verdict) };
 
   const user = systemQuery(() =>
-    get<{ id: number; password_hash: string; active: number; mfa_activated_at: string | null }>(
-      "SELECT id, password_hash, active, mfa_activated_at FROM users WHERE email = ?",
+    get<{
+      id: number; password_hash: string; active: number;
+      mfa_activated_at: string | null; email_verified_at: string | null;
+    }>(
+      "SELECT id, password_hash, active, mfa_activated_at, email_verified_at FROM users WHERE email = ?",
       [email.trim().toLowerCase()],
     ),
   );
@@ -40,6 +43,15 @@ export function passwordStep(email: string, password: string, ip: string | null)
     return { ok: false, error: "This account has been deactivated." };
   }
   recordAttempt(email, ip, true);
+
+  // Only self-signup leaves this unset. The password was right, so this is counted as a
+  // success — waiting for an email must not lock the account that is waiting.
+  if (user.email_verified_at === null) {
+    return {
+      ok: false,
+      error: "Confirm your email address first — we sent you a link when you signed up.",
+    };
+  }
 
   // Retire a pre-argon2 hash now, while the plaintext is in hand. A sign-in is the only
   // moment an old hash can be upgraded, and it happens exactly once per account.

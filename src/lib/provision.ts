@@ -43,6 +43,9 @@ export function createOrganization(input: {
   ownerName: string;
   ownerEmail: string;
   passwordHash: string;
+  /** Self-signup passes false: that owner must click the link before they can sign in.
+   *  Everyone else — the first-run seed, the CLI — was vouched for by whoever ran it. */
+  emailVerified?: boolean;
 }): NewOrg {
   return transaction(() => {
     const now = new Date().toISOString();
@@ -60,9 +63,11 @@ export function createOrganization(input: {
     seedOrganizationData(orgId);
 
     run(
-      `INSERT INTO users (organization_id, name, email, password_hash, role, active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
-      [orgId, input.ownerName, input.ownerEmail.toLowerCase(), input.passwordHash, ROLES.OWNER, now, now],
+      `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                          email_verified_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+      [orgId, input.ownerName, input.ownerEmail.toLowerCase(), input.passwordHash, ROLES.OWNER,
+       input.emailVerified === false ? null : now, now, now],
     );
     const ownerId = get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
 

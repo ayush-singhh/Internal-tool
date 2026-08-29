@@ -9,6 +9,17 @@
 #     -v carrier-hub-data:/data \
 #     -e ADMIN_EMAIL=you@company.com -e ADMIN_PASSWORD='a real password' \
 #     carrier-hub
+#
+# Self-serve signup is OFF unless you turn it on. A single-company install should leave it
+# off — with it on, anyone who can reach this server can create an organisation on it:
+#
+#   -e SIGNUP_OPEN=1 \
+#   -e APP_URL=https://hub.example.com \        # what goes in the emailed links
+#   -e SMTP_URL=smtps://user:pass@smtp.example.com:465 \   # implicit TLS, port 465
+#   -e MAIL_FROM='Carrier Hub <no-reply@example.com>'
+#
+# With SIGNUP_OPEN=1 and any of those three missing, the server refuses to serve rather
+# than silently dropping confirmation mail (src/instrumentation.ts).
 
 # ── deps ─────────────────────────────────────────────────────────────────────
 FROM node:24-alpine AS deps

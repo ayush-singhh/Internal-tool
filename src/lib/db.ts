@@ -59,14 +59,16 @@ function seed(database: DatabaseSync) {
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) insertSetting.run(orgId, key, value);
 
   database.prepare(
-    `INSERT INTO users (organization_id, name, email, password_hash, role, active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
   ).run(
     orgId,
     process.env.ADMIN_NAME ?? "System Administrator",
     (process.env.ADMIN_EMAIL ?? "admin@carrierhub.local").toLowerCase(),
     hashPassword(process.env.ADMIN_PASSWORD ?? "ChangeMe123!"),
     ROLES.OWNER,
+    now, // whoever set ADMIN_PASSWORD owns the address; there is nobody to mail a link to
     now,
     now,
   );

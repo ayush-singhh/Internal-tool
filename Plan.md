@@ -254,8 +254,25 @@ and `MIGRATION-PLAN.md`.
       was locked out of Settings, Team and Import
 - [x] Tests: **198 passing**; verified over HTTP that a pending session opens no page
 
+### Self-serve signup + email verification ✅
+- [x] Migration 8: `users.email_verified_at` (existing accounts backfilled as confirmed),
+      `email_verifications` tokens
+- [x] `mailer.ts` — SMTP over `node:tls` (implicit TLS/465, AUTH PLAIN), header-injection
+      safe, base64 bodies; logs the message in development instead of sending
+- [x] `signup.ts` — organisation + owner + vocabularies via `provision.ts`, confirmation
+      link, and the same answer for every address so the form cannot enumerate customers
+- [x] Signing up again with an unconfirmed address is the resend; only the newest link works
+- [x] Sign-in refuses an unconfirmed account without locking it out
+- [x] `SIGNUP_OPEN=1` gates the route; `src/instrumentation.ts` refuses to serve a
+      production build that opens signup with no `SMTP_URL` / `MAIL_FROM` / `APP_URL`
+- [x] Per-IP signup throttle (3/hour), kept out of the administrator's failed-sign-in list
+- [x] One address belongs to one organisation — checked in `signup.ts` and `team.ts`
+- [x] Tests: **216 passing**, including the SMTP conversation against a fake relay;
+      verified over HTTP that the link confirms an account and the closed route 404s
+
 ### Still to do (later phases)
-- [ ] Secure signup + organisation creation + email verification (SMTP)
+- [ ] Self-serve password reset (today only an administrator can issue a link — a
+      signup owner who forgets their password has nobody to ask)
 - [ ] Invitations (single-use, tenant-bound tokens)
 - [ ] RBAC UI for owner/admin/member
 - [ ] Session hardening: rotation, device list, revoke

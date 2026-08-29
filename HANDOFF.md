@@ -4,7 +4,7 @@ This file is the resume point for a fresh session. It is kept current at the end
 working session. For the full picture read, in order: `PRD.md` → `Architecture.md` →
 `AI Rules.md` → `Plan.md` → `MIGRATION-PLAN.md`.
 
-**Last updated:** 2026-08-28, after TOTP two-factor authentication.
+**Last updated:** 2026-08-29, after self-serve signup and email verification.
 
 ---
 
@@ -17,7 +17,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 198 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 216 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -26,6 +26,26 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 ---
 
 ## What is DONE
+
+### Self-serve signup + email verification ✅
+
+- `/signup` creates an organisation, its owner and its vocabularies through
+  `provision.createOrganization()` — the same path the CLI and first-run seed use — then
+  mails a confirmation link. `users.email_verified_at` stays NULL until it is clicked, and
+  the password step refuses the account meanwhile (without locking it out).
+- **The answer is the same whatever the address is**: new → created, unconfirmed → link
+  resent, already a customer → nothing sent. So the form cannot enumerate customers, and
+  signing up again *is* the resend. Only the newest link works.
+- `src/lib/mailer.ts` is SMTP over `node:tls` (implicit TLS on 465, AUTH PLAIN, one
+  recipient). Header-injection safe, base64 bodies. With no `SMTP_URL` it prints the
+  message instead, so local development can read the link.
+- `SIGNUP_OPEN=1` gates the route — it 404s otherwise, so a self-hosted install cannot
+  have strangers creating organisations on it.
+- `src/instrumentation.ts` runs before the server serves anything and refuses to start a
+  production build with signup open and no `SMTP_URL` / `MAIL_FROM` / `APP_URL`.
+- **One address belongs to one organisation.** The schema allows the same address in two
+  tenants, but sign-in looks an account up by email alone, so `signup.ts` and `team.ts`
+  both check across every organisation before inserting a user.
 
 ### Two-factor authentication (TOTP) ✅
 
@@ -81,13 +101,15 @@ Table classification (global / tenant-owned / user-owned) is documented in
 
 In `Plan.md` under "Phase 12 … Still to do". Suggested order:
 
-1. **Secure signup + organisation creation + email verification.** `createOrganization()`
-   in `provision.ts` already builds an org+owner+vocabularies atomically. Needs a signup
-   route, email verification tokens, and SMTP (see decision 3 below).
+1. **Self-serve password reset.** Only an administrator can issue a reset link today, so a
+   signup owner who forgets their password has nobody to ask. Every piece exists —
+   `reset.ts` issues and consumes the tokens, `mailer.ts` can send them — it needs a
+   "forgot password" route with the same no-enumeration answer `/signup` gives.
 2. **Invitations** — single-use, tenant-bound, expiring tokens (mirror `reset.ts`).
-3. **Session hardening** — rotation on privilege change, device/session list, revoke.
+3. **Session hardening** — device/session list and revoke. (Rotation on sign-in and on
+   completing MFA is already done.)
 4. **RBAC UI** for owner/admin/member.
-5. **Generalised audit log** + rate limiting beyond login (throttle.ts is login-only today).
+5. **Generalised audit log** + rate limiting beyond login and signup.
 6. **Security headers / CSP.**
 7. **Platform support role** — see decision 4.
 
@@ -97,8 +119,8 @@ In `Plan.md` under "Phase 12 … Still to do". Suggested order:
 
 1. **Password hashing:** Argon2id via `@node-rs/argon2` (prebuilt binaries). **Done.**
 2. **TOTP QR:** the `qrcode` package, rendered server-side. **Done.**
-3. **Email:** hand-rolled pluggable SMTP over `node:tls` behind a `Mailer` interface,
-   configured by `SMTP_URL`; refuse to start in production if unset. (Not built yet.)
+3. **Email:** hand-rolled SMTP over `node:tls`, configured by `SMTP_URL`, refusing to
+   start in production when signup is open without it. **Done** — `src/lib/mailer.ts`.
 4. **Platform support role:** the owner asked for standing access to look inside any
    tenant's data. They requested it be **unlogged and hidden from customers**. That specific
    design (deliberately concealed, tamper-free cross-tenant access to third-party PII) was
@@ -118,6 +140,10 @@ npm run build                    # production build (Turbopack)
 npm run dev                      # http://localhost:3000  (uses data/carrier-hub.db)
 npm run migrate                  # apply pending migrations (idempotent)
 npm run backup                   # snapshot + verify + rotate
+
+# Self-serve signup (off by default). With no SMTP_URL the confirmation mail is printed
+# to the terminal instead of sent, which is how to test the flow locally:
+SIGNUP_OPEN=1 APP_URL=http://localhost:3000 npm run dev
 
 # Two-tenant demo (build it, then run against it):
 CARRIER_DB_PATH=data/two.db ADMIN_ORG="Alpha" ADMIN_EMAIL=alpha@test.local \

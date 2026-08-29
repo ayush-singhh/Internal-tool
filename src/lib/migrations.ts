@@ -341,6 +341,29 @@ export const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 8,
+    name: "email verification for self-signup",
+    up: (db) => {
+      // NULL means "not confirmed yet", which only self-signup produces. Every account
+      // that already exists was created by an administrator who vouched for the address,
+      // so they are backfilled as confirmed — nobody is locked out by this migration.
+      addColumn(db, "users", "email_verified_at", "TEXT");
+      db.exec("UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL");
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS email_verifications (
+          token      TEXT PRIMARY KEY,
+          user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          used_at    TEXT
+        )`);
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_verifications_user ON email_verifications (user_id)",
+      );
+    },
+  },
 ];
 
 export function addColumn(

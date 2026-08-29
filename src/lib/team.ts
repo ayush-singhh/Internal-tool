@@ -1,5 +1,5 @@
 import "server-only";
-import { all, get, run } from "./db.ts";
+import { all, get, run, systemQuery } from "./db.ts";
 import type { Org } from "./tenant-db.ts";
 import { hashPassword } from "./password.ts";
 import { ROLES, type Role } from "./constants.ts";
@@ -50,16 +50,21 @@ export function createTeamMember(org: Org, input: {
   if (input.password.length < MIN_PASSWORD) {
     return { ok: false, error: `Password must be at least ${MIN_PASSWORD} characters.` };
   }
-  // Email is unique per organisation, so the duplicate check is org-scoped too.
-  if (get("SELECT id FROM users WHERE organization_id = ? AND email = ?", [org.id, email])) {
+  // Checked across every organisation, not just this one: signing in looks an account up
+  // by email alone, so the same address in two tenants would leave one of them unable to
+  // sign in at all. The schema allows it; the application must not create it.
+  if (systemQuery(() => get("SELECT id FROM users WHERE email = ?", [email]))) {
     return { ok: false, error: "Someone already uses that email address." };
   }
 
   const now = new Date().toISOString();
   run(
-    `INSERT INTO users (organization_id, name, email, password_hash, role, phone, active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-    [org.id, name, email, hashPassword(input.password), input.role, input.phone?.trim() || null, now, now],
+    `INSERT INTO users (organization_id, name, email, password_hash, role, phone, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+    // An administrator typed this address and its password, so there is nothing to confirm.
+    [org.id, name, email, hashPassword(input.password), input.role, input.phone?.trim() || null,
+     now, now, now],
   );
   return { ok: true, id: get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id };
 }

@@ -8,6 +8,7 @@
 | Styling | **Tailwind CSS v4** | Design tokens live in `globals.css`; no component library to fight |
 | Database | **SQLite via `node:sqlite`** | Ships with Node 22+. Real persistent, relational, transactional storage with **zero dependencies** and no native build step |
 | Auth | **Argon2id (`@node-rs/argon2`) + server-side session table** | ~80 lines, no NextAuth. Sessions are DB rows, so revocation is a `DELETE` |
+| Mail | **Hand-rolled SMTP over `node:tls`** | Two plain-text messages to one relay. Implicit TLS on 465, AUTH PLAIN, one recipient — the eight commands nodemailer would wrap |
 | Charts | **Hand-rolled inline SVG / CSS** | Bars, donuts and sparklines are a few dozen lines each and stay on-brand. No 500 KB charting dependency |
 | CSV | **Hand-rolled RFC 4180 parser/serializer** | Handles quoting and embedded newlines correctly in ~40 lines |
 
@@ -40,6 +41,8 @@ src/
     db.ts          connection, schema, seeding, query helpers (all/get/run)
     password.ts    argon2id hash + verify (also verifies retired scrypt hashes)
     login.ts       what signing in decides: lock, hash check, rehash, second factor due
+    signup.ts      self-serve organisation creation + email confirmation links
+    mailer.ts      SMTP client and message building; logs instead when unconfigured
     auth.ts        session create/read/destroy, requireUser, permission checks
     totp.ts        RFC 6238 codes + base32 (pure, no database)
     mfa.ts         enrolment, the sign-in check, recovery codes
@@ -125,7 +128,10 @@ append-only — nothing in the UI edits or deletes it.
 
 ## Security
 
-- All application routes sit behind `requireUser()`; `/login` is the only public page.
+- All application routes sit behind `requireUser()`. The public pages are `/login`,
+  `/reset/[token]`, `/verify/[token]`, and `/signup` — which returns 404 unless
+  `SIGNUP_OPEN=1`, so a self-hosted install cannot have strangers creating organisations
+  on it. `src/instrumentation.ts` refuses to serve if signup is open without a mail relay.
 - Passwords: **Argon2id** at the OWASP parameters (m=19456, t=2, p=1), per-hash random
   salt, verified by `@node-rs/argon2`. Hashes written before this migration use
   `node:crypto` scrypt; they still verify, and `signIn()` re-hashes them to argon2id on
@@ -151,6 +157,23 @@ append-only — nothing in the UI edits or deletes it.
   and the shell asks `can()` rather than comparing role strings.
 - All SQL uses bound parameters.
 - The database file lives outside the served tree and is git-ignored.
+
+### Signing up
+
+Self-serve signup creates an organisation, its owner and its vocabularies through
+`provision.createOrganization()` — the same path the CLI and the first-run seed take — and
+then mails a link that proves the owner reads the address they typed. Until it is clicked
+`users.email_verified_at` is NULL and the password step refuses the account.
+
+**The answer is the same whatever the address turns out to be.** A new address creates an
+organisation, an unconfirmed one has its link sent again, a confirmed one gets nothing —
+all three return the same screen, so the form cannot be used to ask whether a company is a
+customer, and "resend my link" needs no separate route. Signups are rate-limited per IP
+(3/hour) on the same table as login throttling.
+
+One address belongs to one organisation. The schema allows the same address in two tenants,
+but signing in looks an account up by email alone, so the application refuses to create
+one: both `signup.ts` and `team.ts` check across every organisation before inserting a user.
 
 ## Multi-tenancy (Option B) — implemented
 
