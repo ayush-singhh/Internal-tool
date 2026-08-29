@@ -103,7 +103,8 @@ function plain<T>(row: unknown): T {
  * to scope gets a loud error in development, never a silent leak in production.
  *
  * The guard is bypassed only inside `systemQuery()`, whose call sites are few, all
- * concern genuinely global tables (sessions, organizations, login_attempts, migrations)
+ * concern genuinely global tables (sessions, organizations, login_attempts, migrations,
+ * error_log)
  * or the deliberate cross-tenant support path, and are asserted by test.
  */
 let bypassGuard = false;

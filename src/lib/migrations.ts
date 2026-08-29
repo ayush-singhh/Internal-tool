@@ -433,6 +433,29 @@ export const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 12,
+    name: "error log",
+    up: (db) => {
+      // A server error caught by Next's onRequestError, so a customer's 500 is visible
+      // from here instead of invisible. Genuinely global, not tenant-owned: the request
+      // that failed might not have resolved a session yet (a bad /login attempt, a broken
+      // proxy), so there is often no organisation to attach it to.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS error_log (
+          id          INTEGER PRIMARY KEY,
+          message     TEXT NOT NULL,
+          digest      TEXT,
+          path        TEXT,
+          method      TEXT,
+          route_type  TEXT,
+          created_at  TEXT NOT NULL
+        )`);
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_error_log_time ON error_log (created_at DESC)",
+      );
+    },
+  },
 ];
 
 export function addColumn(

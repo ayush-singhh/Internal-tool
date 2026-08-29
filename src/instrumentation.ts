@@ -26,3 +26,29 @@ export function register(): void {
     throw new Error("APP_URL must be an absolute URL, e.g. https://hub.example.com");
   }
 }
+
+/**
+ * Next calls this for an uncaught error in a Server Component, Route Handler or Server
+ * Action, in every environment — a customer's 500 was otherwise invisible from here.
+ *
+ * Not gated to production: this is what makes the feature itself testable in dev, and an
+ * empty `error_log` table costs nothing.
+ *
+ * Node-only: `error_log` needs `node:sqlite`, which does not exist on the Edge runtime the
+ * proxy runs on. An error there still reaches the platform's own request logs; it just
+ * does not get a row here.
+ */
+export async function onRequestError(
+  error: unknown,
+  request: { path: string; method: string },
+  context: { routeType: string },
+): Promise<void> {
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  const { recordError } = await import("./lib/errors.ts");
+  const message = error instanceof Error ? error.message : String(error);
+  const digest =
+    typeof error === "object" && error !== null && "digest" in error
+      ? String((error as { digest: unknown }).digest)
+      : null;
+  recordError({ message, digest, path: request.path, method: request.method, routeType: context.routeType });
+}

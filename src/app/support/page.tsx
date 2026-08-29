@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { listTenants, recentAccess } from "@/lib/support";
+import { recentErrors } from "@/lib/errors";
 import { relativeTime } from "@/lib/format";
 import { Card, CardHeader } from "@/components/ui";
 
@@ -11,6 +12,7 @@ export default async function SupportIndexPage() {
   await requireUser();
   const tenants = listTenants();
   const log = recentAccess(25);
+  const errors = recentErrors(25);
 
   return (
     <div className="space-y-6">
@@ -71,6 +73,27 @@ export default async function SupportIndexPage() {
                 <span className="text-ink-500">viewed</span>
                 <span className="font-medium text-ink-800">{entry.organization_name}</span>
                 <code className="font-mono text-xs text-ink-400">{entry.path}</code>
+                <span className="ml-auto text-xs text-ink-400">{relativeTime(entry.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Server errors"
+          subtitle="Caught by the server, newest first. A path or organisation is missing when the request failed before either was resolved."
+        />
+        {errors.length === 0 ? (
+          <p className="text-sm text-ink-500">None recorded.</p>
+        ) : (
+          <ul className="divide-y divide-line text-sm">
+            {errors.map((entry) => (
+              <li key={entry.id} className="flex flex-wrap items-baseline gap-x-2 py-2">
+                <span className="font-medium text-ink-800">{entry.message}</span>
+                {entry.path && <code className="font-mono text-xs text-ink-400">{entry.path}</code>}
+                {entry.digest && <span className="font-mono text-xs text-ink-400">#{entry.digest}</span>}
                 <span className="ml-auto text-xs text-ink-400">{relativeTime(entry.created_at)}</span>
               </li>
             ))}
