@@ -99,8 +99,17 @@ Table classification (global / tenant-owned / user-owned) is documented in
 
 ## What is NEXT (later SaaS phases — not started)
 
-Mirrored in `Plan.md` under "Phase 12 … Still to do". This order is a recommendation with
-reasons, not a queue — but the first one is a hole the last session punched, so start there.
+Mirrored in `Plan.md` under "Phase 12 … Still to do".
+
+> **0. AUTOMATED OFF-BOX BACKUPS — do this before anything else.** Decided on 2026-08-29,
+> deliberately deferred, and it outranks every item below. `npm run backup` is sound but
+> **nothing runs it on a schedule and its output sits on the same disk as the database it
+> copies** — one lost volume loses the data and every backup of it at the same moment.
+> Needs: a schedule (host cron, or a timer in the container), a copy off the machine
+> (object storage, or anywhere that is not that disk), and a restore actually tried once.
+> Do not let a paying customer put real carrier records in there until this exists.
+
+Everything after this is a recommendation with reasons, not a queue.
 
 1. **Self-serve password reset.** Signup opened a dead end: an owner is the top of their
    own organisation, so the login page's "ask an administrator" has no answer for them.

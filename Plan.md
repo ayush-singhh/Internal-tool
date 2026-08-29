@@ -272,7 +272,13 @@ and `MIGRATION-PLAN.md`.
 
 ### Still to do (later phases)
 
-In this order, and why — see `HANDOFF.md` for the same list with the reasoning:
+0. [ ] **AUTOMATED OFF-BOX BACKUPS — highest priority, agreed 2026-08-29.** `npm run
+       backup` verifies its own output, but nothing schedules it and the copies land on
+       the same disk as the database. Losing that disk loses both at once. Needs a
+       schedule, a copy off the machine, and one rehearsed restore. **This outranks
+       everything below it**, and it comes before a paying customer stores anything real.
+
+Then, in this order, and why — see `HANDOFF.md` for the same list with the reasoning:
 
 1. [ ] **Self-serve password reset.** Signup opened a dead end: an owner is the top of
        their own organisation, so "ask an administrator" has no answer. `reset.ts` and

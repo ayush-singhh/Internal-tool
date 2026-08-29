@@ -153,7 +153,8 @@ composite foreign keys mean the database itself will not let one tenant referenc
    `VACUUM INTO`, integrity-checked, reopened and counted before it is accepted — but
    nothing runs it on a schedule and nothing copies it off the machine. Lose the volume
    and you lose both. Before there is money involved: a cron job and a copy to somewhere
-   else. This is the single highest-value hour you can spend.
+   else. This is the single highest-value hour you can spend, and it is the agreed next
+   piece of work — see item 0 in `Plan.md`.
 2. **Nothing tells you when it breaks.** A customer hitting a 500 is invisible from here.
 3. **Deploys are not zero-downtime** and cannot be while the volume is attached to one
    machine. Deploy when nobody is dispatching.
