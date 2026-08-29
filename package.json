@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "test": "node --conditions=react-server --test \"tests/*.test.ts\"",
-    "seed:demo": "node scripts/seed-demo.ts",
+    "seed:demo": "node --conditions=react-server scripts/seed-demo.ts",
     "dev:demo": "CARRIER_DB_PATH=data/demo.db next dev -p 3001",
     "backup": "node scripts/backup.ts",
     "migrate": "node scripts/migrate.ts"

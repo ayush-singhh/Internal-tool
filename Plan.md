@@ -288,6 +288,10 @@ In this order, and why — see `HANDOFF.md` for the same list with the reasoning
 6. [ ] **Session hardening**: device/session list and revoke (rotation is done).
 7. [ ] **Generalised audit log** + rate limiting beyond login and signup.
 
+- [x] Demo seeder made tenant-aware — it creates its own organisation via `provision.ts`
+      instead of writing unscoped rows the guard now refuses; `DEPLOY.md` covers putting
+      the app in front of a client
+
 Smaller, whenever they get in the way:
 
 - [ ] Recovery codes cannot be regenerated — running out means turning MFA off with the

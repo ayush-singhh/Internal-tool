@@ -218,5 +218,12 @@ never touch `data/carrier-hub.db`**.
 | `tests/cross-tenant.test.ts` | the 16-attack adversarial isolation suite |
 | `tests/helpers.ts` | `seedOrg()` / `lookupId()` fixtures for multi-tenant tests |
 
+Deploying it for someone to try: **`DEPLOY.md`**. Short version — it needs a Node server
+with a disk that survives a restart (Railway/Fly/a VPS running the Dockerfile with a volume
+at `/data`); GitHub Pages and Vercel cannot run it. Open signup needs an SMTP relay on
+**port 465** (the mailer does implicit TLS only — Postmark has no 465 and will not work).
+`npm run seed:demo` builds a populated *Demo Dispatch Co* organisation, isolated like any
+other tenant, so a new visitor has something to look at.
+
 GitHub: `git@github.com:ayush-singhh/Internal-tool.git` (the `main` branch is pushed; the
-`multi-tenant` branch is local only unless pushed).
+`multi-tenant` branch is pushed).

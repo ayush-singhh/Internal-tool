@@ -66,5 +66,7 @@ EXPOSE 3000
 # served. They are idempotent, so restarts are free.
 CMD ["sh", "-c", "node scripts/migrate.ts && node server.js"]
 
+# $PORT, not 3000: a host like Railway or Fly injects its own port, and a healthcheck
+# pointed at the wrong one reports a healthy server as dead.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3000/login >/dev/null 2>&1 || exit 1
+  CMD wget -qO- "http://127.0.0.1:${PORT:-3000}/login" >/dev/null 2>&1 || exit 1

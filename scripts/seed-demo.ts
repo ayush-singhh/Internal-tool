@@ -1,29 +1,60 @@
 /**
- * Seeds a SEPARATE demo database so the UI can be exercised without touching real data.
+ * Seeds a demo organisation so the UI can be exercised without touching real data.
  *
- *   npm run dev:demo      → runs the app against data/demo.db
- *   npm run seed:demo     → rebuilds data/demo.db from scratch
+ *   npm run seed:demo                          → rebuilds data/demo.db from scratch
+ *   npm run dev:demo                           → runs the app against data/demo.db
+ *   CARRIER_DB_PATH=/data/carrier-hub.db npm run seed:demo   → adds the demo org to a
+ *                                                              deployment (see DEPLOY.md)
  *
- * Nothing here is ever written to data/carrier-hub.db. Real carrier records only ever
- * arrive through the Import screen or the Add Carrier form.
+ * Everything it writes belongs to one organisation of its own, so on a deployment it sits
+ * alongside real tenants without touching them — the same isolation every customer gets.
+ * Real carrier records only ever arrive through the Import screen or the Add Carrier form.
  */
 import { rmSync } from "node:fs";
 
 const DEMO_PATH = process.env.CARRIER_DB_PATH ?? "data/demo.db";
-for (const suffix of ["", "-wal", "-shm"]) {
-  rmSync(`${DEMO_PATH}${suffix}`, { force: true });
+// Only the throwaway demo database is rebuilt from nothing. Pointed at a real deployment
+// it adds an organisation rather than deleting one.
+if (DEMO_PATH === "data/demo.db") {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    rmSync(`${DEMO_PATH}${suffix}`, { force: true });
+  }
 }
 process.env.CARRIER_DB_PATH = DEMO_PATH;
 
-const { all, run, get, transaction } = await import("../src/lib/db.ts");
+const { all, run, get, transaction, systemQuery } = await import("../src/lib/db.ts");
 const { hashPassword } = await import("../src/lib/password.ts");
+const { createOrganization } = await import("../src/lib/provision.ts");
 
 const now = new Date().toISOString();
+const ORG_NAME = "Demo Dispatch Co";
+const OWNER_EMAIL = "dana@demo.local";
+const PASSWORD = "demo1234";
+
+// One organisation of its own, created the way every other organisation is created.
+const existing = systemQuery(() =>
+  get<{ id: number }>("SELECT id FROM organizations WHERE name = ?", [ORG_NAME]),
+);
+if (existing) {
+  console.error(`"${ORG_NAME}" already exists in ${DEMO_PATH}. Remove it first, or seed a fresh database.`);
+  process.exit(1);
+}
+const { orgId, ownerId } = createOrganization({
+  orgName: ORG_NAME,
+  ownerName: "Dana Whitfield",
+  ownerEmail: OWNER_EMAIL,
+  passwordHash: hashPassword(PASSWORD),
+});
+// The owner is an admin of their own organisation and has nobody to confirm them.
+run("UPDATE users SET role = 'admin' WHERE organization_id = ? AND id = ?", [orgId, ownerId]);
+
 const lookupId = (kind: string, value: string) =>
-  get<{ id: number }>("SELECT id FROM lookups WHERE kind = ? AND value = ?", [kind, value])!.id;
+  get<{ id: number }>(
+    "SELECT id FROM lookups WHERE organization_id = ? AND kind = ? AND value = ?",
+    [orgId, kind, value],
+  )!.id;
 
 const TEAM: [name: string, email: string, role: string][] = [
-  ["Dana Whitfield", "dana@demo.local", "admin"],
   ["Marcus Reed", "marcus@demo.local", "dispatcher"],
   ["Priya Nair", "priya@demo.local", "dispatcher"],
   ["Tom Alvarez", "tom@demo.local", "dispatcher"],
@@ -31,20 +62,22 @@ const TEAM: [name: string, email: string, role: string][] = [
   ["Yusuf Demir", "yusuf@demo.local", "account_manager"],
   ["Helen Brooks", "helen@demo.local", "viewer"],
 ];
-const password = hashPassword("demo1234");
+const password = hashPassword(PASSWORD);
 for (const [name, email, role] of TEAM) {
   run(
-    `INSERT OR IGNORE INTO users (name, email, password_hash, role, active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 1, ?, ?)`,
-    [name, email, password, role, now, now],
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+    [orgId, name, email, password, role, now, now, now],
   );
 }
 const users = all<{ id: number; name: string; role: string }>(
-  "SELECT id, name, role FROM users WHERE email LIKE '%@demo.local'",
+  "SELECT id, name, role FROM users WHERE organization_id = ?",
+  [orgId],
 );
 const dispatchers = users.filter((u) => u.role === "dispatcher").map((u) => u.id);
 const managers = users.filter((u) => u.role === "account_manager").map((u) => u.id);
-const adminId = users.find((u) => u.role === "admin")!.id;
+const adminId = ownerId;
 
 // Deterministic pseudo-random so repeated seeds produce the same demo book.
 let seedState = 20250826;
@@ -90,14 +123,14 @@ function isoDaysAgo(days: number): string {
 const OFFBOARD_STATUSES = ["inactive", "suspended", "blacklisted", "carrier_back_off"];
 const INSERT_CARRIER = `
   INSERT INTO carriers (
-    serial, legal_name, owner_name, phone, phone_digits, email, address,
+    organization_id, serial, legal_name, owner_name, phone, phone_digits, email, address,
     status_id, dispatcher_id, account_manager_id, mc_number, usdot,
     trailer_type_id, trailer_size, truck_count,
     born_date, onboarding_date, first_load_date, onboarding_type_id, lead_source_id,
     plan_id, pricing_type_id, rate, percentage, billing_frequency_id,
     subscription_id, agreement_status_id, invoice_mode_id,
     status_changed_at, review_flags, created_at, updated_at, created_by, updated_by
-  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 const TRAILERS = ["dry_van","reefer","flatbed","step_deck","power_only","box_truck","hotshot","car_hauler","mixed"];
 const SOURCES = ["cold_call","referral","website","social_media","email_campaign","walk_in","partner","other"];
@@ -130,6 +163,7 @@ for (let i = 1; i <= 46; i++) {
     : isoDaysAgo(Math.max(1, onboardDays - int(2, 20)));
 
   run(INSERT_CARRIER, [
+    orgId,
     `CH-${String(1000 + i)}`,
     legal,
     `${pick(FIRST)} ${pick(LAST)}`,
@@ -164,19 +198,19 @@ for (let i = 1; i <= 46; i++) {
 
   const carrierId = get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
   run(
-    `INSERT INTO carrier_activity (carrier_id, user_id, type, summary, created_at)
-     VALUES (?, ?, 'created', 'Carrier record created', ?)`,
-    [carrierId, adminId, now],
+    `INSERT INTO carrier_activity (organization_id, carrier_id, user_id, type, summary, created_at)
+     VALUES (?, ?, ?, 'created', 'Carrier record created', ?)`,
+    [orgId, carrierId, adminId, now],
   );
 
   if (offboarded) {
     run(
-      `INSERT INTO offboarding_records (carrier_id, offboarded_on, reason_id, category_id,
-         final_status_id, handled_by, last_load_date, outstanding_balance,
+      `INSERT INTO offboarding_records (organization_id, carrier_id, offboarded_on, reason_id,
+         category_id, final_status_id, handled_by, last_load_date, outstanding_balance,
          subscription_cancelled, agreement_closed, can_return, notes, created_at, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        carrierId, isoDaysAgo(int(1, 120)),
+        orgId, carrierId, isoDaysAgo(int(1, 120)),
         lookupId("offboard_reason", pick(["rates_too_low","went_to_competitor","ceased_operations",
           "insurance_lapse","no_longer_responsive","payment_dispute","authority_revoked"])),
         lookupId("offboard_category", pick(["voluntary","involuntary","compliance","non_payment","inactivity"])),
@@ -195,6 +229,6 @@ for (let i = 1; i <= 46; i++) {
 
 });
 
-console.log(`Demo database ready at ${DEMO_PATH}`);
-console.log(`  ${created} carriers, ${TEAM.length} team members`);
-console.log(`  Sign in: dana@demo.local / demo1234 (admin)`);
+console.log(`Demo organisation "${ORG_NAME}" ready in ${DEMO_PATH}`);
+console.log(`  ${created} carriers, ${TEAM.length + 1} team members`);
+console.log(`  Sign in: ${OWNER_EMAIL} / ${PASSWORD} (admin)`);
