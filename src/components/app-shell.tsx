@@ -29,6 +29,7 @@ const GROUPS: Group[] = [
     heading: "Administration",
     items: [
       { href: "/team", label: "Team", icon: "team" },
+      { href: "/audit", label: "Audit Log", icon: "history" },
       { href: "/settings", label: "Settings", icon: "settings" },
       { href: "/import", label: "Import Data", icon: "import" },
     ],
@@ -69,7 +70,7 @@ export function AppShell({
     <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
       {GROUPS.map((group, gi) => {
         const items = group.items.filter(
-          (item) => canAdmin || !["/team", "/settings", "/import"].includes(item.href),
+          (item) => canAdmin || !["/team", "/audit", "/settings", "/import"].includes(item.href),
         );
         if (items.length === 0) return null;
         return (

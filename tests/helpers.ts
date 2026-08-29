@@ -5,7 +5,27 @@
  * creates an organisation with its own vocabularies and an owner, mirroring what
  * provision.ts does in the app, so tests exercise the same tenant setup the product uses.
  */
+import { tmpdir } from "node:os";
 import { LOOKUPS, DEFAULT_SETTINGS, ROLES } from "../src/lib/constants.ts";
+
+/**
+ * Refuses to seed anything into a database that is not a throwaway.
+ *
+ * `db.ts` binds CARRIER_DB_PATH when it is first imported, so a test file that imports a
+ * module from `src/lib` at the top — before setting the variable — silently writes to
+ * `data/carrier-hub.db` instead. That has happened, and it is invisible: the tests still
+ * pass, and the developer's database quietly fills with fixtures. Failing loudly here is
+ * the difference between a mistake and a mess.
+ */
+function assertThrowawayDatabase(): void {
+  const configured = process.env.CARRIER_DB_PATH;
+  if (!configured || !configured.startsWith(tmpdir())) {
+    throw new Error(
+      `Tests must run against a database in ${tmpdir()}, not "${configured ?? "the default"}". ` +
+        "Set CARRIER_DB_PATH and import src/lib modules inside before(), not at the top of the file.",
+    );
+  }
+}
 
 type Db = typeof import("../src/lib/db.ts");
 
@@ -17,6 +37,7 @@ export function seedOrg(
   name: string,
   ownerEmail = `owner-${name.toLowerCase().replace(/\W+/g, "")}@test.local`,
 ): TestOrg {
+  assertThrowawayDatabase();
   const now = new Date().toISOString();
   const slug = `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Math.random().toString(36).slice(2, 7)}`;
   db.run("INSERT INTO organizations (name, slug, status, created_at) VALUES (?, ?, 'active', ?)", [name, slug, now]);

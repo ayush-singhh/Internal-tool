@@ -34,6 +34,10 @@ export const SIGNUP_RULE: ThrottleRule = { max: 3, windowMinutes: 60 };
 /** Asking for a reset link is unauthenticated too, and it puts mail in somebody else's
  *  inbox — so it is limited per address as well as per host. Someone must not be able to
  *  bury a person in reset mail, or use ours to send it. */
+/** A whole-book CSV per person, twenty an hour. Far above anyone working, far below a
+ *  script quietly pulling the customer list on a loop. */
+export const EXPORT_RULE: ThrottleRule = { max: 20, windowMinutes: 60 };
+
 export const RESET_RULE: Record<"email" | "ip", ThrottleRule> = {
   email: { max: 3, windowMinutes: 60 },
   ip: { max: 10, windowMinutes: 60 },
@@ -129,9 +133,14 @@ export function recordBurst(key: string): void {
   ]);
 }
 
-export function describeLockout(verdict: Extract<ThrottleVerdict, { allowed: false }>): string {
+/** "a minute" / "7 minutes" — shared so every limit tells someone the same thing. */
+export function retryInWords(verdict: Extract<ThrottleVerdict, { allowed: false }>): string {
   const minutes = Math.ceil(verdict.retryAfterSeconds / 60);
-  const wait = minutes <= 1 ? "a minute" : `${minutes} minutes`;
+  return minutes <= 1 ? "a minute" : `${minutes} minutes`;
+}
+
+export function describeLockout(verdict: Extract<ThrottleVerdict, { allowed: false }>): string {
+  const wait = retryInWords(verdict);
   return verdict.scope === "email"
     ? `Too many failed sign-in attempts for this account. Try again in ${wait}.`
     : `Too many failed sign-in attempts from this network. Try again in ${wait}.`;

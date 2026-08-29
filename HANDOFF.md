@@ -17,7 +17,7 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 258 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 266 passing (`npm test`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -26,6 +26,29 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 ---
 
 ## What is DONE
+
+### Audit log ✅
+
+- `audit_log` answers what a security review asks: **who signed in, who changed who can
+  sign in, who took data out.** Sign-ins, refusals, lockouts, MFA on/off, password
+  changes, invitations, role changes, deactivations, and every CSV export with its row
+  count. Readable by an administrator at `/audit`, append-only.
+- **No composite FK to `users`**, unlike every other tenant-owned table: with one,
+  removing a user is either blocked by the record of what they did, or — with
+  `ON DELETE SET NULL`, which nulls *every* column of a composite key — takes
+  `organization_id` with it, and that is NOT NULL. `user_id` is a soft reference; the
+  `actor` column carries the identity in text so the record survives the account.
+- **`record()` never throws.** A failed audit write must not take down the sign-in it was
+  describing.
+- CSV export is rate-limited per person (20/hour) — the one authenticated route that hands
+  over the whole book of carriers at once.
+
+**A mistake worth not repeating:** `tests/audit.test.ts` imported `src/lib/audit.ts` at the
+top of the file, which loads `db.ts`, which binds `CARRIER_DB_PATH` *at import time* —
+before the line that sets it. Seven runs wrote their fixtures into `data/carrier-hub.db`
+(empty of real data; backed up and cleaned). `tests/helpers.ts` now refuses to seed
+anything unless `CARRIER_DB_PATH` points inside the temp directory, so the next time this
+is done it fails loudly instead of quietly.
 
 ### Sessions you can see and end ✅
 
@@ -208,10 +231,7 @@ Table classification (global / tenant-owned / user-owned) is documented in
 
 Mirrored in `Plan.md` under "Phase 12 … Still to do".
 
-Item 0 — automated off-box backups — is **done**. What is left is a recommendation with
-reasons, not a queue.
-
-1. **Generalised audit log** + rate limiting beyond login and signup.
+**Everything on the numbered list is done.** What remains is small, and listed below.
 
 Smaller, and only worth a detour when they get in the way:
 

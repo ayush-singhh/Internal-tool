@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { AUDIT, record } from "./audit.ts";
 import { requireUser } from "./auth.ts";
 import { activate, beginEnrollment, cancelEnrollment, disable } from "./mfa.ts";
 
@@ -30,6 +31,8 @@ export async function activateAction(
   const user = await requireUser();
   const result = activate(user.id, String(formData.get("code") ?? ""));
   if (!result.ok) return { error: result.error };
+  record({ organizationId: user.organization_id, userId: user.id,
+    actor: user.email, action: AUDIT.MFA_ENABLED, subject: user.email });
   revalidatePath("/settings");
   // Shown once. They are not stored in a readable form, so this is the only chance.
   return { ok: "Two-factor authentication is on.", recoveryCodes: result.recoveryCodes };
@@ -42,6 +45,8 @@ export async function disableAction(
   const user = await requireUser();
   const result = disable(user.id, String(formData.get("code") ?? ""));
   if (!result.ok) return { error: result.error };
+  record({ organizationId: user.organization_id, userId: user.id,
+    actor: user.email, action: AUDIT.MFA_DISABLED, subject: user.email });
   revalidatePath("/settings");
   return { ok: "Two-factor authentication is off. Your password is now the only factor." };
 }

@@ -306,7 +306,10 @@ Then, in this order, and why — see `HANDOFF.md` for the same list with the rea
 6. [x] ~~**Session hardening**~~ — Settings lists every live session with the browser it
        was issued to, its address and when it was last used, marks the current one, and
        ends one or all others. **258 tests.**
-7. [ ] **Generalised audit log** + rate limiting beyond login and signup.
+7. [x] ~~**Generalised audit log**~~ — `audit_log` records sign-ins, lockouts, MFA and
+       password changes, invitations, role changes, deactivations and every CSV export;
+       readable at `/audit`, append-only, and it outlives the accounts it names. Export is
+       rate-limited per person. **266 tests.**
 
 - [x] Demo seeder made tenant-aware — it creates its own organisation via `provision.ts`
       instead of writing unscoped rows the guard now refuses; `DEPLOY.md` covers putting

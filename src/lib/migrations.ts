@@ -400,6 +400,39 @@ export const MIGRATIONS: Migration[] = [
       db.exec("UPDATE sessions SET last_seen_at = created_at WHERE last_seen_at IS NULL");
     },
   },
+  {
+    version: 11,
+    name: "audit log",
+    up: (db) => {
+      // Who got in, who changed who could get in, and who took data out. `carrier_activity`
+      // already answers "what happened to this carrier" — this answers the question a
+      // customer's security review asks instead. Tenant-owned, so the guard scopes it.
+      //
+      // No composite foreign key to `users`, unlike every other tenant-owned table, and
+      // deliberately: with one, removing a user is either blocked by the record of what
+      // they did, or — with ON DELETE SET NULL, which nulls *every* column of a composite
+      // key — takes `organization_id` with it, and that column is NOT NULL. An audit log
+      // has to outlive the account it describes, so `user_id` is a soft reference and
+      // `actor` carries the identity that has to survive.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS audit_log (
+          id              INTEGER PRIMARY KEY,
+          -- Cascading, so removing an organisation still removes everything it owns. The
+          -- log belongs to that customer; it should not outlive them as an orphan.
+          organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          user_id         INTEGER,
+          actor           TEXT,
+          action          TEXT NOT NULL,
+          subject         TEXT,
+          detail          TEXT,
+          ip              TEXT,
+          created_at      TEXT NOT NULL
+        )`);
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_audit_org_time ON audit_log (organization_id, created_at DESC)",
+      );
+    },
+  },
 ];
 
 export function addColumn(

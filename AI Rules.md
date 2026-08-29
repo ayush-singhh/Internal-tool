@@ -97,6 +97,12 @@ Tests run with `node --conditions=react-server` so `server-only` resolves, and s
 `CARRIER_DB_PATH` to a temp file before importing anything — **tests never touch
 `data/carrier-hub.db`**.
 
+"Before importing anything" is literal. `db.ts` binds `CARRIER_DB_PATH` when it is first
+loaded, so a **static** `import` of any `src/lib` module at the top of a test file binds
+the path before the assignment below it runs, and every query lands in the real database
+while the tests still pass. Load them with `await import(...)` inside `before()`. `seedOrg`
+in `tests/helpers.ts` refuses to run outside the temp directory for this reason.
+
 ## 9. Schema changes
 
 Schema changes are migrations in `src/lib/migrations.ts` — never edits to an existing

@@ -47,6 +47,7 @@ src/
     security-headers.ts  the CSP and friends, as data so they can be asserted
     support.ts     the only cross-tenant reads in the product, each one recorded
     sessions.ts    the list of places an account is signed in, and ending one
+    audit.ts       who signed in, who changed access, who took data out
     backup.ts      snapshot, verify, upload, rotate — one implementation, two callers
     backup-schedule.ts  the timer, kept out of the Edge bundle it could never run in
     s3.ts          SigV4 signing and a PUT, so backups can leave the machine
@@ -228,6 +229,29 @@ customer, and "resend my link" needs no separate route. Signups are rate-limited
 One address belongs to one organisation. The schema allows the same address in two tenants,
 but signing in looks an account up by email alone, so the application refuses to create
 one: both `signup.ts` and `team.ts` check across every organisation before inserting a user.
+
+### The audit log
+
+`carrier_activity` answers "what happened to this carrier". `audit_log` answers the
+question a customer's security review asks instead: **who signed in, who changed who can
+sign in, and who took data out.** Sign-ins and refused sign-ins, lockouts, two-factor
+turned on or off, passwords changed, members invited, roles changed, accounts deactivated,
+and every CSV export with its row count. Tenant-owned, admin-visible at `/audit`,
+append-only — nothing in the application updates or deletes a row.
+
+Two deliberate departures:
+
+- **No composite foreign key to `users`**, unlike every other tenant-owned table. With
+  one, removing a user is either blocked by the record of what they did, or — with
+  `ON DELETE SET NULL`, which nulls *every* column of a composite key — takes
+  `organization_id` with it, and that column is NOT NULL. So `user_id` is a soft reference
+  and an `actor` column carries the identity in text. An audit log has to outlive the
+  account it describes.
+- **Recording never throws.** A write that took down the sign-in it was documenting would
+  be a worse failure than the one it set out to record.
+
+The CSV export is also rate-limited per person, at twenty an hour: far above anyone
+working, far below a script quietly pulling the customer list on a loop.
 
 ### Platform support access
 

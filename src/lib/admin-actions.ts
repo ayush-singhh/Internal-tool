@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
+import { AUDIT, record } from "./audit.ts";
 import { requireOrg } from "./auth.ts";
 import { get } from "./db.ts";
 import { appUrl, mailConfigured, mailer } from "./mailer.ts";
@@ -58,6 +59,9 @@ export async function createTeamMemberAction(
     get<{ name: string }>("SELECT name FROM organizations WHERE id = ?", [org.id])?.name ??
     "their team";
 
+  record({ organizationId: org.id, userId: user.id, actor: user.email, action: AUDIT.MEMBER_INVITED,
+    subject: email, detail: `as ${String(formData.get("role") ?? "")}` });
+
   const { token } = issueReset(result.id, user.id, INVITE_TTL_HOURS);
   const link = `${appUrl()}/reset/${token}`;
   revalidatePath("/team");
@@ -111,6 +115,8 @@ export async function updateTeamMemberAction(
   });
   if (!result.ok) return { error: result.error };
 
+  record({ organizationId: org.id, userId: user.id, actor: user.email, action: AUDIT.MEMBER_UPDATED,
+    subject: String(formData.get("email") ?? ""), detail: `role: ${role}` });
   revalidatePath("/team");
   return { ok: "Team member updated." };
 }
@@ -121,7 +127,19 @@ export async function toggleTeamMemberAction(formData: FormData) {
 
   const id = Number(formData.get("id"));
   const active = formData.get("active") === "1";
-  if (Number.isInteger(id)) setTeamMemberActive(org, id, active);
+  if (Number.isInteger(id)) {
+    const target = get<{ email: string }>(
+      "SELECT email FROM users WHERE organization_id = ? AND id = ?", [org.id, id],
+    );
+    const result = setTeamMemberActive(org, id, active);
+    if (result.ok) {
+      record({
+        organizationId: org.id, userId: user.id, actor: user.email,
+        action: active ? AUDIT.MEMBER_REACTIVATED : AUDIT.MEMBER_DEACTIVATED,
+        subject: target?.email ?? String(id),
+      });
+    }
+  }
   revalidatePath("/team");
 }
 
@@ -148,6 +166,11 @@ export async function setPasswordAction(
   const result = setPassword(org, id, password, current);
   if (!result.ok) return { error: result.error };
 
+  const target = get<{ email: string }>(
+    "SELECT email FROM users WHERE organization_id = ? AND id = ?", [org.id, id],
+  );
+  record({ organizationId: org.id, userId: user.id, actor: user.email, action: AUDIT.PASSWORD_CHANGED,
+    subject: target?.email ?? String(id), detail: id === user.id ? "Their own" : "Set by an administrator" });
   revalidatePath("/team");
   revalidatePath("/settings");
   return { ok: "Password updated. Other sessions for this account were signed out." };
