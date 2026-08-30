@@ -1,5 +1,7 @@
+import { AUDIT, record } from "@/lib/audit";
 import { requireOrg } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { EXPORT_RULE, checkBurst, recordBurst, retryInWords } from "@/lib/throttle";
 import { parseReportKey, reportToCsvRows, runReport } from "@/lib/reports";
 import { csvResponse, stamp } from "@/lib/export";
 import { toCsv } from "@/lib/csv";
@@ -13,10 +15,28 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const key = parseReportKey(url.searchParams.get("r"));
   const clean = (v: string | null) => (v && ISO.test(v) ? v : undefined);
+  const from = clean(url.searchParams.get("from"));
+  const to = clean(url.searchParams.get("to"));
 
-  const result = runReport(org, key, {
-    from: clean(url.searchParams.get("from")),
-    to: clean(url.searchParams.get("to")),
+  // Limited and recorded on the same terms as the carrier export. These are counts rather
+  // than the book itself, but a date range walked across the calendar reconstructs a good
+  // deal of it — and "who took data out" has to have one answer, not one per route.
+  // Counted under a key of its own so a morning of reports cannot spend the carrier
+  // export's budget.
+  const verdict = checkBurst(`report:${user.id}`, EXPORT_RULE);
+  if (!verdict.allowed) {
+    // describeLockout talks about sign-ins, which this is not.
+    return new Response(`Too many exports in a row. Try again in ${retryInWords(verdict)}.`, {
+      status: 429,
+    });
+  }
+  recordBurst(`report:${user.id}`);
+
+  const result = runReport(org, key, { from, to });
+
+  record({
+    organizationId: org.id, userId: user.id, actor: user.email, action: AUDIT.EXPORT_REPORT,
+    detail: `${result.def.title}${from || to ? ` (${from ?? "any"} to ${to ?? "any"})` : ""}`,
   });
 
   return csvResponse(toCsv(reportToCsvRows(result)), `${key}-${stamp()}.csv`);

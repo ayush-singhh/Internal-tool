@@ -30,6 +30,7 @@ export const AUDIT = {
   MEMBER_DEACTIVATED: "member.deactivated",
   MEMBER_REACTIVATED: "member.reactivated",
   EXPORT_RUN: "export.run",
+  EXPORT_REPORT: "export.report",
 } as const;
 
 export type AuditAction = (typeof AUDIT)[keyof typeof AUDIT];
@@ -51,6 +52,7 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   "member.deactivated": "Deactivated an account",
   "member.reactivated": "Reactivated an account",
   "export.run": "Exported carrier data",
+  "export.report": "Exported a report",
 };
 
 export type AuditEntry = {

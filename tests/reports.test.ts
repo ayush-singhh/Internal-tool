@@ -175,6 +175,32 @@ test("offboarding reasons respect the offboarding date, not the onboarding date"
   );
 });
 
+/**
+ * The dated and undated paths used to be two copies of one query, and the dated copy
+ * decided how many placeholders to write with `from ? ... : null` while deciding how many
+ * parameters to bind with `!== null` — so an empty-string bound produced a surplus
+ * parameter and threw "column index out of range". They are one function now, with each
+ * bound owning its clause and its parameter together.
+ */
+test("a blank date bound is simply no bound", () => {
+  const all = reports.runReport(org, "offboarding_reasons", {}).total;
+  for (const range of [
+    { from: "", to: "" },
+    { from: "", to: undefined },
+    { from: undefined, to: "" },
+    { from: "", to: "2026-12-31" },
+    { from: "2026-01-01", to: "" },
+  ]) {
+    const result = reports.runReport(org, "offboarding_reasons", range);
+    assert.equal(
+      result.total,
+      range.from || range.to ? result.total : all,
+      `blank bounds narrow nothing: ${JSON.stringify(range)}`,
+    );
+  }
+  assert.equal(reports.runReport(org, "offboarding_reasons", { from: "", to: "" }).total, all);
+});
+
 test("retention reports the share still with us", () => {
   const rows = rowsOf("retention");
   assert.equal(rows.get("Carriers ever onboarded"), 6);

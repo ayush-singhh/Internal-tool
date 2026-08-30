@@ -186,13 +186,27 @@ export function carriersByPercentageBand(org: Org): Slice[] {
   }));
 }
 
-export function offboardingReasons(org: Org): Slice[] {
+/**
+ * Optionally bounded by when the carrier left.
+ *
+ * The bound owns both halves of its own line — clause pushed next to parameter — so the
+ * two cannot drift apart. `reports.ts` used to carry a second copy of this query that
+ * built the clause list and the parameter list from separate expressions with different
+ * emptiness rules, and disagreed on how many placeholders there were the moment a bound
+ * was an empty string. One query, one list, no way to disagree.
+ */
+export function offboardingReasons(org: Org, from?: string, to?: string): Slice[] {
+  const where = ["o.organization_id = ?"];
+  const params: unknown[] = [org.id];
+  if (from) { where.push("o.offboarded_on >= ?"); params.push(from); }
+  if (to)   { where.push("o.offboarded_on <= ?"); params.push(to); }
+
   return all<{ label: string; n: number }>(
     `SELECT l.label AS label, COUNT(o.id) AS n
        FROM offboarding_records o JOIN lookups l ON l.id = o.reason_id
-      WHERE o.organization_id = ?
+      WHERE ${where.join(" AND ")}
       GROUP BY l.id ORDER BY n DESC`,
-    [org.id],
+    params,
   ).map((r) => ({ label: r.label, value: r.n }));
 }
 

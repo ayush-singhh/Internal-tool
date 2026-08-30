@@ -193,14 +193,24 @@ export async function requireSupport(needsMfa = true): Promise<SupportUser> {
   return user;
 }
 
-/** True before anyone has changed the seeded admin password — drives the login hint. */
+/**
+ * True on a deployment that is still exactly as `seed()` left it — drives the login hint
+ * naming the bootstrap administrator.
+ *
+ * All three counts are global, and deliberately so: this asks about the *deployment*, not
+ * about an organisation. That is also why the organisation count is part of it. Without
+ * it the question was "is there exactly one user account anywhere", which stops being the
+ * same question the moment a second tenant exists — an empty new organisation alongside a
+ * one-person bootstrap org would answer yes.
+ */
 export function isFirstRun(): boolean {
   return systemQuery(() => {
-    const { count } = get<{ count: number }>("SELECT COUNT(*) AS count FROM users")!;
-    const { sessions } = get<{ sessions: number }>(
-      "SELECT COUNT(*) AS sessions FROM sessions",
+    const row = get<{ orgs: number; users: number; sessions: number }>(
+      `SELECT (SELECT COUNT(*) FROM organizations) AS orgs,
+              (SELECT COUNT(*) FROM users)         AS users,
+              (SELECT COUNT(*) FROM sessions)      AS sessions`,
     )!;
-    return count === 1 && sessions === 0;
+    return row.orgs === 1 && row.users === 1 && row.sessions === 0;
   });
 }
 

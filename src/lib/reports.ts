@@ -124,16 +124,8 @@ export function runReport(
       rows = carriersByPercentageBand(org, );
       break;
     case "offboarding_reasons":
-      rows = dated
-        ? all<{ label: string; n: number }>(
-            `SELECT l.label AS label, COUNT(o.id) AS n
-               FROM offboarding_records o JOIN lookups l ON l.id = o.reason_id
-              WHERE ${["o.organization_id = ?", from ? "o.offboarded_on >= ?" : null, to ? "o.offboarded_on <= ?" : null]
-                .filter(Boolean).join(" AND ")}
-              GROUP BY l.id ORDER BY n DESC`,
-            [org.id, from, to].filter((v) => v !== undefined && v !== null),
-          ).map((r) => ({ label: r.label, value: r.n }))
-        : offboardingReasons(org, );
+      // Takes the range directly: an unbounded call is just one with no bounds.
+      rows = offboardingReasons(org, from, to);
       break;
     case "monthly_onboarding":
       trend = onboardingTrend(org, 24).filter((p) => inRange(p.month, from, to));
