@@ -449,6 +449,32 @@ export const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 13,
+    name: "backup outcomes",
+    up: (db) => {
+      // Backups were reported to stdout and nowhere else, so a schedule that had stopped
+      // months ago looked exactly like one that was working. On one machine with one
+      // volume the backup *is* the disaster plan, which makes "did last night's run
+      // succeed" a question the product has to be able to answer.
+      //
+      // Global, like error_log: a backup is of the whole file, not of one tenant.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS backup_log (
+          id         INTEGER PRIMARY KEY,
+          -- offsite | local | degraded | failed. Four rather than ok/not-ok because the
+          -- interesting failure is the quiet one: a good snapshot whose upload is being
+          -- refused, which "ok" would happily call a success.
+          status     TEXT NOT NULL,
+          detail     TEXT NOT NULL,
+          bytes      INTEGER,
+          created_at TEXT NOT NULL
+        )`);
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_backup_log_time ON backup_log (created_at DESC)",
+      );
+    },
+  },
 ];
 
 export function addColumn(

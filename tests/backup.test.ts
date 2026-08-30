@@ -192,3 +192,67 @@ test("old backups are rotated away, newest kept", async () => {
     delete process.env.BACKUP_KEEP;
   }
 });
+
+// ── the outcome is written down ──────────────────────────────────────────────
+//
+// A backup schedule that has quietly stopped looks exactly like one that is working, if
+// the only evidence is a line on stdout that nobody reads. These assert that every run
+// leaves a row, and — the part that matters — that a good snapshot whose upload was
+// refused is NOT recorded as a success.
+
+test("every backup records its outcome, and a refused upload is not called a success", async () => {
+  const log = await import("../src/lib/backup-log.ts");
+  const statuses = () => log.recentBackups(50).map((b) => b.status);
+
+  const before = statuses().length;
+
+  // No BACKUP_S3_URL: a real backup, but only on this disk.
+  delete process.env.BACKUP_S3_URL;
+  await backup.runBackup();
+  assert.equal(statuses()[0], "local", "no destination configured is 'local', not 'offsite'");
+
+  // Configured and refused: the quiet failure this table exists for.
+  const goodBefore = log.lastGoodBackup()?.id ?? null;
+  const refused = await fakeS3(403);
+  process.env.BACKUP_S3_URL = `http://KEY:SECRET@127.0.0.1:${refused.port}/backups`;
+  try {
+    await backup.runBackup();
+  } finally {
+    refused.server.close();
+  }
+  assert.equal(statuses()[0], "degraded", "a refused upload must never read as a success");
+  // The point of tracking last-*good* separately: a run of degraded nights must leave the
+  // marker where it was, so "how far back would a restore take us" stays honest.
+  assert.equal(
+    log.lastGoodBackup()?.id ?? null,
+    goodBefore,
+    "a degraded run must not advance the last-good marker",
+  );
+
+  // Accepted: the only fully good outcome.
+  const accepted = await fakeS3();
+  process.env.BACKUP_S3_URL = `http://KEY:SECRET@127.0.0.1:${accepted.port}/backups`;
+  try {
+    await backup.runBackup();
+  } finally {
+    delete process.env.BACKUP_S3_URL;
+    accepted.server.close();
+  }
+  assert.equal(statuses()[0], "offsite");
+  assert.ok(log.lastGoodBackup(), "now there is a copy off the machine to point at");
+
+  assert.equal(statuses().length, before + 3, "one row per run, none lost");
+});
+
+test("a backup that throws is recorded as failed rather than vanishing", async () => {
+  const log = await import("../src/lib/backup-log.ts");
+  const dir = process.env.BACKUP_DIR;
+  // A directory that cannot be created makes VACUUM INTO fail.
+  process.env.BACKUP_DIR = "/dev/null/not-a-directory";
+  try {
+    await assert.rejects(() => backup.runBackup(), "the caller still sees the failure");
+  } finally {
+    process.env.BACKUP_DIR = dir;
+  }
+  assert.equal(log.recentBackups(1)[0]!.status, "failed");
+});

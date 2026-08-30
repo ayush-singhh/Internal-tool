@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { destination, putObject } from "./s3.ts";
+import { recordBackup } from "./backup-log.ts";
 
 /**
  * Taking a backup, checking it, and getting a copy off the machine.
@@ -75,7 +76,30 @@ function nextFreeName(dir: string): string {
   return target;
 }
 
+/**
+ * Takes a backup and writes down what happened.
+ *
+ * The recording lives here, wrapped around the work, rather than in each caller: the
+ * scheduler and `scripts/backup.ts` both want it, a third caller would want it too, and
+ * "remember to log the outcome" is exactly the instruction that gets forgotten. Rethrows,
+ * so the script still exits non-zero and the scheduler still shouts.
+ */
 export async function runBackup(): Promise<BackupResult> {
+  try {
+    const result = await takeBackup();
+    recordBackup({
+      status: result.uploadedTo ? "offsite" : result.uploadError ? "degraded" : "local",
+      detail: describe(result),
+      bytes: result.bytes,
+    });
+    return result;
+  } catch (error) {
+    recordBackup({ status: "failed", detail: (error as Error).message });
+    throw error;
+  }
+}
+
+async function takeBackup(): Promise<BackupResult> {
   const source = sourcePath();
   const dir = backupDir();
   const keep = Number(process.env.BACKUP_KEEP ?? 14);

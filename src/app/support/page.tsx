@@ -3,11 +3,27 @@ import Link from "next/link";
 import { requireSupport } from "@/lib/auth";
 import { listTenants, recentAccess } from "@/lib/support";
 import { recentErrors } from "@/lib/errors";
+import { lastGoodBackup, recentBackups, type BackupStatus } from "@/lib/backup-log";
 import { relativeTime } from "@/lib/format";
 import { ORG_STATUS, type OrgStatus, type Tone } from "@/lib/constants";
 import { Badge, Card, CardHeader } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Organisations", robots: { index: false } };
+
+/** Only "offsite" is actually safe; the other three are degrees of exposure. */
+const BACKUP_TONE: Record<BackupStatus, Tone> = {
+  offsite: "green",
+  local: "amber",
+  degraded: "red",
+  failed: "red",
+};
+
+const BACKUP_LABEL: Record<BackupStatus, string> = {
+  offsite: "Copied off the machine",
+  local: "This disk only — BACKUP_S3_URL is not set",
+  degraded: "Upload refused — this copy is only on this disk",
+  failed: "No backup was produced",
+};
 
 const STATUS_TONE: Record<OrgStatus, Tone> = {
   [ORG_STATUS.TRIAL]: "blue",
@@ -21,6 +37,8 @@ export default async function SupportIndexPage() {
   const tenants = listTenants();
   const log = recentAccess(25);
   const errors = recentErrors(25);
+  const backups = recentBackups(10);
+  const lastGood = lastGoodBackup();
 
   return (
     <div className="space-y-6">
@@ -89,6 +107,47 @@ export default async function SupportIndexPage() {
               </li>
             ))}
           </ul>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Backups"
+          subtitle="One machine, one volume — so this is the whole disaster plan. The date that matters is the last copy that reached off-machine storage, not the last attempt."
+        />
+        {backups.length === 0 ? (
+          <p className="text-sm text-ink-500">
+            No backup has run yet. The schedule&rsquo;s first run is a full interval after
+            boot, so this is expected on a server started less than {process.env.BACKUP_EVERY_HOURS ?? 24}h ago.
+          </p>
+        ) : (
+          <>
+            <p className="mb-3 text-sm">
+              {lastGood ? (
+                <>
+                  Last copy off the machine:{" "}
+                  <span className="font-medium text-ink-800">{relativeTime(lastGood.created_at)}</span>
+                </>
+              ) : (
+                <span className="font-medium text-red-700">
+                  No backup has ever reached off-machine storage. Losing this volume would
+                  lose everything.
+                </span>
+              )}
+            </p>
+            <ul className="divide-y divide-line text-sm">
+              {backups.map((entry) => (
+                <li key={entry.id} className="flex flex-wrap items-baseline gap-2 py-2">
+                  <Badge tone={BACKUP_TONE[entry.status]}>{entry.status}</Badge>
+                  <span className="text-ink-700">{BACKUP_LABEL[entry.status]}</span>
+                  {entry.bytes !== null && (
+                    <span className="text-xs text-ink-400">{(entry.bytes / 1024).toFixed(0)} KB</span>
+                  )}
+                  <span className="ml-auto text-xs text-ink-400">{relativeTime(entry.created_at)}</span>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </Card>
 
