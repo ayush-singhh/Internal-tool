@@ -36,6 +36,7 @@ export const FORM_FIELDS = [
   "serial", "legal_name", "owner_name", "phone", "email", "address",
   "status_id", "dispatcher_id", "account_manager_id",
   "mc_number", "usdot", "trailer_type_id", "trailer_size", "truck_count",
+  "insurance_expires_on", "insurance_provider",
   "born_date", "onboarding_date", "first_load_date", "onboarding_type_id", "lead_source_id",
   "plan_id", "pricing_type_id", "rate", "percentage", "billing_frequency_id",
   "subscription_id", "agreement_status_id", "invoice_mode_id", "note",
@@ -87,6 +88,11 @@ export function parseCarrierForm(
     ),
 
     mc_number: digitsOnly(f("mc_number"), "mc_number", "MC number", errors, 10),
+    // Deliberately not ordered against the onboarding dates: a certificate can expire
+    // before a carrier joins (that is what makes it worth flagging) and can be renewed
+    // years ahead of one.
+    insurance_expires_on: date(f("insurance_expires_on"), "insurance_expires_on", "Insurance expiry date", errors),
+    insurance_provider: str(f("insurance_provider"), 120),
     usdot: digitsOnly(f("usdot"), "usdot", "USDOT number", errors, 10),
     trailer_type_id: choice(
       f("trailer_type_id"), "trailer_type_id", "Trailer Type", allowed.trailer_type, errors,

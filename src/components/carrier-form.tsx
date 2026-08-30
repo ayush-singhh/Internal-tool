@@ -196,6 +196,8 @@ export function CarrierForm({
       <FormSection step={3} title="Regulatory Information">
         <Text name="mc_number" label="MC Number" inputMode="numeric" defaultValue={v("mc_number")} error={err("mc_number")} placeholder="123456" hint="Digits only — our primary identifier" />
         <Text name="usdot" label="USDOT Number" inputMode="numeric" defaultValue={v("usdot")} error={err("usdot")} placeholder="1234567" hint="Digits only" />
+        <Text name="insurance_expires_on" label="Insurance Expires On" type="date" defaultValue={v("insurance_expires_on")} error={err("insurance_expires_on")} hint="Reaches Needs Attention before it lapses" />
+        <Text name="insurance_provider" label="Insurance Provider" defaultValue={v("insurance_provider")} error={err("insurance_provider")} placeholder="Progressive" hint="Who to call when it is close to expiring" />
       </FormSection>
 
       <FormSection step={4} title="Equipment">

@@ -191,5 +191,6 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   about_to_be_active_days: "14",
   missing_first_load_days: "21",
   investigation_stale_days: "7",
+  insurance_expiry_days: "30",
   company_name: "Carrier Management Hub",
 };

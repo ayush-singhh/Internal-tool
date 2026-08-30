@@ -17,6 +17,7 @@ export const SETTING_DEFS: SettingDef[] = [
   { key: "about_to_be_active_days", label: "About to be active — overdue after", help: "Days a carrier may sit in About to Be Active before it reaches Needs Attention.", type: "number", min: 1, max: 365 },
   { key: "missing_first_load_days", label: "Missing first load — overdue after", help: "Days after onboarding without a first load before an active carrier is flagged.", type: "number", min: 1, max: 365 },
   { key: "investigation_stale_days", label: "Investigation — stale after", help: "Days a carrier may stay under investigation before it is escalated.", type: "number", min: 1, max: 365 },
+  { key: "insurance_expiry_days", label: "Insurance — warn before expiry", help: "Days ahead of a certificate of insurance expiring that the carrier reaches Needs Attention.", type: "number", min: 1, max: 365 },
 ];
 
 export type SettingsResult = { ok: true } | { ok: false; errors: Record<string, string> };

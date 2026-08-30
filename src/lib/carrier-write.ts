@@ -23,6 +23,8 @@ export const FIELDS = {
   trailer_type_id:      { label: "Trailer Type",             activity: "field",        kind: "lookup" },
   trailer_size:         { label: "Trailer Size",             activity: "field" },
   truck_count:          { label: "Trucks / Trailers",        activity: "field" },
+  insurance_expires_on: { label: "Insurance Expires",        activity: "field" },
+  insurance_provider:   { label: "Insurance Provider",       activity: "field" },
   born_date:            { label: "Carrier Born Date",        activity: "field" },
   onboarding_date:      { label: "Onboarding Date",          activity: "field" },
   first_load_date:      { label: "First Load Date",          activity: "field" },

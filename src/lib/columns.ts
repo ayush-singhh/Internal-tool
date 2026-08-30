@@ -7,6 +7,7 @@ export type ColumnKey =
   | "serial" | "legal_name" | "owner_name" | "status" | "dispatcher" | "account_manager"
   | "phone" | "email" | "address"
   | "mc_number" | "usdot" | "trailer_type" | "trailer_size" | "truck_count"
+  | "insurance_expires_on" | "insurance_provider"
   | "born_date" | "onboarding_date" | "onboarding_type" | "lead_source" | "first_load_date"
   | "plan" | "pricing_type" | "pricing" | "percentage" | "rate"
   | "subscription" | "agreement_status" | "invoice_mode" | "updated_at";
@@ -40,6 +41,8 @@ export const COLUMNS: ColumnDef[] = [
   { key: "trailer_type",    label: "Trailer Type",    group: "Regulatory & Equipment" },
   { key: "trailer_size",    label: "Trailer Size",    group: "Regulatory & Equipment" },
   { key: "truck_count",     label: "Trucks",          group: "Regulatory & Equipment", sort: "truck_count", align: "right", default: true },
+  { key: "insurance_expires_on", label: "Insurance Expires", group: "Regulatory & Equipment", sort: "insurance_expires_on" },
+  { key: "insurance_provider",   label: "Insurer",           group: "Regulatory & Equipment" },
 
   { key: "born_date",       label: "Carrier Born",    group: "Onboarding", sort: "born_date" },
   { key: "onboarding_date", label: "Onboarded",       group: "Onboarding", sort: "onboarding_date", default: true },

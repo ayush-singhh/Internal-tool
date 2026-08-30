@@ -194,6 +194,8 @@ export default async function CarrierProfilePage(props: PageProps<"/carriers/[id
             <Field label="Trailer Type">{d.trailerType?.label}</Field>
             <Field label="Trailer Size">{carrier.trailer_size}</Field>
             <Field label="Trucks / Trailers" mono>{carrier.truck_count}</Field>
+            <Field label="Insurance Expires">{formatDate(carrier.insurance_expires_on)}</Field>
+            <Field label="Insurance Provider">{carrier.insurance_provider}</Field>
           </Section>
 
           <Section title="Onboarding">

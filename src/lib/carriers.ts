@@ -23,6 +23,7 @@ const SORT_SQL: Record<SortKey, string> = {
   truck_count: "c.truck_count",
   onboarding_date: "c.onboarding_date",
   first_load_date: "c.first_load_date",
+  insurance_expires_on: "c.insurance_expires_on",
   born_date: "c.born_date",
   percentage: "c.percentage",
   rate: "c.rate",

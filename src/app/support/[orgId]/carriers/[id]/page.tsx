@@ -64,6 +64,8 @@ export default async function SupportCarrierPage(
           <Row label="MC / USDOT" value={`${carrier.mc_number ?? "—"} / ${carrier.usdot ?? "—"}`} />
           <Row label="Trailer" value={`${d.trailerType?.label ?? "—"} ${carrier.trailer_size ?? ""}`} />
           <Row label="Trucks" value={carrier.truck_count} />
+          <Row label="Insurance expires" value={formatDate(carrier.insurance_expires_on)} />
+          <Row label="Insurer" value={carrier.insurance_provider} />
           <Row label="Onboarded" value={formatDate(carrier.onboarding_date)} />
           <Row label="First load" value={formatDate(carrier.first_load_date)} />
           <Row label="Plan" value={d.plan?.label} />

@@ -35,6 +35,8 @@ export const TARGETS: TargetField[] = [
   { key: "onboarding_type",     label: "Onboarding Type",         kind: "onboarding_type",   aliases: ["onboarding type", "type of onboarding"] },
   { key: "lead_source",         label: "Source of Lead",          kind: "lead_source",       aliases: ["source", "lead source", "source of lead", "channel"] },
   { key: "first_load_date",     label: "First Load Date",         aliases: ["first load", "first load date", "first dispatch"] },
+  { key: "insurance_expires_on", label: "Insurance Expires On",   aliases: ["insurance", "insurance expiry", "insurance expiration", "coi expiry", "coi expiration", "cert expiry", "insurance expires", "policy expiry"] },
+  { key: "insurance_provider",  label: "Insurance Provider",      aliases: ["insurer", "insurance company", "insurance carrier", "coi provider", "policy provider"] },
   { key: "plan",                label: "Plan Offered",            kind: "plan",              aliases: ["plan", "plan offered", "package"] },
   { key: "pricing_type",        label: "Pricing Type",            kind: "pricing_type",      aliases: ["pricing type", "pricing", "billing type"] },
   { key: "rate",                label: "Rate",                    aliases: ["rate", "fee", "amount", "monthly", "weekly rate"] },

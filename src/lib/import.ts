@@ -175,7 +175,7 @@ export function parseImportRow(
     flags.push(`Percentage kept out of range: "${raw("percentage")}" (${pctErrors.percentage})`);
   }
 
-  for (const key of ["born_date", "onboarding_date", "first_load_date"] as const) {
+  for (const key of ["born_date", "onboarding_date", "first_load_date", "insurance_expires_on"] as const) {
     const text = raw(key);
     if (!text) { input[key] = null; continue; }
     const iso = parseLooseDate(text);

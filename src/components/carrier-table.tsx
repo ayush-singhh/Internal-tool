@@ -45,6 +45,8 @@ function cell(row: DecoratedCarrier, key: ColumnKey): ReactNode {
     case "trailer_size": return row.trailer_size;
     case "truck_count":
       return row.truck_count == null ? null : <span className="tnum">{row.truck_count}</span>;
+    case "insurance_expires_on": return formatDate(row.insurance_expires_on);
+    case "insurance_provider": return row.insurance_provider;
     case "born_date": return formatDate(row.born_date);
     case "onboarding_date": return formatDate(row.onboarding_date);
     case "onboarding_type": return d.onboardingType?.label;

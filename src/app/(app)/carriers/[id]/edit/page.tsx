@@ -50,6 +50,8 @@ export default async function EditCarrierPage(props: PageProps<"/carriers/[id]/e
   put("born_date", carrier.born_date);
   put("onboarding_date", carrier.onboarding_date);
   put("first_load_date", carrier.first_load_date);
+  put("insurance_expires_on", carrier.insurance_expires_on);
+  put("insurance_provider", carrier.insurance_provider);
   put("onboarding_type_id", carrier.onboarding_type_id);
   put("lead_source_id", carrier.lead_source_id);
   put("plan_id", carrier.plan_id);

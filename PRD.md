@@ -81,7 +81,19 @@ balance, subscription cancelled, agreement closed, can-return, notes.
 Rule-driven work queue with thresholds configurable in Settings:
 about-to-be-active longer than *N* days, agreement not signed, plan not pitched,
 missing first load date, missing MC/USDOT, pending investigation past *N* days,
-missing billing information.
+missing billing information, **insurance expired**, **insurance expiring within
+*N* days**.
+
+### 4.12 Insurance
+Each carrier carries a certificate-of-insurance expiry date and the insurer's name.
+A lapsed certificate on a live carrier is the highest-urgency item in the queue —
+dispatching a load against one is a liability, not an administrative slip. Expiring
+and expired are separate rules because they call for different actions: chase the
+broker, versus stop giving that carrier loads.
+
+Carriers with no expiry recorded are **not** flagged. Every existing record is empty
+the day this ships, and a queue that opens with several hundred meaningless rows
+teaches people to ignore it.
 
 ### 4.9 Reports
 Active by dispatcher, active by account manager, by status, by lead source, by plan,

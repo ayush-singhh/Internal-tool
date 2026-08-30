@@ -475,6 +475,24 @@ export const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 14,
+    name: "carrier insurance expiry",
+    up: (db) => {
+      // A lapsed certificate of insurance is the one carrier fact with liability attached
+      // to it, and the spreadsheet this product replaced did not track it either. Two
+      // columns rather than a table: one policy date per carrier is what the work queue
+      // needs, and a policy history nobody has asked for is a table to keep in step.
+      addColumn(db, "carriers", "insurance_expires_on", "TEXT");
+      // Kept because the alert has to be actionable — knowing a certificate lapsed is not
+      // much use without knowing who to call about it.
+      addColumn(db, "carriers", "insurance_provider", "TEXT");
+      db.exec(
+        `CREATE INDEX IF NOT EXISTS idx_carriers_org_insurance
+           ON carriers (organization_id, insurance_expires_on)`,
+      );
+    },
+  },
 ];
 
 export function addColumn(

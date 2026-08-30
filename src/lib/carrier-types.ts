@@ -18,6 +18,8 @@ export type CarrierRow = {
   trailer_type_id: number | null;
   trailer_size: string | null;
   truck_count: number | null;
+  insurance_expires_on: string | null;
+  insurance_provider: string | null;
   born_date: string | null;
   onboarding_date: string | null;
   first_load_date: string | null;
@@ -73,6 +75,7 @@ export const SORT_KEYS = [
   "legal_name", "owner_name", "status", "dispatcher", "account_manager",
   "mc_number", "usdot", "truck_count", "onboarding_date", "first_load_date",
   "born_date", "percentage", "rate", "plan", "created_at", "updated_at",
+  "insurance_expires_on",
 ] as const;
 
 export type SortKey = (typeof SORT_KEYS)[number];

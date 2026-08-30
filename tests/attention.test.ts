@@ -60,6 +60,7 @@ beforeEach(() => {
   db.run("UPDATE app_settings SET value = '14' WHERE organization_id = ? AND key = 'about_to_be_active_days'", [org.id]);
   db.run("UPDATE app_settings SET value = '21' WHERE organization_id = ? AND key = 'missing_first_load_days'", [org.id]);
   db.run("UPDATE app_settings SET value = '7' WHERE organization_id = ? AND key = 'investigation_stale_days'", [org.id]);
+  db.run("UPDATE app_settings SET value = '30' WHERE organization_id = ? AND key = 'insurance_expiry_days'", [org.id]);
 });
 
 let seq = 0;
@@ -195,4 +196,59 @@ test("the queue is ordered by size and samples at most five per rule", () => {
   assert.equal(identifiers.count, 8, "the count is the full total");
   assert.equal(identifiers.items.length, 5, "only five are listed");
   assert.equal(attention.attentionTotal(rules), rules.reduce((n, r) => n + r.count, 0));
+});
+
+// ── insurance ────────────────────────────────────────────────────────────────
+//
+// Split into lapsed and lapsing on purpose: they ask for different things. A lapsed
+// certificate means stop giving that carrier loads today; a lapsing one means chase the
+// broker this week. The boundary cases are what these pin down, because "expires today"
+// belongs in exactly one of them.
+
+const daysAhead = (n: number) => new Date(Date.now() + n * 86400_000).toISOString().slice(0, 10);
+
+test("expired insurance is separated from insurance about to expire", () => {
+  const lapsed = carrier({ insurance_expires_on: daysAgo(1) });
+  const soon = carrier({ insurance_expires_on: daysAhead(10) });
+  carrier({ insurance_expires_on: daysAhead(200) });   // comfortably valid
+  carrier({ insurance_expires_on: null });             // not recorded — deliberately silent
+
+  assert.equal(rule("insurance_expired")!.count, 1);
+  assert.equal(rule("insurance_expired")!.items[0]!.id, lapsed);
+  assert.equal(rule("insurance_expiring")!.count, 1);
+  assert.equal(rule("insurance_expiring")!.items[0]!.id, soon);
+});
+
+test("a certificate expiring today is expiring, not yet expired", () => {
+  const today = carrier({ insurance_expires_on: daysAhead(0) });
+
+  assert.equal(rule("insurance_expired"), undefined, "cover today is still cover");
+  assert.equal(rule("insurance_expiring")!.items[0]!.id, today);
+});
+
+test("the warning window comes from Settings", () => {
+  carrier({ insurance_expires_on: daysAhead(45) });
+  assert.equal(rule("insurance_expiring"), undefined, "outside the default 30 days");
+
+  db.run("UPDATE app_settings SET value = '60' WHERE organization_id = ? AND key = 'insurance_expiry_days'", [org.id]);
+  assert.equal(rule("insurance_expiring")!.count, 1, "inside a 60-day window");
+});
+
+test("insurance is only chased for carriers still working", () => {
+  carrier({ insurance_expires_on: daysAgo(30), status_id: ids.inactive });
+  carrier({ insurance_expires_on: daysAgo(30), status_id: ids.investigation });
+  assert.equal(rule("insurance_expired"), undefined, "an offboarded carrier's lapsed cover is not work");
+
+  const live = carrier({ insurance_expires_on: daysAgo(30), status_id: ids.upcoming });
+  assert.equal(rule("insurance_expired")!.items[0]!.id, live, "onboarding carriers count as live");
+});
+
+test("the queue names the insurer, so the alert can be acted on", () => {
+  carrier({ insurance_expires_on: daysAgo(2), insurance_provider: "Progressive" });
+  assert.match(rule("insurance_expired")!.items[0]!.detail!, /Expired .* · Progressive/);
+
+  db.run("DELETE FROM carriers WHERE organization_id = ?", [org.id]);
+  carrier({ insurance_expires_on: daysAgo(2) });
+  assert.match(rule("insurance_expired")!.items[0]!.detail!, /^Expired \d{4}-\d{2}-\d{2}$/,
+    "and reads cleanly when no insurer is on file");
 });

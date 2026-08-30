@@ -27,6 +27,12 @@ function daysAgoIso(days: number): string {
   return new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
 }
 
+function daysAheadIso(days: number): string {
+  return new Date(Date.now() + days * 86400_000).toISOString().slice(0, 10);
+}
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
 /**
  * The work queue. Every rule is a plain query against current data — nothing is
  * precomputed or cached, so an item leaves the queue the moment it is resolved.
@@ -41,6 +47,7 @@ export function needsAttention(org: Org): AttentionRule[] {
   const staleUpcoming = num("about_to_be_active_days", 14);
   const staleFirstLoad = num("missing_first_load_days", 21);
   const staleInvestigation = num("investigation_stale_days", 7);
+  const insuranceWarning = num("insurance_expiry_days", 30);
 
   const upcomingId = idOf(org, "status", STATUS.ABOUT_TO_BE_ACTIVE);
   const investigationId = idOf(org, "status", STATUS.PENDING_INVESTIGATION);
@@ -168,6 +175,55 @@ export function needsAttention(org: Org): AttentionRule[] {
                   AND (invoice_mode_id IS NULL OR invoice_mode_id = ?)
                 ORDER BY legal_name`,
               [org.id, activeId, notSetInvoiceId ?? -1],
+            ),
+    }),
+
+    // Insurance, in two rules rather than one, because they ask for different things: a
+    // lapsed certificate means stop giving that carrier loads, a lapsing one means chase
+    // the broker this week. Scoped to live carriers — an offboarded carrier's expired
+    // certificate is not work.
+    //
+    // ponytail: no rule for carriers with *no* expiry recorded. Every existing carrier has
+    // NULL the day this ships, so it would bury the queue under a few hundred rows that
+    // say nothing. Add one once customers have backfilled.
+    rule({
+      key: "insurance_expired",
+      label: "Insurance expired",
+      description: "Live carriers whose certificate of insurance has lapsed",
+      tone: "red",
+      items:
+        liveIds.length === 0
+          ? []
+          : query(
+              `SELECT id, legal_name,
+                      'Expired ' || insurance_expires_on
+                        || COALESCE(' · ' || insurance_provider, '') AS detail
+                 FROM carriers
+                WHERE organization_id = ? AND status_id IN (${liveIds.map(() => "?").join(",")})
+                  AND insurance_expires_on IS NOT NULL AND insurance_expires_on < ?
+                ORDER BY insurance_expires_on`,
+              [org.id, ...liveIds, todayIso()],
+            ),
+    }),
+
+    rule({
+      key: "insurance_expiring",
+      label: "Insurance expiring soon",
+      description: `Certificate of insurance expiring within ${insuranceWarning} days`,
+      tone: "amber",
+      items:
+        liveIds.length === 0
+          ? []
+          : query(
+              `SELECT id, legal_name,
+                      'Expires ' || insurance_expires_on
+                        || COALESCE(' · ' || insurance_provider, '') AS detail
+                 FROM carriers
+                WHERE organization_id = ? AND status_id IN (${liveIds.map(() => "?").join(",")})
+                  AND insurance_expires_on IS NOT NULL
+                  AND insurance_expires_on >= ? AND insurance_expires_on <= ?
+                ORDER BY insurance_expires_on`,
+              [org.id, ...liveIds, todayIso(), daysAheadIso(insuranceWarning)],
             ),
     }),
 

@@ -371,6 +371,31 @@ including the trap behind each, are in `BUGS.md`.
 - [x] **`BUGS.md`** — a ledger, listed in `AGENTS.md`, whose entries lead with *why it was
       missed*. A fix stops one bug; that line stops a category.
 
+## Phase 14 — Carrier insurance expiry ✅ (2026-08-30)
+
+The first feature the PRD never asked for, because the spreadsheet it replaced did not
+track it either. For carrier management it is the fact with actual liability attached:
+a certificate of insurance lapses, and a load dispatched against it is a claim.
+
+- [x] Migration 14: `carriers.insurance_expires_on`, `carriers.insurance_provider`, and
+      an `(organization_id, insurance_expires_on)` index
+- [x] Two Needs Attention rules, not one — **Insurance expired** (red, live carriers
+      only) and **Insurance expiring soon** (amber, window from Settings). They call for
+      different actions, so they are counted and shown separately
+- [x] `insurance_expiry_days` in Settings, default 30, alongside the other thresholds
+- [x] Threaded the whole way through: form (with validation), profile, edit prefill,
+      sortable table column, column picker, CSV export, CSV import with aliases
+      (`coi expiry`, `insurance expiration`, …), activity history, and the read-only
+      support view
+- [x] Two columns rather than a policy table: one date per carrier is what the queue
+      needs, and a policy history nobody asked for is a table to keep in step
+- [x] **No rule for carriers with no expiry recorded** — every existing carrier is NULL
+      on day one, and a queue that opens with hundreds of meaningless rows is a queue
+      people learn to ignore. Add one once customers have backfilled
+- [x] Five tests covering the split, the today boundary, the Settings window, live-only
+      scoping, and that the item names the insurer so the alert can be acted on.
+      **287 tests.**
+
 Smaller, whenever they get in the way: none currently.
 
 ---
