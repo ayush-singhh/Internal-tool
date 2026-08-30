@@ -130,3 +130,71 @@ test("versions are unique and ordered", () => {
   assert.deepEqual([...versions].sort((a, b) => a - b), versions, "declared in order");
   assert.equal(Math.max(...versions), m.LATEST_VERSION);
 });
+
+/**
+ * The upgrade this whole branch exists to serve: a single-tenant database full of a real
+ * customer's data, carried across into multi-tenancy.
+ *
+ * Migrations 5 and 6 change table constraints, which SQLite can only do by rebuilding the
+ * table — and `DROP TABLE` with foreign keys enforced fires the children's ON DELETE
+ * CASCADE. Enforcement therefore has to be off, which `migrate()` arranges outside the
+ * transaction, because `PRAGMA foreign_keys` does nothing inside one. Without that,
+ * migration 5 failed outright (carriers → users is NO ACTION) and migration 6 silently
+ * emptied every note, activity row and offboarding record.
+ */
+test("a single-tenant database keeps all of its data through the tenancy migrations", () => {
+  const db = fresh("upgrade");
+  db.exec("PRAGMA foreign_keys = ON");
+  const now = new Date().toISOString();
+
+  // Stop at version 4 — the last single-tenant schema — and fill it the way a real
+  // install looks: carriers assigned to a user, each with notes, history and an exit.
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)`);
+  for (const x of m.MIGRATIONS.filter((x) => x.version <= 4)) {
+    x.up(db);
+    db.prepare("INSERT INTO schema_migrations VALUES (?, ?, ?)").run(x.version, x.name, now);
+  }
+  db.exec(`INSERT INTO users (id,name,email,password_hash,role,active,created_at,updated_at)
+           VALUES (1,'Dispatcher One','d1@x.com','h','dispatcher',1,'${now}','${now}')`);
+  db.exec(`INSERT INTO lookups (id,kind,value,label,sort,active)
+           VALUES (1,'status','active','Active',0,1)`);
+  db.exec(`INSERT INTO app_settings (key,value) VALUES ('company_name','Real Customer Inc')`);
+  for (let i = 1; i <= 3; i++) {
+    db.exec(`INSERT INTO carriers (id,legal_name,status_id,dispatcher_id,created_at,updated_at)
+             VALUES (${i},'Carrier ${i}',1,1,'${now}','${now}')`);
+    db.exec(`INSERT INTO carrier_notes (carrier_id,user_id,body,pinned,created_at)
+             VALUES (${i},1,'note ${i}',0,'${now}')`);
+    db.exec(`INSERT INTO carrier_activity (carrier_id,user_id,type,summary,created_at)
+             VALUES (${i},1,'created','Carrier record created','${now}')`);
+  }
+  db.exec(`INSERT INTO offboarding_records (carrier_id,offboarded_on,created_at)
+           VALUES (3,'2026-01-15','${now}')`);
+  db.exec(`INSERT INTO saved_filters (user_id,name,query,shared,created_at)
+           VALUES (1,'My view','?status=1',0,'${now}')`);
+
+  const counted = ["users", "carriers", "carrier_notes", "carrier_activity",
+                   "offboarding_records", "saved_filters"];
+  const count = (t: string) =>
+    (db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
+  const before = Object.fromEntries(counted.map((t) => [t, count(t)]));
+
+  m.migrate(db);
+
+  for (const t of counted) {
+    assert.equal(count(t), before[t], `${t} survived the upgrade intact`);
+    assert.equal(
+      (db.prepare(`SELECT COUNT(*) AS n FROM ${t} WHERE organization_id IS NULL`)
+        .get() as { n: number }).n,
+      0,
+      `${t} was attributed to the organisation`,
+    );
+  }
+  assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), [],
+    "no dangling references were left behind");
+  assert.equal(
+    (db.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number }).foreign_keys, 1,
+    "enforcement was switched back on afterwards",
+  );
+  db.close();
+});

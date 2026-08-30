@@ -282,13 +282,12 @@ export const MIGRATIONS: Migration[] = [
       // that forgot to scope cannot create a cross-tenant reference.
       //
       // SQLite adds foreign keys only at table-creation time, so each table is rebuilt.
-      // All of it runs inside the migration's own transaction (see migrate()), and
-      // foreign_key_check is asserted at the end.
+      // All of it runs inside the migration's own transaction, with enforcement already
+      // switched off by migrate() — it cannot be switched here, a PRAGMA inside a
+      // transaction does nothing — and migrate() runs foreign_key_check afterwards.
       if (hasColumn(db, "carriers", "organization_id") === false) {
         throw new Error("Migration 6 requires migration 5 to have added organization_id.");
       }
-
-      db.exec("PRAGMA foreign_keys = OFF");
 
       rebuildCarriersWithCompositeFks(db);
       rebuildChildWithCompositeFk(db, "carrier_notes");
@@ -301,12 +300,6 @@ export const MIGRATIONS: Migration[] = [
       db.exec("CREATE INDEX IF NOT EXISTS idx_carriers_org_mc ON carriers (organization_id, mc_number)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_carriers_org_usdot ON carriers (organization_id, usdot)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_carriers_org_status ON carriers (organization_id, status_id)");
-
-      const violations = db.prepare("PRAGMA foreign_key_check").all();
-      db.exec("PRAGMA foreign_keys = ON");
-      if (violations.length > 0) {
-        throw new Error(`Composite FK rebuild left ${violations.length} violation(s): ${JSON.stringify(violations)}`);
-      }
     },
   },
   {
@@ -497,24 +490,52 @@ export function migrate(db: DatabaseSync): { applied: string[]; version: number 
     (a, b) => a.version - b.version,
   );
   const applied: string[] = [];
+  if (pending.length === 0) return { applied, version: from };
 
-  for (const migration of pending) {
-    db.exec("BEGIN");
-    try {
-      migration.up(db);
-      db.prepare(
-        "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-      ).run(migration.version, migration.name, new Date().toISOString());
-      db.exec("COMMIT");
-      applied.push(`${migration.version}. ${migration.name}`);
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw new Error(
-        `Migration ${migration.version} (${migration.name}) failed and was rolled back: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+  // Foreign key enforcement is switched here, around the whole run, because
+  // `PRAGMA foreign_keys` is a **no-op inside a transaction** and every migration below
+  // runs in one. It has to be OFF: SQLite cannot alter a table's constraints in place, so
+  // a migration that changes them rebuilds the table — and `DROP TABLE` with enforcement
+  // on performs an implicit DELETE that fires the children's `ON DELETE CASCADE`. That
+  // silently empties carrier_notes, carrier_activity and offboarding_records (migration 6),
+  // and fails outright where a child's reference is NO ACTION (migration 5, carriers →
+  // users). Nothing is taken on trust in exchange: `foreign_key_check` below proves each
+  // migration left no dangling reference, and rolls it back if it did.
+  const enforcing =
+    (db.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number }).foreign_keys === 1;
+  if (enforcing) db.exec("PRAGMA foreign_keys = OFF");
+
+  try {
+    for (const migration of pending) {
+      db.exec("BEGIN");
+      try {
+        migration.up(db);
+        // Enforcement is off, so each migration proves for itself that it left the
+        // database referentially intact. This is a manual scan, independent of the pragma.
+        const violations = db.prepare("PRAGMA foreign_key_check").all();
+        if (violations.length > 0) {
+          throw new Error(
+            `left ${violations.length} foreign key violation(s): ${JSON.stringify(
+              violations.slice(0, 5),
+            )}`,
+          );
+        }
+        db.prepare(
+          "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+        ).run(migration.version, migration.name, new Date().toISOString());
+        db.exec("COMMIT");
+        applied.push(`${migration.version}. ${migration.name}`);
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw new Error(
+          `Migration ${migration.version} (${migration.name}) failed and was rolled back: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
+  } finally {
+    if (enforcing) db.exec("PRAGMA foreign_keys = ON");
   }
 
   return { applied, version: currentVersion(db) };
