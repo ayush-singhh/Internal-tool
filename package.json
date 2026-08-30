@@ -14,7 +14,9 @@
     "migrate": "node scripts/migrate.ts",
     "support-user": "node --conditions=react-server scripts/support-user.ts",
     "set-billing-status": "node --conditions=react-server scripts/set-billing-status.ts",
-    "test:http": "next build && node --conditions=react-server --test \"tests/http/*.test.ts\""
+    "test:http": "next build && node --conditions=react-server --test \"tests/http/*.test.ts\"",
+    "export-org": "node --conditions=react-server scripts/export-org.ts",
+    "delete-org": "node --conditions=react-server scripts/delete-org.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.1.0",
