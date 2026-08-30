@@ -351,13 +351,23 @@ team and settings. All 16 confirm A cannot reach B.
 
 ### Known limitations (spec §19)
 
-- **A platform support role is not yet built.** The product owner chose standing,
-  read-only, internally-audited support access; that role and its audit log are a later
-  phase. Until then there is no cross-tenant access of any kind through the application.
-- MFA, self-serve signup, invitations, email verification and the generalised audit log are
-  later phases; this phase is tenant isolation and the data layer.
-- Cross-tenant access, if the support role is added, will be the single documented exception
-  to the isolation invariant, and read-only.
+- **`/support` is the single documented exception to the isolation invariant** — standing,
+  read-only, second-factor-required, and every view recorded in `support_access_log`.
+  Built; see the platform support section. Because it is the one cross-tenant surface,
+  **every page under it calls `requireSupport()` itself.** A layout cannot gate it: Next
+  renders a page concurrently with its layout, so a layout's `notFound()` sets the status
+  and the page still runs and streams. See `BUGS.md`.
+- **Capacity ceiling: one machine, and it is nearer than the data size suggests.**
+  `node:sqlite`'s `DatabaseSync` is synchronous, so every query blocks the event loop —
+  one slow query delays *every tenant*, not just the one that asked. And a second Fly
+  machine gets its own empty volume, silently splitting the product in two, so scaling out
+  is not available as a relief valve.
+
+  The trigger to act is **concurrent tenants, not carrier count**: the first symptom is
+  request latency rising across all customers at once, while the database stays small.
+  Watch p95 latency rather than row counts. The move when it arrives is Postgres — the
+  query layer is plain SQL and `Org` is already threaded through every call site, so it is
+  a driver change, not a redesign.
 
 ## Schema changes
 

@@ -215,9 +215,29 @@ fly logs                 # what it is doing, and the reason it refused to start
 fly ssh console          # a shell inside the running machine
 fly status               # machine count — should be 1
 fly deploy               # ship; a few seconds of downtime while the volume moves
-fly ssh console -C "node /app/scripts/backup.ts"    # a verified snapshot into /data/backups
+fly ssh console -C "node /app/scripts/backup.ts"    # a verified snapshot, now
 ```
 
-That last one is manual, and its output lands on the same disk as the database — which is
-item 0 in `Plan.md` and the thing to fix before a customer stores anything real.
+Backups also run on a timer inside the server (`BACKUP_EVERY_HOURS`, daily by default) and,
+where `BACKUP_S3_URL` is set, are copied off the machine. **Check them from `/support`** —
+the Backups card leads with the last copy that actually reached off-machine storage, which
+is the date a restore would take you back to. A card showing `degraded` means the snapshot
+was fine and the upload was refused: the copy is on the same disk as the database, so
+losing the volume loses both.
+
+### Ending a tenancy
+
+Out of band, like `support-user.ts` — `/support` is read-only and gets no exception for the
+most destructive operation in the product.
+
+```bash
+npm run export-org -- <slug>                      # everything they own, as JSON
+npm run delete-org -- <slug>                      # shows what would go; deletes nothing
+npm run delete-org -- <slug> --confirm <slug>     # does it, exporting first
+```
+
+The export excludes password hashes and two-factor secrets, so it is safe to hand to the
+customer. Deletion writes its own export first and refuses without one: the tenant's
+`audit_log` and `support_access_log` rows go with them, and that file is where the record
+survives.
 

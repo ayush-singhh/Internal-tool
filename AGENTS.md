@@ -17,3 +17,6 @@ Before writing code in this repo, read:
 - `AI Rules.md` — **binding conventions**: dependency policy, data-integrity rules,
   security requirements, server/client boundary
 - `Plan.md` — phase status; update it in the same change that completes a phase
+- `BUGS.md` — defects worth remembering, and the traps that produced them. Read the
+  **Why it was missed** lines before writing auth, migrations or SQL. Add an entry in
+  the same change that fixes a bug, and one marked `open` for a bug you are not fixing

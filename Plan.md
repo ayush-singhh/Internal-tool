@@ -327,6 +327,50 @@ Then, in this order, and why — see `HANDOFF.md` for the same list with the rea
       band like `support-user.ts`, never from `/support` itself, which stays read-only.
       No enforcement — a label to read, not a gate.
 
+## Phase 13 — Audit, and the gaps it exposed ✅ (2026-08-30)
+
+Not a planned phase. A review of finished work found two critical defects, and closing
+them made it obvious that the test suite could not have caught either. Full write-ups,
+including the trap behind each, are in `BUGS.md`.
+
+### Two critical bugs, both fixed
+- [x] **`/support` was authorised only by its layout** — a layout cannot refuse a request,
+      so every page under it served another tenant's data in the body of a 404. Any
+      signed-in customer could read every organisation, every carrier and every note on
+      the deployment. `requireSupport()` is now called by each page for itself.
+- [x] **The tenancy migrations destroyed data** — `PRAGMA foreign_keys` is a no-op inside
+      a transaction, so migration 6's `OFF` never applied and `DROP TABLE` cascaded.
+      Migration 5 failed outright on any real database; migration 6 would have silently
+      emptied notes, activity and offboarding records. `migrate()` now switches
+      enforcement outside the transaction and asserts `foreign_key_check` per migration.
+
+### Three smaller ones
+- [x] Report CSV export gained the rate limit and audit record its sibling route already had
+- [x] `offboardingReasons` duplicate deleted — its copy built placeholders and parameters
+      by different rules and desynced on an empty bound
+- [x] `isFirstRun()` asked a single-tenant question of a multi-tenant deployment
+
+### What the audit exposed, and what was built for it
+- [x] **HTTP-level tests** (`npm run test:http`) — every previous test called a `src/lib`
+      function directly, which is blind to anything that only exists once Next is
+      composing layouts, pages, redirects and status codes. `tests/http/harness.ts` builds
+      the app, starts it, and reads what comes back. Proven against the original bug:
+      reverting the `/support` fix fails three of the eight.
+- [x] **Backup failures are visible** — migration 13 adds `backup_log`; every run records
+      `offsite` / `local` / `degraded` / `failed`, surfaced on `/support` and led by the
+      last copy that actually reached off-machine storage. A verified snapshot whose
+      upload was refused previously looked identical to a success.
+- [x] **A tenancy can end** — `npm run export-org` and `npm run delete-org`. Creating an
+      organisation had three routes and ending one had none; "send us our data" and
+      "delete us" were answered with hand-written SQL. Deletion requires an export first,
+      refuses to take platform support accounts with it, and asserts `foreign_key_check`
+      inside the transaction so a partial deletion rolls back.
+- [x] **The capacity ceiling written down** — `Architecture.md` now states the trigger to
+      move off SQLite is concurrent tenants, not carrier count, because `DatabaseSync` is
+      synchronous and one slow query delays every tenant.
+- [x] **`BUGS.md`** — a ledger, listed in `AGENTS.md`, whose entries lead with *why it was
+      missed*. A fix stops one bug; that line stops a category.
+
 Smaller, whenever they get in the way: none currently.
 
 ---

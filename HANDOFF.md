@@ -4,8 +4,8 @@ This file is the resume point for a fresh session. It is kept current at the end
 working session. For the full picture read, in order: `PRD.md` → `Architecture.md` →
 `AI Rules.md` → `Plan.md` → `MIGRATION-PLAN.md`.
 
-**Last updated:** 2026-08-29, after the billing decision (manual invoicing) and server
-error reporting.
+**Last updated:** 2026-08-30, after a full audit: two critical bugs fixed, HTTP-level
+tests added, backup visibility, and tenant export/deletion. See `BUGS.md` first.
 
 ---
 
@@ -18,7 +18,8 @@ dispatch companies.
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 273 passing (`npm test`). **Build:** clean.
+**Working tree:** clean. **Tests:** 282 passing (`npm test`) + 8 over HTTP
+(`npm run test:http`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -27,6 +28,45 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 ---
 
 ## What is DONE
+
+### Audit — two critical bugs, and what they exposed ✅ (2026-08-30)
+
+**Read `BUGS.md` before touching auth, migrations or SQL.** Each entry leads with *why it
+was missed*, which is the part that generalises. In short:
+
+- **`/support` was gated only by its layout.** A layout cannot refuse a request — Next
+  runs the page concurrently, so `notFound()` set the status and the page still streamed
+  its markup into the 404 body. Any signed-in customer could read every tenant on the
+  deployment. Every page under `/support` now calls `requireSupport()` itself. Never
+  authorise in a layout.
+- **The tenancy migrations destroyed data.** `PRAGMA foreign_keys` is a no-op inside a
+  transaction, so migration 6's `OFF` never applied; migration 5 failed outright on a real
+  database and migration 6 would have silently emptied notes, activity and offboarding.
+  `migrate()` now toggles enforcement outside the transaction and asserts
+  `foreign_key_check` per migration.
+- Plus three smaller: the report export had no rate limit or audit record, a duplicated
+  query desynced its placeholders from its parameters, and `isFirstRun()` asked a
+  single-tenant question.
+
+Three gaps the audit made obvious, now closed:
+
+- **`npm run test:http`** — the suite could not have caught either critical bug, because
+  every test called a `src/lib` function directly and none had ever looked at a response.
+  `tests/http/harness.ts` builds the app, starts it, and drives it over the wire.
+  Assertions check the status **and** that the body carries no data the caller was not
+  entitled to — a status code is not a denial. Kept out of `npm test` because it needs a
+  build; both are fast.
+- **Backup outcomes are visible** — `backup_log` (migration 13) records every run as
+  `offsite` / `local` / `degraded` / `failed`, shown on `/support`. `degraded` is the one
+  that matters: a verified snapshot whose upload was refused used to look exactly like a
+  success. The card leads with the last copy that actually left the machine, because that
+  is the date a restore takes you back to.
+- **A tenancy can end** — `npm run export-org -- <slug>` and
+  `npm run delete-org -- <slug> --confirm <slug>`. Out of band like `support-user.ts`.
+  Deletion exports first (the `audit_log` and `support_access_log` rows go with the
+  tenant, so the file is where that record survives), refuses to remove platform support
+  accounts, and rolls back if it would leave a dangling reference.
+
 
 ### Billing decision — settled: manual invoicing ✅
 
@@ -308,14 +348,16 @@ Smaller, and only worth a detour when they get in the way:
    read-only access to any tenant, always available (no customer approval gate), with an
    internal server-side audit log that is NOT surfaced in the customer UI, MFA required, no
    write access.** Emergency no-trace access is out-of-band (direct SQL on the server).
-   This role is **not built yet** — until it exists there is no cross-tenant path at all.
+   **Built** — see the platform support section above. `/support` is the only cross-tenant
+   path in the product, and every page under it calls `requireSupport()` for itself.
 
 ---
 
 ## How to run / verify
 
 ```bash
-npm test                         # 170 tests, node --test, no framework
+npm test                         # unit tests, node --test, no framework
+npm run test:http                # builds, then drives a real server over HTTP
 npm run build                    # production build (Turbopack)
 npm run dev                      # http://localhost:3000  (uses data/carrier-hub.db)
 npm run migrate                  # apply pending migrations (idempotent)
