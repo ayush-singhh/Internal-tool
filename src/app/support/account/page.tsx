@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import QRCode from "qrcode";
-import { requireUser } from "@/lib/auth";
+import { requireSupport } from "@/lib/auth";
 import { mfaState } from "@/lib/mfa";
 import { Card, CardHeader } from "@/components/ui";
 import { MfaCard } from "@/components/mfa-card";
@@ -8,7 +8,8 @@ import { MfaCard } from "@/components/mfa-card";
 export const metadata: Metadata = { title: "Support account", robots: { index: false } };
 
 export default async function SupportAccountPage() {
-  const user = await requireUser();
+  // The one page that opens without a second factor — it is where one is enrolled.
+  const user = await requireSupport(false);
   const mfa = mfaState(user.id);
   const qrUri = mfa.otpauth ? await QRCode.toDataURL(mfa.otpauth, { margin: 1, width: 336 }) : null;
 

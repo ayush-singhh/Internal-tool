@@ -1,26 +1,18 @@
-import { headers } from "next/headers";
-import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
-import { mfaState } from "@/lib/mfa";
-import { isSupport } from "@/lib/support";
+import { requireSupport } from "@/lib/auth";
 import { Logo } from "@/components/logo";
 
 /**
  * The only surface with cross-tenant reach, and the only place it is allowed.
  *
- * Two gates, both here so neither can be forgotten on a page: the account must be
- * platform support, and it must have a second factor. Anyone else gets a 404 rather than
- * a redirect — an ordinary customer has no business learning that this exists.
+ * The gate is `requireSupport()`, and this layout is not where it is enforced — a layout
+ * cannot enforce anything, because Next runs the page whether or not the layout rejects
+ * the request. Every page under here calls it for itself; this call only decides whether
+ * to draw the chrome, and reads the name to put in it. The MFA check is the page's, since
+ * `/support/account` must open without one.
  */
 export default async function SupportLayout({ children }: LayoutProps<"/support">) {
-  const user = await requireUser();
-  if (!isSupport(user)) notFound();
-
-  const path = (await headers()).get("x-pathname") ?? "";
-  if (!mfaState(user.id).active && path !== "/support/account") {
-    redirect("/support/account");
-  }
+  const user = await requireSupport(false);
 
   return (
     <div className="min-h-screen bg-paper-50">

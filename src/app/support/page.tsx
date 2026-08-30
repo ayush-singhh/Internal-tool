@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
+import { requireSupport } from "@/lib/auth";
 import { listTenants, recentAccess } from "@/lib/support";
 import { recentErrors } from "@/lib/errors";
 import { relativeTime } from "@/lib/format";
@@ -17,7 +17,7 @@ const STATUS_TONE: Record<OrgStatus, Tone> = {
 };
 
 export default async function SupportIndexPage() {
-  await requireUser();
+  await requireSupport();
   const tenants = listTenants();
   const log = recentAccess(25);
   const errors = recentErrors(25);

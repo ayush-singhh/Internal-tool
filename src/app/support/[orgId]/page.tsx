@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requireSupport } from "@/lib/auth";
 import { listCarriers, withLookups } from "@/lib/carriers";
 import { formatPhone } from "@/lib/format";
 import { recordAccess, tenant, tenantHandle } from "@/lib/support";
@@ -11,13 +10,13 @@ import { Badge, Card } from "@/components/ui";
 export const metadata: Metadata = { title: "Organisation", robots: { index: false } };
 
 export default async function SupportTenantPage(props: PageProps<"/support/[orgId]">) {
-  const user = await requireUser();
+  const user = await requireSupport();
   const orgId = Number((await props.params).orgId);
   const summary = Number.isInteger(orgId) ? tenant(orgId) : undefined;
   if (!summary) notFound();
 
   // Recorded before anything is read, so a render that fails is still a look at the data.
-  recordAccess(user.id, orgId, (await headers()).get("x-pathname") ?? `/support/${orgId}`);
+  recordAccess(user.id, orgId, `/support/${orgId}`);
 
   const org = tenantHandle(orgId);
   const { rows, total } = listCarriers(org, {}, { page: 1, pageSize: 100 });

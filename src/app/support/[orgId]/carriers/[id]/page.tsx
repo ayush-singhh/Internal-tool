@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requireSupport } from "@/lib/auth";
 import { carrierActivity, carrierNotes } from "@/lib/activity";
 import { decorate, getCarrier } from "@/lib/carriers";
 import { formatDate, formatPhone, relativeTime } from "@/lib/format";
@@ -24,14 +23,14 @@ function Row({ label, value }: { label: string; value: string | number | null | 
 export default async function SupportCarrierPage(
   props: PageProps<"/support/[orgId]/carriers/[id]">,
 ) {
-  const user = await requireUser();
+  const user = await requireSupport();
   const params = await props.params;
   const orgId = Number(params.orgId);
   const carrierId = Number(params.id);
   const summary = Number.isInteger(orgId) ? tenant(orgId) : undefined;
   if (!summary || !Number.isInteger(carrierId)) notFound();
 
-  recordAccess(user.id, orgId, (await headers()).get("x-pathname") ?? `/support/${orgId}`);
+  recordAccess(user.id, orgId, `/support/${orgId}/carriers/${carrierId}`);
 
   const org = tenantHandle(orgId);
   const carrier = getCarrier(org, carrierId);

@@ -1,12 +1,14 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { all, get, run, systemQuery } from "./db.ts";
 import { passwordStep, secondFactorStep } from "./login.ts";
+import { mfaState } from "./mfa.ts";
 import { touchSession } from "./sessions.ts";
 import type { SessionUser } from "./permissions.ts";
+import { isSupport, type SupportUser } from "./support.ts";
 import { Org } from "./tenant-db.ts";
 
 const COOKIE = "ch_session";
@@ -165,6 +167,30 @@ export async function requireUser(): Promise<SessionUser> {
 export async function requireOrg(): Promise<{ user: SessionUser; org: Org }> {
   const user = await requireUser();
   return { user, org: new Org(user.organization_id) };
+}
+
+/**
+ * The gate for `/support`, the one surface with cross-tenant reach.
+ *
+ * Called by **every page** under it, not only by the layout. A layout is not a security
+ * boundary: Next renders a page and its layout concurrently, so a layout that calls
+ * `notFound()` sets the status code but does not stop the page running — the page's reads
+ * still happen and its markup is still streamed into the body of that 404. Enforcing this
+ * only in `support/layout.tsx` let any signed-in user of any tenant read every other
+ * tenant's carriers out of a 404 response.
+ *
+ * `needsMfa` is false only for `/support/account`, the page that has to open so a support
+ * account can enrol its second factor. It is a parameter rather than a path comparison on
+ * purpose: the path would have to come from the `x-pathname` request header, which is only
+ * set by the proxy on requests the proxy actually matches, and is otherwise the caller's
+ * to choose.
+ */
+export async function requireSupport(needsMfa = true): Promise<SupportUser> {
+  const user = await requireUser();
+  // A 404 rather than a redirect: an ordinary customer has no business learning this exists.
+  if (!isSupport(user)) notFound();
+  if (needsMfa && !mfaState(user.id).active) redirect("/support/account");
+  return user;
 }
 
 /** True before anyone has changed the seeded admin password — drives the login hint. */

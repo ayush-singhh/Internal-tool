@@ -143,3 +143,45 @@ test("entries survive in order, newest first", () => {
   assert.equal(log.length, 2);
   assert.ok(log[0]!.created_at >= log[1]!.created_at);
 });
+
+/**
+ * Every page under `/support` has to gate itself.
+ *
+ * It used to be gated only by `support/layout.tsx`, which does not work: Next renders a
+ * page and its layout concurrently, so a layout calling `notFound()` sets the status code
+ * but never stops the page — its queries still run and its markup is still streamed into
+ * the body of that 404. Any signed-in user of any tenant could read every other tenant's
+ * carriers, notes and activity straight out of a "404" response.
+ *
+ * Checked in the source rather than by rendering, because it is a rule about how these
+ * files are written and that is what a reviewer would look for.
+ */
+test("no page under /support relies on its layout to authorise the request", async () => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+
+  const pages: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name === "page.tsx") pages.push(full);
+    }
+  };
+  walk(join(import.meta.dirname, "..", "src", "app", "support"));
+
+  assert.ok(pages.length >= 4, "found the support pages");
+  for (const page of pages) {
+    const source = readFileSync(page, "utf8");
+    assert.match(
+      source,
+      /await requireSupport\(/,
+      `${page} must call requireSupport() itself — a layout cannot refuse a request for it`,
+    );
+    assert.doesNotMatch(
+      source,
+      /await requireUser\(/,
+      `${page} must not settle for requireUser(): that is any signed-in customer`,
+    );
+  }
+});
