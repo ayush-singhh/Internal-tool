@@ -37,6 +37,7 @@ const ROLE_TONE: Record<Role, "purple" | "blue" | "green" | "slate" | "amber"> =
   admin: "purple",
   dispatcher: "blue",
   account_manager: "green",
+  sales: "amber",
   viewer: "slate",
 };
 

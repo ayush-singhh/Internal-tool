@@ -305,3 +305,65 @@ test("a short password is refused and the link survives for another try", () => 
   assert.equal(reset.checkReset(issued.token).valid, true, "not burned by a failed attempt");
   assert.equal(reset.consumeReset(issued.token, "long-enough-now").ok, true);
 });
+
+// ── dispatch permissions ─────────────────────────────────────────────────────
+//
+// The matrix is checked exhaustively rather than by example, because the interesting
+// entries are the refusals: a role that quietly gains `load:rate` is not visible in any
+// screenshot, and rate is the most guarded fact in the product.
+
+test("the dispatch matrix says exactly what each role may do", async () => {
+  const { ROLES } = await import("../src/lib/constants.ts");
+  const { can } = await import("../src/lib/permissions.ts");
+
+  const who = (role: string) => ({
+    id: 1, organization_id: 1, name: "X", email: "x@y.test", role, active: 1,
+  } as Parameters<typeof can>[0]);
+
+  const expected: Record<string, Record<string, boolean>> = {
+    //                    view   manage  rate   close  driver  brokerAdd brokerEdit
+    [ROLES.OWNER]:           { v: true,  m: true,  r: true,  c: true,  d: true,  ba: true,  be: true  },
+    [ROLES.ADMIN]:           { v: true,  m: true,  r: true,  c: true,  d: true,  ba: true,  be: true  },
+    [ROLES.DISPATCHER]:      { v: true,  m: true,  r: true,  c: false, d: true,  ba: true,  be: false },
+    [ROLES.ACCOUNT_MANAGER]: { v: true,  m: false, r: true,  c: false, d: false, ba: false, be: false },
+    [ROLES.VIEWER]:          { v: true,  m: false, r: true,  c: false, d: false, ba: false, be: false },
+    [ROLES.SALES]:           { v: false, m: false, r: false, c: false, d: false, ba: false, be: false },
+    [ROLES.SUPPORT]:         { v: false, m: false, r: false, c: false, d: false, ba: false, be: false },
+  };
+
+  for (const [role, e] of Object.entries(expected)) {
+    const u = who(role);
+    assert.equal(can(u, "load:view"), e.v, `${role} load:view`);
+    assert.equal(can(u, "load:manage"), e.m, `${role} load:manage`);
+    assert.equal(can(u, "load:rate"), e.r, `${role} load:rate`);
+    assert.equal(can(u, "load:close"), e.c, `${role} load:close — invoicing is not dispatch`);
+    assert.equal(can(u, "driver:manage"), e.d, `${role} driver:manage`);
+    assert.equal(can(u, "broker:create"), e.ba, `${role} broker:create`);
+    assert.equal(can(u, "broker:edit"), e.be, `${role} broker:edit — one typo must not become a broker`);
+  }
+});
+
+test("sales sees no carrier, no load and no rate", async () => {
+  const { ROLES } = await import("../src/lib/constants.ts");
+  const { can } = await import("../src/lib/permissions.ts");
+  const sales = {
+    id: 1, organization_id: 1, name: "S", email: "s@y.test", role: ROLES.SALES, active: 1,
+  } as Parameters<typeof can>[0];
+
+  for (const action of [
+    "carrier:view", "carrier:create", "carrier:edit", "export:run",
+    "load:view", "load:rate", "load:manage", "team:manage",
+  ] as const) {
+    assert.equal(can(sales, action), false, `sales must not hold ${action}`);
+  }
+});
+
+test("a deactivated account holds nothing, whatever its role", async () => {
+  const { ROLES } = await import("../src/lib/constants.ts");
+  const { can } = await import("../src/lib/permissions.ts");
+  const sacked = {
+    id: 1, organization_id: 1, name: "X", email: "x@y.test", role: ROLES.ADMIN, active: 0,
+  } as Parameters<typeof can>[0];
+  assert.equal(can(sacked, "load:view"), false);
+  assert.equal(can(sacked, "load:rate"), false);
+});

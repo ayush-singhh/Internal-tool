@@ -231,6 +231,9 @@ export const ROLES = {
   ADMIN: "admin",
   DISPATCHER: "dispatcher",
   ACCOUNT_MANAGER: "account_manager",
+  /** Submits leads and tracks onboarding. Sees no rate, no load and no invoice — the
+   *  sales sidebar has no Carrier or Load Management on it at all. */
+  SALES: "sales",
   VIEWER: "viewer",
 } as const;
 
@@ -259,6 +262,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   admin: "Admin",
   dispatcher: "Dispatcher",
   account_manager: "Account Manager",
+  sales: "Sales Representative",
   viewer: "Management / Viewer",
 };
 

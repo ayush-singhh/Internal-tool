@@ -16,6 +16,7 @@ export type CarrierScope = {
 };
 
 export type Action =
+  // Carriers — the CRM half
   | "carrier:view"
   | "carrier:create"
   | "carrier:edit"
@@ -24,6 +25,22 @@ export type Action =
   | "note:create"
   | "import:run"
   | "export:run"
+  // Dispatch — the loads half
+  | "load:view"
+  /** Create, edit, assign a driver, and move status as far as Delivered. */
+  | "load:manage"
+  /** See the rate and both rates per mile. The single most guarded fact in the product. */
+  | "load:rate"
+  /** Move a load to Invoiced or Closed. Administrators only — those two statuses are
+   *  the invoicing side of the flow, and dispatchers have no business there. */
+  | "load:close"
+  | "driver:manage"
+  /** Add a broker the shipped list is missing. */
+  | "broker:create"
+  /** Correct or retire a broker. Administrators only, so one dispatcher's typo does not
+   *  quietly become a second broker forever. */
+  | "broker:edit"
+  // Administration
   | "team:manage"
   | "settings:manage";
 
@@ -48,6 +65,12 @@ export function can(
   // does. Tenancy added the role; this is the only place that decides what it means.
   if (user.role === ROLES.ADMIN || user.role === ROLES.OWNER) return true;
 
+  // Sales submits leads and tracks onboarding. They see no rate, no invoice and no load,
+  // and their sidebar carries neither Carrier nor Load Management — so rather than listing
+  // what they are refused, they are refused everything not explicitly theirs. Leads and
+  // commission become their own actions when those features exist.
+  if (user.role === ROLES.SALES) return false;
+
   const assigned =
     !!carrier &&
     (carrier.dispatcher_id === user.id || carrier.account_manager_id === user.id);
@@ -55,6 +78,13 @@ export function can(
   switch (action) {
     case "carrier:view":
     case "export:run":
+    case "load:view":
+      return true;
+
+    // Everyone left who can see a load can see what it pays. The people who must never
+    // see a rate — drivers and customers — have no login at all, which is why this is a
+    // permission rather than a per-screen decision.
+    case "load:rate":
       return true;
 
     case "carrier:create":
@@ -68,8 +98,16 @@ export function can(
       if (user.role !== ROLES.DISPATCHER && user.role !== ROLES.ACCOUNT_MANAGER) return false;
       return carrier === undefined ? true : assigned;
 
+    // Dispatch is the dispatcher's job, and nobody else's below administrator.
+    case "load:manage":
+    case "driver:manage":
+    case "broker:create":
+      return user.role === ROLES.DISPATCHER;
+
     case "carrier:delete":
     case "import:run":
+    case "load:close":
+    case "broker:edit":
     case "team:manage":
     case "settings:manage":
       return false;
