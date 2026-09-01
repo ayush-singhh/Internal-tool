@@ -151,3 +151,19 @@ export async function putObject(
   }
   return url.toString();
 }
+
+/** Downloads one object. Throws with the provider's own words when it refuses — same
+ *  shape as putObject's failure, so a caller handles both the same way. */
+export async function getObject(dest: Destination, key: string): Promise<Response> {
+  const url = new URL(`${dest.base.pathname.replace(/\/+$/, "")}/${key}`, dest.base);
+  const headers = signRequest("GET", url, Buffer.alloc(0), dest.credentials, new Date(), {
+    "x-amz-content-sha256": sha256(Buffer.alloc(0)),
+  });
+  const response = await fetch(url, { method: "GET", headers });
+  if (!response.ok) {
+    throw new Error(
+      `Download of ${key} was refused (${response.status}): ${(await response.text()).slice(0, 300)}`,
+    );
+  }
+  return response;
+}
