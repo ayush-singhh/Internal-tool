@@ -20,7 +20,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       // Forces a download rather than an inline render — same-origin uploaded content is
       // not something the app should ever let a browser execute or render as HTML/SVG.
       // The global `nosniff` header (security-headers.ts) covers the rest.
-      "content-disposition": `attachment; filename="${doc.filename.replace(/"/g, "")}"`,
+      "content-disposition": `attachment; filename="${doc.filename.replace(/[\x00-\x1f"]/g, "")}"`,
     },
   });
 }
