@@ -7,8 +7,8 @@
  * never be set up differently.
  */
 import { tmpdir } from "node:os";
-import { ROLES } from "../src/lib/constants.ts";
-import { seedOrganizationData } from "../src/lib/provision.ts";
+import { realpathSync } from "node:fs";
+import { LOOKUPS, DEFAULT_SETTINGS, ROLES, SEED_BROKERS } from "../src/lib/constants.ts";
 
 /**
  * Refuses to seed anything into a database that is not a throwaway.
@@ -19,12 +19,24 @@ import { seedOrganizationData } from "../src/lib/provision.ts";
  * pass, and the developer's database quietly fills with fixtures. Failing loudly here is
  * the difference between a mistake and a mess.
  */
-function assertThrowawayDatabase(): void {
-  const configured = process.env.CARRIER_DB_PATH;
-  if (!configured || !configured.startsWith(tmpdir())) {
+function assertThrowawayDatabase(db: Db): void {
+  // The **open file**, not the environment variable. Checking the variable is what let
+  // this happen twice: a static import that reaches db.ts binds CARRIER_DB_PATH at import
+  // time, so the variable can be set correctly to a temp path while the connection is
+  // already pinned to data/carrier-hub.db. The variable said the right thing; the database
+  // being written to was the developer's. Only the connection knows the truth.
+  const open = (db.all("PRAGMA database_list") as { name: string; file: string }[])
+    .find((d) => d.name === "main")?.file ?? "";
+  // Resolved on both sides: on macOS /var is a symlink to /private/var, so SQLite reports
+  // the real path while os.tmpdir() reports the link, and a plain prefix test fails on a
+  // database that is in fact exactly where it should be.
+  const temp = realpathSync(tmpdir());
+  if (!open || !realpathSync.native(open).startsWith(temp)) {
     throw new Error(
-      `Tests must run against a database in ${tmpdir()}, not "${configured ?? "the default"}". ` +
-        "Set CARRIER_DB_PATH and import src/lib modules inside before(), not at the top of the file.",
+      `Tests are connected to "${open}", not a throwaway database in ${tmpdir()}.\n` +
+        "Something imported src/lib (directly, or through another module) before " +
+        "CARRIER_DB_PATH was set. Import src/lib modules inside before(), never at the " +
+        "top of a test file or of tests/helpers.ts.",
     );
   }
 }
@@ -39,17 +51,32 @@ export function seedOrg(
   name: string,
   ownerEmail = `owner-${name.toLowerCase().replace(/\W+/g, "")}@test.local`,
 ): TestOrg {
-  assertThrowawayDatabase();
+  assertThrowawayDatabase(db);
   const now = new Date().toISOString();
   const slug = `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Math.random().toString(36).slice(2, 7)}`;
   db.run("INSERT INTO organizations (name, slug, status, created_at) VALUES (?, ?, 'active', ?)", [name, slug, now]);
   const id = db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
 
-  // Calls the real thing rather than repeating it. This helper used to insert lookups and
-  // settings itself, which meant every addition to provisioning silently failed to reach
-  // the tests — brokers were seeded in the product and absent in every fixture. One
-  // implementation, so it cannot drift again.
-  seedOrganizationData(id);
+  // Seeded from the same constants provision.ts uses, rather than by calling it: importing
+  // provision.ts here reaches db.ts at module load and pins the connection before a test
+  // can set CARRIER_DB_PATH. `tests/dispatch-schema.test.ts` asserts the broker count, so
+  // drift between this and provisioning fails a test rather than passing silently.
+  LOOKUPS.forEach((l, i) =>
+    db.run(
+      `INSERT INTO lookups (organization_id, kind, value, label, tone, sort)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, l.kind, l.value, l.label, l.tone ?? null, i],
+    ),
+  );
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+    db.run("INSERT INTO app_settings (organization_id, key, value) VALUES (?, ?, ?)", [id, key, value]);
+  }
+  for (const broker of SEED_BROKERS) {
+    db.run(
+      "INSERT INTO brokers (organization_id, name, seeded, active, created_at) VALUES (?, ?, 1, 1, ?)",
+      [id, broker, now],
+    );
+  }
   db.run(
     `INSERT INTO users (organization_id, name, email, password_hash, role, active,
                         email_verified_at, created_at, updated_at)

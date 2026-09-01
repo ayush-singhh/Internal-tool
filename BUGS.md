@@ -18,6 +18,63 @@ conversation it was noticed in.
 
 ---
 
+## 2026-09-01 — the test suite wrote into the development database (twice)
+
+**Severity:** high · **Status:** fixed · **Reached users:** no (a developer's database, not a customer's)
+
+`db.ts` binds `CARRIER_DB_PATH` **at module load**. Any static import that reaches it —
+directly, or through another module — pins the connection before a test file's
+`process.env.CARRIER_DB_PATH = DB` line ever runs. The tests then seed into
+`data/carrier-hub.db`.
+
+This is the second time. The first was recorded in `HANDOFF.md`: a test imported
+`src/lib/audit.ts` at the top of the file, seven runs wrote fixtures into the developer's
+database, and `assertThrowawayDatabase()` was added to stop it happening again.
+
+**It did not stop it happening again, because it checked the wrong thing.** The guard
+asserted that `process.env.CARRIER_DB_PATH` pointed inside the temp directory. That
+variable was set correctly. The *connection* was already pinned somewhere else. The guard
+passed on every run while the fixtures went into the wrong database.
+
+Found by accident: a load test failed because `seedOrg` returned organisation id 86 on
+what should have been an empty database. `PRAGMA database_list` showed the open file was
+`data/carrier-hub.db`, holding **105 organisations, 111 users, 10,400 brokers, 11 drivers
+and 5 loads** of accumulated fixtures. Organisation 1 — the real bootstrap — still had its
+admin, its 80 lookups and its 4 settings, and no carriers: every one of the 47 belonged to
+a fixture organisation.
+
+The trigger this time was mine. `tests/helpers.ts` gained
+`import { seedOrganizationData } from "../src/lib/provision.ts"` so fixtures would use the
+real provisioning instead of repeating it — a good intention that reached `db.ts` through
+`provision.ts`.
+
+**Fix.** Two parts, because either alone would leave the trap armed:
+
+- `tests/helpers.ts` imports nothing that reaches `db.ts`. It seeds from `constants.ts`,
+  which holds no connection. `tests/dispatch-schema.test.ts` asserts the seeded broker
+  count, so drift between the fixture and real provisioning fails a test instead of
+  passing quietly — which is what the import was for.
+- `assertThrowawayDatabase()` now reads `PRAGMA database_list` and checks **the file the
+  connection actually has open**, resolving symlinks on both sides (macOS `/var` is a link
+  to `/private/var`, so a naive prefix test rejects a database that is exactly where it
+  should be).
+
+**Why it was missed.** The guard tested the intent rather than the outcome. An environment
+variable is what you *asked* for; the open file handle is what you *got*, and only one of
+them can be wrong while looking right. **Assert on the effect, not on the input that was
+supposed to produce it** — the same reason the `/support` tests assert on the response body
+rather than the status code.
+
+**Guarded by.** `tests/helpers.ts` itself, on every call to `seedOrg`. Verified by
+reinstating the offending import: all 8 tests in `tests/audit.test.ts` fail immediately
+with the open path named, instead of passing and writing to the wrong database.
+
+**Still outstanding.** `data/carrier-hub.db` still holds the accumulated fixtures. A backup
+was taken (`data/carrier-hub.db.before-cleanup-*`); the cleanup itself needs whoever owns
+that database to run it.
+
+---
+
 ## 2026-08-30 — `/support` pages were authorised only by their layout
 
 **Severity:** critical · **Status:** fixed · **Reached users:** no (never exposed to real

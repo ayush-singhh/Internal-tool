@@ -440,3 +440,5 @@ Recorded so "later" is a decision rather than an oversight.
 | Full-text search index | `LIKE` is fast enough at this scale | Search feels slow on the real dataset |
 | Multi-select advanced filters | Single-select covers the daily need; the URL format and query layer already accept multiple ids | Someone asks to see two statuses at once |
 | SSO | Four roles, one office | The company standardizes on an IdP |
+| HR module (attendance, clock-in, leave, tickets, performance) | Present in the previous app's screenshots and in none of its specifications. Out of v1 by decision, 2026-08-30 | It is asked for as a product requirement rather than inherited |
+| Live truck tracking | Recurring per-truck cost and a third-party dependency. **V2, and only on request** — decided 2026-08-30 | Explicitly asked for |
