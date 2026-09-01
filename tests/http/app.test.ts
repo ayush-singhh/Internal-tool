@@ -169,6 +169,45 @@ test("the CSV exports refuse an unauthenticated caller", async () => {
   }
 });
 
+test("the document route refuses an unauthenticated caller", async () => {
+  const res = await app.get("/api/documents/1");
+  assert.equal(res.status, 307, "redirects rather than serving");
+  assert.match(res.location ?? "", /\/login/);
+});
+
+test("one tenant cannot download another tenant's document", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg, lookupId } = await import("../helpers.ts");
+  const { Org } = await import("../../src/lib/tenant-db.ts");
+  const owner = seedOrg(app.db, "Doc Owner Dispatch", "docowner@doctest.test");
+
+  app.db.run(
+    `INSERT INTO carriers (organization_id, legal_name, status_id, created_at, updated_at)
+     VALUES (?, 'Doc Test Carrier', ?, ?, ?)`,
+    [owner.id, lookupId(app.db, owner.id, "status", "active"), now, now],
+  );
+  const carrierId = app.db.get<{ id: number }>(
+    "SELECT id FROM carriers WHERE organization_id = ?", [owner.id])!.id;
+  const { createLoad } = await import("../../src/lib/load-write.ts");
+  const loadResult = createLoad(new Org(owner.id), {
+    carrierId, stops: [{ kind: "pickup", city: "Dallas" }, { kind: "delivery", city: "Newark" }],
+  }, owner.ownerId) as { ok: true; id: number };
+
+  app.db.run(
+    `INSERT INTO load_documents
+       (organization_id, load_id, kind, filename, storage_key, content_type, size_bytes, uploaded_by, created_at)
+     VALUES (?, ?, 'pod', 'CONFIDENTIAL-POD.pdf', 'unused-key', 'application/pdf', 5, ?, ?)`,
+    [owner.id, loadResult.id, owner.ownerId, now],
+  );
+  const documentId = app.db.get<{ id: number }>(
+    "SELECT id FROM load_documents WHERE organization_id = ?", [owner.id])!.id;
+
+  const res = await app.get(`/api/documents/${documentId}`, outsider);
+  assert.equal(res.status, 404);
+  assertNoVictimData(res.body, `/api/documents/${documentId}`);
+  assert.ok(!res.body.includes("CONFIDENTIAL-POD"), "the filename never reaches an outsider either");
+});
+
 test("the report export is rate-limited and every pull is recorded", async () => {
   const owner = app.session("vic@victim.test");
   const exported = () =>
