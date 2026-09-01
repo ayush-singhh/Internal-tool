@@ -185,3 +185,18 @@ test("the fail-closed guard covers the dispatch tables too", async () => {
     "a query that forgets organization_id throws instead of leaking",
   );
 });
+
+test("the bootstrap organisation gets brokers too, not just provisioned ones", () => {
+  // provision.ts creates every organisation except one: the bootstrap tenant that db.ts
+  // seeds on a fresh install. Anything provisioning seeds has to be repeated there, or a
+  // brand-new deployment comes up with an empty broker dropdown and no clue why.
+  const bootstrap = db.systemQuery(
+    () => db.get<{ id: number }>("SELECT id FROM organizations ORDER BY id LIMIT 1")!.id,
+  );
+  assert.equal(
+    db.get<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM brokers WHERE organization_id = ?", [bootstrap])!.n,
+    100,
+    "the shipped list reached the organisation db.ts seeds itself",
+  );
+});

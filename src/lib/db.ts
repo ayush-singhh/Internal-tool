@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { LOOKUPS, DEFAULT_SETTINGS, ROLES } from "./constants.ts";
+import { LOOKUPS, DEFAULT_SETTINGS, ROLES, SEED_BROKERS } from "./constants.ts";
 import { hashPassword } from "./password.ts";
 import { migrate, INDEXES } from "./migrations.ts";
 import { tenantTablesLackingScope } from "./tenant-db.ts";
@@ -57,6 +57,16 @@ function seed(database: DatabaseSync) {
     "INSERT OR IGNORE INTO app_settings (organization_id, key, value) VALUES (?, ?, ?)",
   );
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) insertSetting.run(orgId, key, value);
+
+  // Brokers, for the same reason the lookups above are here: this is the one organisation
+  // provision.ts never creates, so anything it seeds has to be repeated here or the
+  // bootstrap tenant comes up with an empty broker dropdown. Inline rather than by calling
+  // seedOrganizationData(), because provision.ts imports this module.
+  const insertBroker = database.prepare(
+    `INSERT INTO brokers (organization_id, name, seeded, active, created_at)
+     VALUES (?, ?, 1, 1, ?) ON CONFLICT (organization_id, name) DO NOTHING`,
+  );
+  for (const name of SEED_BROKERS) insertBroker.run(orgId, name, now);
 
   database.prepare(
     `INSERT INTO users (organization_id, name, email, password_hash, role, active,

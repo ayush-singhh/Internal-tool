@@ -25,3 +25,30 @@ export function carrierFormOptions(org: Org): CarrierFormOptions {
     invoice_mode: kind("invoice_mode"),
   };
 }
+
+/** Everything the load form's three pickers need, in one pass. */
+export function loadFormOptions(org: Org): import("@/components/load-form").LoadFormOptions {
+  const carriers = all<{ id: number; legal_name: string }>(
+    "SELECT id, legal_name FROM carriers WHERE organization_id = ? ORDER BY legal_name",
+    [org.id],
+  ).map((c) => ({ id: c.id, label: c.legal_name }));
+
+  // `carrierId` rides along so the form can narrow the driver list once a carrier is
+  // chosen: a driver belongs to one carrier, and asking twice invites disagreement.
+  const drivers = all<{ id: number; name: string; carrier_id: number | null; truck_number: string | null }>(
+    `SELECT id, name, carrier_id, truck_number FROM drivers
+      WHERE organization_id = ? AND active = 1 ORDER BY name`,
+    [org.id],
+  ).map((d) => ({
+    id: d.id,
+    label: d.truck_number ? `${d.name} · ${d.truck_number}` : d.name,
+    carrierId: d.carrier_id,
+  }));
+
+  const brokers = all<{ id: number; name: string }>(
+    "SELECT id, name FROM brokers WHERE organization_id = ? AND active = 1 ORDER BY name",
+    [org.id],
+  ).map((b) => ({ id: b.id, label: b.name }));
+
+  return { carriers, drivers, brokers };
+}

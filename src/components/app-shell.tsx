@@ -24,6 +24,13 @@ const GROUPS: Group[] = [
       { href: "/investigations", label: "Investigations", icon: "investigations", count: "investigations" },
     ],
   },
+  {
+    // Doc 2's order: Carrier Management, then Driver Management, then Load Management.
+    heading: "Dispatch",
+    items: [
+      { href: "/loads", label: "Load Management", icon: "loads", count: "loads" },
+    ],
+  },
   { heading: "Insights", items: [{ href: "/reports", label: "Reports", icon: "reports" }] },
   {
     heading: "Administration",

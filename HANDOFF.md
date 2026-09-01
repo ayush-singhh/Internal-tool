@@ -4,8 +4,10 @@ This file is the resume point for a fresh session. It is kept current at the end
 working session. For the full picture read, in order: `PRD.md` → `Architecture.md` →
 `AI Rules.md` → `Plan.md` → `MIGRATION-PLAN.md`.
 
-**Last updated:** 2026-08-30, after a full audit: two critical bugs fixed, HTTP-level
-tests added, backup visibility, and tenant export/deletion. See `BUGS.md` first.
+**Last updated:** 2026-09-01. The product has a second half now: the **Asterism dispatch
+domain**, built from scratch on this codebase. Read `BUGS.md` first — the test suite was
+found writing into `data/carrier-hub.db`, and the guard that was meant to prevent that
+checked the wrong thing.
 
 ---
 
@@ -13,17 +15,80 @@ tests added, backup visibility, and tenant export/deletion. See `BUGS.md` first.
 
 **Product:** Carrier Management Hub — an internal Carrier CRM / operations dashboard for a
 trucking dispatch company, now being turned into a **multi-tenant SaaS** sold to many
-dispatch companies.
+dispatch companies, and now also the home of **Asterism dispatch** (loads, drivers,
+brokers, invoicing).
+
+**Why here and not on the old app:** the previous Asterism app was never past development
+and its source is not available, so nothing is being ported — the dispatch domain is new
+code on this base. That was the whole point of choosing it: tenancy, auth, audit,
+migrations, backups and support access already exist and are tested. Plan and gap analysis:
+https://claude.ai/code/artifact/e6c570ce-c726-494e-be02-0d003da4059f (Phase 00 and the
+sequencing are now stale — see below).
 
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean. **Tests:** 282 passing (`npm test`) + 8 over HTTP
-(`npm run test:http`). **Build:** clean.
+**Working tree:** has uncommitted step-2 work — see "In flight" below. **Tests:** 312
+passing (`npm test`) + 8 over HTTP (`npm run test:http`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
 `@node-rs/argon2`, `qrcode`.
+
+---
+
+## In flight — pick this up first
+
+Step 2 of three (roles → load UI → drivers/brokers). Uncommitted:
+
+- `src/lib/load-actions.ts` (new) — create, assign driver, set status, set exception. Every
+  action re-checks `can()`, and `setStatusAction` requires `load:close` rather than
+  `load:manage` for Invoiced and Closed.
+- `icons.tsx` (loads, drivers), `nav.ts` (open-load count), `app-shell.tsx` (Dispatch group)
+
+**The sidebar now links to `/loads`, which does not exist yet** — that route 404s until the
+pages are written. `tsc` is clean and tests pass regardless, since neither covers routing.
+
+Remaining for step 2: `/loads` list, `/loads/new` form, `/loads/[id]` detail with the status
+controls. Then step 3: drivers and brokers screens.
+
+---
+
+## Asterism dispatch — what exists ✅
+
+- **Migration 15** — `drivers`, `brokers`, `loads`, `load_stops`, every one tenant-owned
+  with composite foreign keys, so the database refuses a load pointing at another tenant's
+  carrier, driver or broker. Proven by `tests/dispatch-schema.test.ts`.
+- **A driver is not a user.** The driver login was dropped, so a driver is a record about a
+  person rather than an account. Modelling them as users would force a credential row for
+  somebody who will never sign in.
+- **Stops are rows, not columns** — up to five pickups and five deliveries, numbered per
+  kind. One pick, one drop is simply two rows.
+- **Exceptions sit beside the status**, never replacing it: a load can be Delivered *and*
+  carry a deduction. The seven statuses stay out of `lookups` because they drive behaviour
+  rather than label it.
+- **The hundred brokers are seeded per organisation**, like lookups. `seeded = 1` marks the
+  shipped ones so an admin can tell them from one a dispatcher typed.
+- `loads.ts` / `load-write.ts` — both rates per mile (null, never Infinity), forward-only
+  status flow, no dispatch without a driver, pickup/delivery timestamped because invoices
+  are built from them.
+- **Roles** — added `sales` (refused everything: their sidebar has neither Carrier nor Load
+  Management). Seven dispatch actions; `load:rate` is separate from `load:view`, `load:close`
+  is admin-only, and `broker:create` is separate from `broker:edit` so a dispatcher's typo
+  cannot quietly become a permanent broker. Matrix tested exhaustively in
+  `tests/security.test.ts`.
+
+**Decided, in `Plan.md`:** no HR module; live truck tracking is V2 and only on request.
+
+**Still needed from the client:** the two invoice samples (one owner-operator, one
+two-driver) before invoicing can be built sensibly.
+
+**Postgres is deferred, not cancelled.** I attempted the async conversion and reverted it:
+~700 edits across 65 files, automation reaches ~85%, and the remainder has semantic traps
+(`assert.throws` must become `await assert.rejects` or the test asserts nothing). My earlier
+"several times more expensive later" was overstated — measured, it is roughly 17% more per
+phase. Do it as its own dedicated run, not alongside features. File storage for RC/BOL/POD
+is the infrastructure decision that actually blocks progress, and it arrives with documents.
 
 ---
 
