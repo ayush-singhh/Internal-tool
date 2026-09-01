@@ -12,6 +12,8 @@ import {
   type LoadException,
 } from "@/lib/constants";
 import { Badge, Card, CardHeader, Field, PageHeader } from "@/components/ui";
+import { documentsConfigured, listLoadDocuments } from "@/lib/documents";
+import { DocumentManager } from "@/components/document-manager";
 
 export const metadata: Metadata = { title: "Load" };
 
@@ -33,6 +35,10 @@ export default async function LoadPage(props: PageProps<"/loads/[id]">) {
   const stops = loadStops(org, id);
   const r = rpm(load);
   const options = loadFormOptions(org);
+  const documents = listLoadDocuments(org, id);
+  // Global Constraint: no upload UI at all when DOCUMENTS_S3_URL is unset — not a
+  // disabled/dead button, the form simply isn't in the tree.
+  const canUploadDocuments = mayManage && documentsConfigured();
 
   // Invoiced and Closed are the invoicing end of the flow, so a dispatcher is offered
   // nothing past Delivered. The action re-checks this; hiding the button is only manners.
@@ -205,6 +211,14 @@ export default async function LoadPage(props: PageProps<"/loads/[id]">) {
           </Card>
         </div>
       </div>
+
+      <Card className="mt-5">
+        <CardHeader
+          title="Documents"
+          subtitle="Rate confirmations, bills of lading, proofs of delivery — attached here, never removed."
+        />
+        <DocumentManager loadId={load.id} documents={documents} canUpload={canUploadDocuments} />
+      </Card>
     </>
   );
 }
