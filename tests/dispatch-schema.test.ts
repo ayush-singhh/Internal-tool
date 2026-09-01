@@ -163,10 +163,33 @@ test("stops belong to a load in the same tenant, and go when it goes", () => {
   );
 });
 
+test("a load document cannot reference another tenant's load", () => {
+  db.run(
+    `INSERT INTO loads (organization_id, carrier_id, status, created_at, updated_at)
+     VALUES (?, ?, 'created', ?, ?)`,
+    [alpha.id, alphaCarrier, now(), now()],
+  );
+  const load = db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
+  const betaOwner = db.get<{ id: number }>(
+    "SELECT id FROM users WHERE organization_id = ?", [beta.id])!.id;
+
+  assert.throws(
+    () =>
+      db.run(
+        `INSERT INTO load_documents (organization_id, load_id, kind, filename, storage_key,
+                                      content_type, size_bytes, uploaded_by, created_at)
+         VALUES (?, ?, 'other', 'x.pdf', 'key', 'application/pdf', 10, ?, ?)`,
+        [beta.id, load, betaOwner, now()],
+      ),
+    /FOREIGN KEY constraint failed/,
+    "another tenant cannot attach a document to this load",
+  );
+});
+
 test("the fail-closed guard covers the dispatch tables too", async () => {
   const { tenantTablesLackingScope, TENANT_TABLES } = await import("../src/lib/tenant-db.ts");
 
-  for (const table of ["drivers", "brokers", "loads", "load_stops"]) {
+  for (const table of ["drivers", "brokers", "loads", "load_stops", "load_documents"]) {
     assert.ok(
       (TENANT_TABLES as readonly string[]).includes(table),
       `${table} is declared tenant-owned`,

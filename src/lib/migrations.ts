@@ -618,6 +618,41 @@ export const MIGRATIONS: Migration[] = [
       db.exec("CREATE INDEX IF NOT EXISTS idx_stops_org ON load_stops (organization_id)");
     },
   },
+  {
+    version: 16,
+    name: "load documents: RC, BOL, POD, Other",
+    up: (db) => {
+      // Load-scoped, not per-stop: a multi-stop load's PODs just live together, unlabeled
+      // by which delivery produced them. Append-only — no update/delete column or path
+      // anywhere, the same rule carrier_activity already follows, for the same reason: a
+      // POD or RC is potential evidence in a payment dispute.
+      //
+      // `kind` is a fixed four-value taxonomy (see DOCUMENT_KIND in constants.ts), kept
+      // out of `lookups` the same way LOAD_STATUS and LOAD_EXCEPTION are: it's not a
+      // per-tenant vocabulary a customer would rename or retire.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS load_documents (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          load_id         INTEGER NOT NULL,
+          kind            TEXT NOT NULL,
+          -- The name as uploaded. Display and download filename only — never used to
+          -- build the storage key or any filesystem/URL path.
+          filename        TEXT NOT NULL,
+          storage_key     TEXT NOT NULL,
+          content_type    TEXT NOT NULL,
+          size_bytes      INTEGER NOT NULL,
+          uploaded_by     INTEGER NOT NULL,
+          created_at      TEXT NOT NULL,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, load_id)     REFERENCES loads (organization_id, id),
+          FOREIGN KEY (organization_id, uploaded_by) REFERENCES users (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_load_documents_org ON load_documents (organization_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_load_documents_load ON load_documents (organization_id, load_id)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_load_documents_org_id ON load_documents (organization_id, id)");
+    },
+  },
 ];
 
 export function addColumn(

@@ -121,6 +121,43 @@ export const LOAD_EXCEPTION_LABELS: Record<LoadException, string> = {
   deduction: "Deduction",
 };
 
+/**
+ * A document attached to a load — Rate Confirmation, Bill of Lading, Proof of Delivery, or
+ * anything else dispatch needs on file (a lumper receipt, a scale ticket, damage photos).
+ * Kept out of `lookups` for the same reason LOAD_STATUS and LOAD_EXCEPTION are: a fixed
+ * industry taxonomy, not something a tenant customizes.
+ */
+export const DOCUMENT_KIND = {
+  RATE_CONFIRMATION: "rate_confirmation",
+  BOL: "bol",
+  POD: "pod",
+  OTHER: "other",
+} as const;
+
+export type DocumentKind = (typeof DOCUMENT_KIND)[keyof typeof DOCUMENT_KIND];
+
+export const DOCUMENT_KIND_LABELS: Record<DocumentKind, string> = {
+  rate_confirmation: "Rate Confirmation",
+  bol: "Bill of Lading",
+  pod: "Proof of Delivery",
+  other: "Other",
+};
+
+export const DOCUMENT_KIND_TONE: Record<DocumentKind, Tone> = {
+  rate_confirmation: "blue",
+  bol: "slate",
+  pod: "green",
+  other: "slate",
+};
+
+/** Reject anything else at upload — never trust a browser's declared type alone for what
+ *  gets served back to a browser later. */
+export const DOCUMENT_ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"] as const;
+// 10MB, not 15MB: next.config.ts already caps every Server Action body at 12mb (raised
+// from the 1MB default for CSV import); this leaves headroom under that shared ceiling
+// for the multipart envelope rather than raising it for one feature.
+export const DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
+
 /** A stop is a pickup or a delivery. Doc 2 allows up to five of each on one load. */
 export const STOP_KIND = { PICKUP: "pickup", DELIVERY: "delivery" } as const;
 export type StopKind = (typeof STOP_KIND)[keyof typeof STOP_KIND];
