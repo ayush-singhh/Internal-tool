@@ -16,6 +16,10 @@ export const TENANT_TABLES = [
   "lookups",
   "app_settings",
   "audit_log",
+  "drivers",
+  "brokers",
+  "loads",
+  "load_stops",
 ] as const;
 
 const TENANT_SET = new Set<string>(TENANT_TABLES);

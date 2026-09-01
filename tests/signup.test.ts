@@ -44,6 +44,7 @@ beforeEach(() => {
   db.systemQuery(() => {
     db.run("DELETE FROM email_verifications");
     db.run("DELETE FROM users WHERE email LIKE '%.test'");
+    db.run("DELETE FROM brokers WHERE organization_id > 1");
     db.run("DELETE FROM lookups WHERE organization_id > 1");
     db.run("DELETE FROM app_settings WHERE organization_id > 1");
     db.run("DELETE FROM organizations WHERE id > 1");

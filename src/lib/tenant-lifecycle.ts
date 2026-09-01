@@ -29,6 +29,7 @@ const REDACTED = ["password_hash", "mfa_secret"] as const;
 const OWNED = [
   "users", "lookups", "app_settings", "carriers", "carrier_notes",
   "carrier_activity", "offboarding_records", "saved_filters", "audit_log",
+  "drivers", "brokers", "loads", "load_stops",
 ] as const;
 
 export type TenantExport = {
@@ -142,6 +143,12 @@ export function deleteOrganization(orgId: number, opts: { exported: boolean }): 
 
   return systemQuery(() =>
     transaction(() => {
+      // Dispatch first, and in this order: loads reference drivers, brokers, carriers and
+      // users, so they cannot outlive any of them. load_stops cascades from loads.
+      del("loads", "DELETE FROM loads WHERE organization_id = ?", [orgId]);
+      del("drivers", "DELETE FROM drivers WHERE organization_id = ?", [orgId]);
+      del("brokers", "DELETE FROM brokers WHERE organization_id = ?", [orgId]);
+
       // Cascades to carrier_notes, carrier_activity and offboarding_records.
       del("carriers", "DELETE FROM carriers WHERE organization_id = ?", [orgId]);
       del("saved_filters", "DELETE FROM saved_filters WHERE organization_id = ?", [orgId]);

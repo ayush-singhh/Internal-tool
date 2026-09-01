@@ -2,11 +2,13 @@
  * Shared test fixtures for the multi-tenant era.
  *
  * `orgHandle(orgId)` returns an `Org` instance the query functions accept. `seedOrg`
- * creates an organisation with its own vocabularies and an owner, mirroring what
- * provision.ts does in the app, so tests exercise the same tenant setup the product uses.
+ * creates an organisation with its own vocabularies and an owner by calling the very
+ * same `seedOrganizationData()` the product uses, so a fixture and a real tenant can
+ * never be set up differently.
  */
 import { tmpdir } from "node:os";
-import { LOOKUPS, DEFAULT_SETTINGS, ROLES } from "../src/lib/constants.ts";
+import { ROLES } from "../src/lib/constants.ts";
+import { seedOrganizationData } from "../src/lib/provision.ts";
 
 /**
  * Refuses to seed anything into a database that is not a throwaway.
@@ -43,16 +45,11 @@ export function seedOrg(
   db.run("INSERT INTO organizations (name, slug, status, created_at) VALUES (?, ?, 'active', ?)", [name, slug, now]);
   const id = db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
 
-  LOOKUPS.forEach((l, i) =>
-    db.run(
-      `INSERT INTO lookups (organization_id, kind, value, label, tone, sort)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, l.kind, l.value, l.label, l.tone ?? null, i],
-    ),
-  );
-  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-    db.run("INSERT INTO app_settings (organization_id, key, value) VALUES (?, ?, ?)", [id, key, value]);
-  }
+  // Calls the real thing rather than repeating it. This helper used to insert lookups and
+  // settings itself, which meant every addition to provisioning silently failed to reach
+  // the tests — brokers were seeded in the product and absent in every fixture. One
+  // implementation, so it cannot drift again.
+  seedOrganizationData(id);
   db.run(
     `INSERT INTO users (organization_id, name, email, password_hash, role, active,
                         email_verified_at, created_at, updated_at)

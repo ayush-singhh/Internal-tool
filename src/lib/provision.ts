@@ -1,6 +1,6 @@
 import "server-only";
 import { get, run, transaction } from "./db.ts";
-import { LOOKUPS, DEFAULT_SETTINGS, ROLES } from "./constants.ts";
+import { LOOKUPS, DEFAULT_SETTINGS, ROLES, SEED_BROKERS } from "./constants.ts";
 import { slugify } from "./migrations.ts";
 
 /**
@@ -27,6 +27,20 @@ export function seedOrganizationData(orgId: number): void {
     run(
       "INSERT OR IGNORE INTO app_settings (organization_id, key, value) VALUES (?, ?, ?)",
       [orgId, key, value],
+    );
+  }
+
+  // The broker dropdown starts populated rather than empty, so the first load a dispatcher
+  // creates does not also require them to type a hundred company names. `seeded = 1` marks
+  // them as ours, which is what lets an administrator tell a shipped name from one somebody
+  // invented at 2am.
+  const now = new Date().toISOString();
+  for (const name of SEED_BROKERS) {
+    run(
+      `INSERT INTO brokers (organization_id, name, seeded, active, created_at)
+       VALUES (?, ?, 1, 1, ?)
+       ON CONFLICT (organization_id, name) DO NOTHING`,
+      [orgId, name, now],
     );
   }
 }

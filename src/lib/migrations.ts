@@ -493,6 +493,131 @@ export const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 15,
+    name: "dispatch: drivers, brokers, loads and stops",
+    up: (db) => {
+      // The dispatch domain, on the tenancy the carrier tables already use: organization_id
+      // on every table, and composite foreign keys throughout, so the database itself
+      // refuses a load pointing at another tenant's carrier, driver or broker.
+      //
+      // A driver is NOT a user. The driver login was removed outright -- drivers send
+      // documents by SMS and a dispatcher uploads them -- so a driver is a record about a
+      // person, not an account that signs in. Modelling them as users would force a
+      // credential row into existence for somebody who will never have one, and put them
+      // in the middle of every permission decision.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS drivers (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          -- The carrier they drive for. Nullable: a driver can be recorded before the
+          -- carrier relationship is settled.
+          carrier_id      INTEGER,
+          name            TEXT NOT NULL,
+          phone           TEXT,
+          phone_digits    TEXT,
+          email           TEXT,
+          truck_number    TEXT,
+          cdl_number      TEXT,
+          cdl_expires_on  TEXT,
+          active          INTEGER NOT NULL DEFAULT 1,
+          notes           TEXT,
+          created_at      TEXT NOT NULL,
+          updated_at      TEXT NOT NULL,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, carrier_id) REFERENCES carriers (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_drivers_org ON drivers (organization_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_drivers_org_carrier ON drivers (organization_id, carrier_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_drivers_org_phone ON drivers (organization_id, phone_digits)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_org_id ON drivers (organization_id, id)");
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS brokers (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          name            TEXT NOT NULL,
+          mc_number       TEXT,
+          contact_name    TEXT,
+          phone           TEXT,
+          email           TEXT,
+          -- Seeded from the shipped list, or typed by a dispatcher. Kept apart so an
+          -- administrator reviewing spellings can see which ones a person invented.
+          seeded          INTEGER NOT NULL DEFAULT 0,
+          active          INTEGER NOT NULL DEFAULT 1,
+          created_at      TEXT NOT NULL,
+          created_by      INTEGER,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          UNIQUE (organization_id, name)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_brokers_org ON brokers (organization_id)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_brokers_org_id ON brokers (organization_id, id)");
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS loads (
+          id                   INTEGER PRIMARY KEY,
+          organization_id      INTEGER NOT NULL,
+          -- Typed, never generated. Load number formats differ per broker, so this starts
+          -- empty rather than being pre-filled with a format nobody uses.
+          load_number          TEXT,
+          carrier_id           INTEGER NOT NULL,
+          driver_id            INTEGER,
+          broker_id            INTEGER,
+          dispatcher_id        INTEGER,
+          status               TEXT NOT NULL,
+          -- Beside the main status, not instead of it. See LOAD_EXCEPTION.
+          exception            TEXT,
+          commodity            TEXT,
+          weight_lbs           INTEGER,
+          -- Reefer loads only; NULL means the question does not apply.
+          temperature_f        REAL,
+          deadhead_miles       REAL,
+          loaded_miles         REAL,
+          rate                 REAL,
+          special_instructions TEXT,
+          picked_up_at         TEXT,
+          delivered_at         TEXT,
+          status_changed_at    TEXT,
+          created_at           TEXT NOT NULL,
+          updated_at           TEXT NOT NULL,
+          created_by           INTEGER,
+          updated_by           INTEGER,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, carrier_id)    REFERENCES carriers (organization_id, id),
+          FOREIGN KEY (organization_id, driver_id)     REFERENCES drivers  (organization_id, id),
+          FOREIGN KEY (organization_id, broker_id)     REFERENCES brokers  (organization_id, id),
+          FOREIGN KEY (organization_id, dispatcher_id) REFERENCES users    (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_loads_org ON loads (organization_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_loads_org_status ON loads (organization_id, status)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_loads_org_carrier ON loads (organization_id, carrier_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_loads_org_driver ON loads (organization_id, driver_id)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_loads_org_id ON loads (organization_id, id)");
+
+      // Stops are rows, not columns. Up to five pickups and five drops per load cannot be
+      // expressed as origin/destination without ten nullable column groups; a one-pick
+      // one-drop load is simply two rows here.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS load_stops (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          load_id         INTEGER NOT NULL,
+          kind            TEXT NOT NULL,
+          sequence        INTEGER NOT NULL,
+          city            TEXT,
+          state           TEXT,
+          address         TEXT,
+          scheduled_at    TEXT,
+          arrived_at      TEXT,
+          notes           TEXT,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, load_id) REFERENCES loads (organization_id, id) ON DELETE CASCADE,
+          UNIQUE (load_id, kind, sequence)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_stops_load ON load_stops (load_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_stops_org ON load_stops (organization_id)");
+    },
+  },
 ];
 
 export function addColumn(

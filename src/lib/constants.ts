@@ -50,6 +50,82 @@ export const OFFBOARDING_STATUSES: string[] = [
   STATUS.BACK_OFF,
 ];
 
+/**
+ * A load's position in the workflow. One value at a time, and it only moves forward.
+ *
+ * Kept out of `lookups` on purpose, unlike carrier status: these seven drive behaviour
+ * (an invoice may only be raised against a Delivered load) rather than merely labelling
+ * it, so they are not a vocabulary a customer may rename or retire.
+ */
+export const LOAD_STATUS = {
+  CREATED: "created",
+  ASSIGNED: "assigned",
+  PICKED_UP: "picked_up",
+  IN_TRANSIT: "in_transit",
+  DELIVERED: "delivered",
+  INVOICED: "invoiced",
+  CLOSED: "closed",
+} as const;
+
+export type LoadStatus = (typeof LOAD_STATUS)[keyof typeof LOAD_STATUS];
+
+/** The order they may be reached in. Index position is the whole rule. */
+export const LOAD_STATUS_ORDER: LoadStatus[] = [
+  LOAD_STATUS.CREATED,
+  LOAD_STATUS.ASSIGNED,
+  LOAD_STATUS.PICKED_UP,
+  LOAD_STATUS.IN_TRANSIT,
+  LOAD_STATUS.DELIVERED,
+  LOAD_STATUS.INVOICED,
+  LOAD_STATUS.CLOSED,
+];
+
+export const LOAD_STATUS_LABELS: Record<LoadStatus, string> = {
+  created: "Created",
+  assigned: "Assigned",
+  picked_up: "Picked Up",
+  in_transit: "In Transit",
+  delivered: "Delivered",
+  invoiced: "Invoiced",
+  closed: "Closed",
+};
+
+export const LOAD_STATUS_TONE: Record<LoadStatus, Tone> = {
+  created: "slate",
+  assigned: "blue",
+  picked_up: "amber",
+  in_transit: "amber",
+  delivered: "green",
+  invoiced: "purple",
+  closed: "slate",
+};
+
+/**
+ * Exceptions sit **beside** the main status, never replacing it: a load can be Delivered
+ * and carry a deduction, or Assigned and then become a TONU. Modelling them as statuses
+ * would have forced a choice between two facts that are both true.
+ */
+export const LOAD_EXCEPTION = {
+  TONU: "tonu",
+  CANCELLED: "cancelled",
+  EXTRA_PAY: "extra_pay",
+  DEDUCTION: "deduction",
+} as const;
+
+export type LoadException = (typeof LOAD_EXCEPTION)[keyof typeof LOAD_EXCEPTION];
+
+export const LOAD_EXCEPTION_LABELS: Record<LoadException, string> = {
+  tonu: "TONU (Truck Ordered Not Used)",
+  cancelled: "Cancelled",
+  extra_pay: "Extra Pay",
+  deduction: "Deduction",
+};
+
+/** A stop is a pickup or a delivery. Doc 2 allows up to five of each on one load. */
+export const STOP_KIND = { PICKUP: "pickup", DELIVERY: "delivery" } as const;
+export type StopKind = (typeof STOP_KIND)[keyof typeof STOP_KIND];
+export const MAX_STOPS_PER_KIND = 5;
+
 export const LOOKUPS: SeedLookup[] = [
   { kind: "status", value: STATUS.ACTIVE, label: "Active", tone: "green" },
   { kind: "status", value: STATUS.ABOUT_TO_BE_ACTIVE, label: "About to Be Active", tone: "blue" },
@@ -194,3 +270,114 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   insurance_expiry_days: "30",
   company_name: "Carrier Management Hub",
 };
+
+/**
+ * The brokers a dispatcher picks from, seeded into every organisation.
+ *
+ * Per-tenant rather than global, for the same reason `lookups` is: one company correcting
+ * a spelling or retiring a broker must not edit another company's dropdown. A dispatcher
+ * may add one that is missing; only an administrator may edit the list afterwards, which
+ * is what keeps a typo from quietly becoming a second broker forever.
+ */
+export const SEED_BROKERS: string[] = [
+  "7L Freight",
+  "A. Duie Pyle Logistics",
+  "AAA Cooper Logistics",
+  "AIT Worldwide Logistics",
+  "Allen Lund Company",
+  "American Logistics Inc",
+  "Armstrong Transport Group",
+  "Arrive Logistics",
+  "Ascent Global Logistics",
+  "Avenue Logistics",
+  "Axle Logistics",
+  "BNSF Logistics",
+  "Beemac Logistics",
+  "C.H. Robinson",
+  "Cardinal Logistics",
+  "Circle Logistics",
+  "Convoy (Legacy)",
+  "Coyote Logistics",
+  "Crowley Logistics",
+  "DB Schenker",
+  "Echo Global Logistics",
+  "England Logistics",
+  "Estes Logistics",
+  "Expeditors",
+  "FedEx Logistics",
+  "FitzMark",
+  "FLS Transportation Services",
+  "Flexport",
+  "Forward Air Solutions",
+  "GEODIS",
+  "Giltner Logistics",
+  "GlobalTranz Enterprises",
+  "GXO Logistics",
+  "Hub Group",
+  "Integrity Express Logistics",
+  "ITS Logistics",
+  "J.B. Hunt Integrated Capacity Solutions",
+  "Johanson Transportation Service",
+  "KAG Logistics",
+  "KNX / Swift Logistics",
+  "Landstar Ranger",
+  "Legacy Supply Chain Services",
+  "Logistics Plus",
+  "Matson Logistics",
+  "Max Trans Logistics",
+  "MegaCorp Logistics",
+  "Mercer Transportation",
+  "Mode Global",
+  "MOLO Solutions",
+  "Navajo Express / DSCO",
+  "NFI Logistics",
+  "Nolan Transportation Group",
+  "North American Logistics Services",
+  "Odyssey Logistics",
+  "Old Dominion Logistics",
+  "Penske Logistics",
+  "PLS Logistics Services",
+  "Polaris Logistics Group",
+  "Priority Freight",
+  "Priority1",
+  "R+L Global Logistics",
+  "Radiant Logistics",
+  "Redwood Logistics",
+  "ROAR Logistics",
+  "RXO Capacity Solutions",
+  "Ryan Transportation Service",
+  "Saia Logistics",
+  "Saddle Creek Logistics",
+  "Schneider Brokerage",
+  "Scotlynn Transport",
+  "SEKO Logistics",
+  "Spot Freight",
+  "Steam Logistics",
+  "StoneArch Logistics",
+  "Sunset Transportation",
+  "Sunteck Transport",
+  "Syfan Logistics",
+  "TForce Logistics",
+  "TMS North America",
+  "Titan Logistics",
+  "Total Quality Logistics (TQL)",
+  "Transgroup Logistics",
+  "TransLoop",
+  "Transplace (Uber Freight)",
+  "Trinity Logistics",
+  "Trinity Transport",
+  "US Logistics",
+  "USA Truck Brokerage",
+  "Uber Freight",
+  "Universal Logistics",
+  "V Logistics Corp",
+  "Vanguard Logistics",
+  "WWEX Group",
+  "Werner Logistics",
+  "Worldwide Express",
+  "XPO / RXO",
+  "Yellow Logistics (Legacy)",
+  "Yusen Logistics",
+  "Zenith Logistics",
+  "Zuum Transportation",
+];
