@@ -105,6 +105,22 @@ test("a driver on an open load cannot be deactivated out from under it", () => {
   assert.equal(admin.listDrivers(org)[0]!.active, 0);
 });
 
+test("a load moved all the way to paid still doesn't count as open work", () => {
+  const id = (admin.saveDriver(org, { name: "Pat", carrierId: carrier }) as { id: number }).id;
+  write.createLoad(org, {
+    carrierId: carrier, driverId: id,
+    stops: [{ kind: "pickup", city: "Dallas" }, { kind: "delivery", city: "Newark" }],
+  }, alpha.ownerId);
+  const load = db.get<{ id: number }>(
+    "SELECT id FROM loads WHERE organization_id = ? AND driver_id = ?", [alpha.id, id])!.id;
+
+  for (const s of ["picked_up", "in_transit", "delivered", "invoiced", "paid"] as const) {
+    write.setStatus(org, load, s, alpha.ownerId);
+  }
+  assert.equal(admin.listDrivers(org).find((d) => d.id === id)?.open_loads, 0);
+  assert.equal(admin.setDriverActive(org, id, false).ok, true);
+});
+
 // ── brokers: the add / edit split ────────────────────────────────────────────
 
 test("the shipped hundred are marked as ours; an added one is not", () => {

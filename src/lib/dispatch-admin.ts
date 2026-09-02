@@ -56,7 +56,7 @@ export function listDrivers(org: Org): DriverRow[] {
     `SELECT d.*, c.legal_name AS carrier_name,
             (SELECT COUNT(*) FROM loads l
               WHERE l.organization_id = d.organization_id AND l.driver_id = d.id
-                AND l.status NOT IN ('delivered', 'invoiced', 'closed')) AS open_loads
+                AND l.status NOT IN ('delivered', 'invoiced', 'paid', 'closed')) AS open_loads
        FROM drivers d
        LEFT JOIN carriers c ON c.organization_id = d.organization_id AND c.id = d.carrier_id
       WHERE d.organization_id = ?
@@ -125,7 +125,7 @@ export function setDriverActive(org: Org, id: number, active: boolean): Result {
     const open = get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM loads
         WHERE organization_id = ? AND driver_id = ?
-          AND status NOT IN ('delivered', 'invoiced', 'closed')`,
+          AND status NOT IN ('delivered', 'invoiced', 'paid', 'closed')`,
       [org.id, id],
     )!.n;
     if (open > 0) {

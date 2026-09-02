@@ -79,17 +79,51 @@ const make = (over: Partial<Parameters<typeof write.createLoad>[1]> = {}) =>
 // ── rate per mile ────────────────────────────────────────────────────────────
 
 test("both rates per mile are computed, and neither divides by zero", () => {
-  assert.deepEqual(loads.rpm({ rate: 2000, loaded_miles: 1000, deadhead_miles: 250 }),
+  assert.deepEqual(
+    loads.rpm({ rate: 2000, loaded_miles: 1000, deadhead_miles: 250, exception: null, adjustments_net: 0 }),
     { loaded: 2, total: 1.6 }, "loaded uses freight miles; total includes the empty run");
 
-  assert.deepEqual(loads.rpm({ rate: 2000, loaded_miles: 0, deadhead_miles: 0 }),
+  assert.deepEqual(
+    loads.rpm({ rate: 2000, loaded_miles: 0, deadhead_miles: 0, exception: null, adjustments_net: 0 }),
     { loaded: null, total: null }, "no miles means no rate per mile, not Infinity");
 
-  assert.deepEqual(loads.rpm({ rate: null, loaded_miles: 500, deadhead_miles: 10 }),
+  assert.deepEqual(
+    loads.rpm({ rate: null, loaded_miles: 500, deadhead_miles: 10, exception: null, adjustments_net: 0 }),
     { loaded: null, total: null }, "no rate means nothing to divide");
 
-  assert.deepEqual(loads.rpm({ rate: 1500, loaded_miles: 500, deadhead_miles: null }),
+  assert.deepEqual(
+    loads.rpm({ rate: 1500, loaded_miles: 500, deadhead_miles: null, exception: null, adjustments_net: 0 }),
     { loaded: 3, total: 3 }, "a missing deadhead counts as zero, not as unknown");
+});
+
+test("finalLoadAmount and rpm: the ordinary case is unchanged", () => {
+  const load = { rate: 1000, exception: null, adjustments_net: 0, loaded_miles: 500, deadhead_miles: 100 };
+  assert.equal(loads.finalLoadAmount(load), 1000);
+  assert.equal(loads.rpm(load).loaded, 2);
+  assert.equal(loads.rpm(load).total, 1000 / 600);
+});
+
+test("finalLoadAmount adds extra pay and subtracts deductions", () => {
+  assert.equal(loads.finalLoadAmount({ rate: 3650, exception: null, adjustments_net: 270 }), 3920);
+  assert.equal(loads.finalLoadAmount({ rate: 3650, exception: null, adjustments_net: -200 }), 3450);
+});
+
+test("a TONU or cancelled load bills only what was approved, never the linehaul", () => {
+  assert.equal(loads.finalLoadAmount({ rate: 2000, exception: C.LOAD_EXCEPTION.TONU, adjustments_net: 0 }), null);
+  assert.equal(loads.finalLoadAmount({ rate: 2000, exception: C.LOAD_EXCEPTION.TONU, adjustments_net: 150 }), 150);
+  assert.equal(loads.finalLoadAmount({ rate: 2000, exception: C.LOAD_EXCEPTION.CANCELLED, adjustments_net: 0 }), null);
+});
+
+test("finalLoadAmount is null, not zero, with nothing to bill", () => {
+  assert.equal(loads.finalLoadAmount({ rate: null, exception: null, adjustments_net: 0 }), null);
+  assert.deepEqual(
+    loads.rpm({ rate: null, exception: null, adjustments_net: 0, loaded_miles: 500, deadhead_miles: 0 }),
+    { loaded: null, total: null });
+});
+
+test("paid sits between invoiced and closed, forward only", () => {
+  assert.deepEqual(loads.nextStatuses(C.LOAD_STATUS.INVOICED), [C.LOAD_STATUS.PAID]);
+  assert.deepEqual(loads.nextStatuses(C.LOAD_STATUS.PAID), [C.LOAD_STATUS.CLOSED]);
 });
 
 // ── creation ─────────────────────────────────────────────────────────────────

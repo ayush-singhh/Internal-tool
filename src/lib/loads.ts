@@ -2,7 +2,7 @@ import "server-only";
 import { all, get } from "./db.ts";
 import type { Org } from "./tenant-db.ts";
 import {
-  LOAD_STATUS, LOAD_STATUS_ORDER, STOP_KIND,
+  LOAD_EXCEPTION, LOAD_STATUS, LOAD_STATUS_ORDER, STOP_KIND,
   type LoadStatus, type LoadException, type StopKind,
 } from "./constants.ts";
 
@@ -45,6 +45,8 @@ export type LoadRow = {
   destination: string | null;
   pickup_count: number;
   delivery_count: number;
+  /** Sum of extra_pay minus deduction adjustments on this load. See `finalLoadAmount`. */
+  adjustments_net: number;
 };
 
 export type LoadStop = {
@@ -61,27 +63,48 @@ export type LoadStop = {
 };
 
 /**
- * Rate per mile, both ways.
- *
- *   Loaded  = rate ÷ loaded miles                      — what the freight itself paid
- *   Total   = rate ÷ (deadhead + loaded)               — what the truck actually earned
- *
- * Returns null rather than Infinity or NaN when the divisor is missing or zero: a load
- * with no miles recorded has no rate per mile, and "∞/mi" on a dispatch board is worse
- * than an empty cell. **Never shown to a driver** — that is a permission decision made by
- * the caller, but it is the reason this is computed rather than stored.
+ * The dollar amount this load is actually worth to bill, after approved deductions and
+ * extra pay — the Final Load Amount the carrier agreement and the dispatch fee are both
+ * based on. A TONU or cancelled load never bills its linehaul automatically; only an
+ * explicitly approved adjustment counts, because the load was never run as agreed.
+ * `null` when there is nothing to bill at all yet — no rate and no adjustment.
  */
-export function rpm(load: Pick<LoadRow, "rate" | "loaded_miles" | "deadhead_miles">): {
-  loaded: number | null;
-  total: number | null;
-} {
-  const rate = load.rate;
-  if (rate === null || rate === undefined) return { loaded: null, total: null };
+export function finalLoadAmount(
+  load: Pick<LoadRow, "rate" | "exception" | "adjustments_net">,
+): number | null {
+  const net = load.adjustments_net ?? 0;
+  const linehaul =
+    load.exception === LOAD_EXCEPTION.TONU || load.exception === LOAD_EXCEPTION.CANCELLED
+      ? null
+      : load.rate;
+  if (linehaul === null && net === 0) return null;
+  return (linehaul ?? 0) + net;
+}
+
+/**
+ * Rate per mile, both ways, off the Final Load Amount rather than the raw rate — RPM is
+ * an analytics figure, and Final Load Amount (after approved deductions/extra pay) is
+ * what the load actually earned. See `finalLoadAmount`.
+ *
+ *   Loaded  = Final Load Amount ÷ loaded miles               — what the freight itself paid
+ *   Total   = Final Load Amount ÷ (deadhead + loaded)         — what the truck actually earned
+ *
+ * Returns null rather than Infinity or NaN when the divisor is missing or zero, or when
+ * there is nothing to bill at all: a load with no miles, or no billable amount, has no
+ * rate per mile, and "∞/mi" on a dispatch board is worse than an empty cell. **Never shown
+ * to a driver** — that is a permission decision made by the caller, but it is the reason
+ * this is computed rather than stored.
+ */
+export function rpm(
+  load: Pick<LoadRow, "rate" | "loaded_miles" | "deadhead_miles" | "exception" | "adjustments_net">,
+): { loaded: number | null; total: number | null } {
+  const amount = finalLoadAmount(load);
+  if (amount === null) return { loaded: null, total: null };
   const loadedMiles = load.loaded_miles ?? 0;
   const totalMiles = loadedMiles + (load.deadhead_miles ?? 0);
   return {
-    loaded: loadedMiles > 0 ? rate / loadedMiles : null,
-    total: totalMiles > 0 ? rate / totalMiles : null,
+    loaded: loadedMiles > 0 ? amount / loadedMiles : null,
+    total: totalMiles > 0 ? amount / totalMiles : null,
   };
 }
 
@@ -132,7 +155,11 @@ const SELECT = `
          (SELECT COUNT(*) FROM load_stops s
            WHERE s.organization_id = l.organization_id AND s.load_id = l.id AND s.kind = 'pickup') AS pickup_count,
          (SELECT COUNT(*) FROM load_stops s
-           WHERE s.organization_id = l.organization_id AND s.load_id = l.id AND s.kind = 'delivery') AS delivery_count
+           WHERE s.organization_id = l.organization_id AND s.load_id = l.id AND s.kind = 'delivery') AS delivery_count,
+         (SELECT COALESCE(SUM(CASE WHEN a.kind = 'extra_pay' THEN a.amount
+                                    WHEN a.kind = 'deduction' THEN -a.amount END), 0)
+            FROM load_adjustments a
+           WHERE a.organization_id = l.organization_id AND a.load_id = l.id) AS adjustments_net
     FROM loads l
     JOIN carriers c ON c.organization_id = l.organization_id AND c.id = l.carrier_id
     LEFT JOIN drivers d ON d.organization_id = l.organization_id AND d.id = l.driver_id

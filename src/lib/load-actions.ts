@@ -116,7 +116,8 @@ export async function setStatusAction(form: FormData): Promise<void> {
 
   // Invoiced and Closed are the invoicing end of the flow. A dispatcher's authority stops
   // at Delivered, and this is where that is enforced — not by omitting a button.
-  const invoicing = to === LOAD_STATUS.INVOICED || to === LOAD_STATUS.CLOSED;
+  const invoicing =
+    to === LOAD_STATUS.INVOICED || to === LOAD_STATUS.PAID || to === LOAD_STATUS.CLOSED;
   if (!can(user, invoicing ? "load:close" : "load:manage")) {
     throw new Error("Not authorized to change this load's status.");
   }

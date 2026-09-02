@@ -64,6 +64,7 @@ export const LOAD_STATUS = {
   IN_TRANSIT: "in_transit",
   DELIVERED: "delivered",
   INVOICED: "invoiced",
+  PAID: "paid",
   CLOSED: "closed",
 } as const;
 
@@ -77,6 +78,7 @@ export const LOAD_STATUS_ORDER: LoadStatus[] = [
   LOAD_STATUS.IN_TRANSIT,
   LOAD_STATUS.DELIVERED,
   LOAD_STATUS.INVOICED,
+  LOAD_STATUS.PAID,
   LOAD_STATUS.CLOSED,
 ];
 
@@ -87,6 +89,7 @@ export const LOAD_STATUS_LABELS: Record<LoadStatus, string> = {
   in_transit: "In Transit",
   delivered: "Delivered",
   invoiced: "Invoiced",
+  paid: "Paid",
   closed: "Closed",
 };
 
@@ -97,6 +100,7 @@ export const LOAD_STATUS_TONE: Record<LoadStatus, Tone> = {
   in_transit: "amber",
   delivered: "green",
   invoiced: "purple",
+  paid: "green",
   closed: "slate",
 };
 
@@ -119,6 +123,39 @@ export const LOAD_EXCEPTION_LABELS: Record<LoadException, string> = {
   cancelled: "Cancelled",
   extra_pay: "Extra Pay",
   deduction: "Deduction",
+};
+
+/** Itemized deductions/extra pay against one load — see load-adjustments.ts. What Final
+ *  Load Amount (loads.ts) and, downstream, the dispatch fee are built from. */
+export const ADJUSTMENT_KIND = { DEDUCTION: "deduction", EXTRA_PAY: "extra_pay" } as const;
+export type AdjustmentKind = (typeof ADJUSTMENT_KIND)[keyof typeof ADJUSTMENT_KIND];
+export const ADJUSTMENT_KIND_LABELS: Record<AdjustmentKind, string> = {
+  deduction: "Deduction",
+  extra_pay: "Extra Pay",
+};
+export const ADJUSTMENT_KIND_TONE: Record<AdjustmentKind, Tone> = {
+  deduction: "red",
+  extra_pay: "green",
+};
+
+/** How a carrier's Asterism dispatch fee is calculated for one load — see
+ *  invoices.ts's computeDispatchFee. */
+export const FEE_BASIS = { PERCENTAGE: "percentage", FLAT: "flat" } as const;
+export type FeeBasis = (typeof FEE_BASIS)[keyof typeof FEE_BASIS];
+
+/** An invoice's own status. Free transitions, not forward-only like loads.status — a
+ *  mistaken Paid has to be correctable. See invoice-write.ts's setInvoiceStatus. */
+export const INVOICE_STATUS = { PENDING: "pending", PAID: "paid", DISPUTED: "disputed" } as const;
+export type InvoiceStatus = (typeof INVOICE_STATUS)[keyof typeof INVOICE_STATUS];
+export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
+  pending: "Pending",
+  paid: "Paid",
+  disputed: "Disputed",
+};
+export const INVOICE_STATUS_TONE: Record<InvoiceStatus, Tone> = {
+  pending: "amber",
+  paid: "green",
+  disputed: "red",
 };
 
 /**

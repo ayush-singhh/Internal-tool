@@ -43,7 +43,9 @@ export default async function LoadPage(props: PageProps<"/loads/[id]">) {
   // Invoiced and Closed are the invoicing end of the flow, so a dispatcher is offered
   // nothing past Delivered. The action re-checks this; hiding the button is only manners.
   const offered = nextStatuses(load.status).filter((s) =>
-    s === LOAD_STATUS.INVOICED || s === LOAD_STATUS.CLOSED ? mayClose : mayManage,
+    s === LOAD_STATUS.INVOICED || s === LOAD_STATUS.PAID || s === LOAD_STATUS.CLOSED
+      ? mayClose
+      : mayManage,
   );
 
   return (
