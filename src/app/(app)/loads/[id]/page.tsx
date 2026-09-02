@@ -3,17 +3,20 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireOrg } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { getLoad, loadStops, nextStatuses, rpm } from "@/lib/loads";
+import { finalLoadAmount, getLoad, loadStops, nextStatuses, rpm } from "@/lib/loads";
 import { assignDriverAction, setExceptionAction, setStatusAction } from "@/lib/load-actions";
 import { loadFormOptions } from "@/lib/form-options";
 import { formatDate } from "@/lib/format";
 import {
-  LOAD_EXCEPTION_LABELS, LOAD_STATUS, LOAD_STATUS_LABELS, LOAD_STATUS_TONE,
+  INVOICE_STATUS_LABELS, LOAD_EXCEPTION_LABELS, LOAD_STATUS, LOAD_STATUS_LABELS, LOAD_STATUS_TONE,
   type LoadException,
 } from "@/lib/constants";
 import { Badge, Card, CardHeader, Field, PageHeader } from "@/components/ui";
 import { documentsConfigured, listLoadDocuments } from "@/lib/documents";
 import { DocumentManager } from "@/components/document-manager";
+import { listLoadAdjustments } from "@/lib/load-adjustments";
+import { AdjustmentManager } from "@/components/adjustment-manager";
+import { invoiceForLoad } from "@/lib/invoices";
 
 export const metadata: Metadata = { title: "Load" };
 
@@ -39,6 +42,9 @@ export default async function LoadPage(props: PageProps<"/loads/[id]">) {
   // Global Constraint: no upload UI at all when DOCUMENTS_S3_URL is unset — not a
   // disabled/dead button, the form simply isn't in the tree.
   const canUploadDocuments = mayManage && documentsConfigured();
+  const adjustments = listLoadAdjustments(org, id);
+  const invoice = invoiceForLoad(org, id);
+  const finalAmount = finalLoadAmount(load);
 
   // Invoiced and Closed are the invoicing end of the flow, so a dispatcher is offered
   // nothing past Delivered. The action re-checks this; hiding the button is only manners.
@@ -124,13 +130,24 @@ export default async function LoadPage(props: PageProps<"/loads/[id]">) {
             <Card>
               <CardHeader
                 title="Rate"
-                subtitle="Rate per mile is calculated, never typed. Loaded uses freight miles; total includes the empty run."
+                subtitle="Rate per mile is calculated from the Final Load Amount — rate plus approved extra pay, minus approved deductions."
               />
               <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-3">
                 <Field label="Rate" mono>{money(load.rate)}</Field>
+                <Field label="Final Load Amount" mono>{money(finalAmount)}</Field>
                 <Field label="Loaded Miles RPM" mono>{r.loaded === null ? null : `$${r.loaded.toFixed(2)}`}</Field>
                 <Field label="Total Miles RPM" mono>{r.total === null ? null : `$${r.total.toFixed(2)}`}</Field>
               </dl>
+            </Card>
+          )}
+
+          {showRates && (
+            <Card>
+              <CardHeader
+                title="Adjustments"
+                subtitle="Deductions and extra pay approved for this load — what Final Load Amount is built from."
+              />
+              <AdjustmentManager loadId={load.id} adjustments={adjustments} canAdd={mayManage} />
             </Card>
           )}
         </div>
@@ -209,6 +226,13 @@ export default async function LoadPage(props: PageProps<"/loads/[id]">) {
               <Field label="Brokerage">{load.broker_name}</Field>
               <Field label="Dispatcher">{load.dispatcher_name}</Field>
               <Field label="Created">{formatDate(load.created_at.slice(0, 10))}</Field>
+              {invoice && (
+                <Field label="Invoice">
+                  <Link href={`/invoices/${invoice.id}`} className="font-medium text-brand-700 hover:underline">
+                    Invoice #{invoice.id} — {INVOICE_STATUS_LABELS[invoice.status]}
+                  </Link>
+                </Field>
+              )}
             </dl>
           </Card>
         </div>
