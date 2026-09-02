@@ -179,6 +179,7 @@ export const LOOKUPS: SeedLookup[] = [
   { kind: "plan", value: "other", label: "Other" },
 
   { kind: "pricing_type", value: "percentage_per_load", label: "Percentage Per Load" },
+  { kind: "pricing_type", value: "flat_per_load", label: "Flat Fee Per Load" },
   { kind: "pricing_type", value: "fixed_monthly", label: "Fixed Monthly" },
   { kind: "pricing_type", value: "fixed_weekly", label: "Fixed Weekly" },
   { kind: "pricing_type", value: "custom", label: "Custom" },

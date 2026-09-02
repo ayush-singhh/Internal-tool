@@ -21,6 +21,9 @@ export const TENANT_TABLES = [
   "loads",
   "load_stops",
   "load_documents",
+  "load_adjustments",
+  "invoices",
+  "invoice_lines",
 ] as const;
 
 const TENANT_SET = new Set<string>(TENANT_TABLES);

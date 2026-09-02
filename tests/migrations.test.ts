@@ -198,3 +198,30 @@ test("a single-tenant database keeps all of its data through the tenancy migrati
   );
   db.close();
 });
+
+test("migration 17 backfills flat-per-load pricing into an existing organisation", () => {
+  const db = fresh("backfill");
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)`);
+  const now = new Date().toISOString();
+  for (const x of m.MIGRATIONS.filter((x) => x.version <= 16)) {
+    x.up(db);
+    db.prepare("INSERT INTO schema_migrations VALUES (?, ?, ?)").run(x.version, x.name, now);
+  }
+  db.exec(`INSERT INTO organizations (name, slug, status, created_at)
+           VALUES ('Existing Co', 'existing-co', 'active', '${now}')`);
+  const orgId = (db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+  db.prepare(
+    `INSERT INTO lookups (organization_id, kind, value, label, sort)
+     VALUES (?, 'pricing_type', 'percentage_per_load', 'Percentage Per Load', 0)`,
+  ).run(orgId);
+
+  m.migrate(db);
+
+  const row = db.prepare(
+    "SELECT label FROM lookups WHERE organization_id = ? AND kind = 'pricing_type' AND value = 'flat_per_load'",
+  ).get(orgId) as { label: string } | undefined;
+  assert.ok(row, "the pre-existing organisation gained the new pricing type");
+  assert.equal(row!.label, "Flat Fee Per Load");
+  db.close();
+});

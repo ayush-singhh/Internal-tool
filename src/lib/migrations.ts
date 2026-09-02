@@ -653,6 +653,105 @@ export const MIGRATIONS: Migration[] = [
       db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_load_documents_org_id ON load_documents (organization_id, id)");
     },
   },
+  {
+    version: 17,
+    name: "invoicing: load adjustments, dispatch invoices, flat-per-load pricing",
+    up: (db) => {
+      // Existing organisations never re-run provision.ts's seed (seed() in db.ts only
+      // seeds the bootstrap org, and only on a database with zero organisations), so a
+      // LOOKUPS entry added today only reaches a tenant created after this ships unless
+      // it is inserted here too. ON CONFLICT DO NOTHING: a tenant provisioned after the
+      // LOOKUPS change but before this migration ran already has the row.
+      const orgs = db.prepare("SELECT id FROM organizations").all() as { id: number }[];
+      const insertLookup = db.prepare(
+        `INSERT INTO lookups (organization_id, kind, value, label, tone, sort)
+         VALUES (?, 'pricing_type', 'flat_per_load', 'Flat Fee Per Load', NULL,
+           (SELECT COALESCE(MAX(sort), 0) + 1 FROM lookups
+             WHERE organization_id = ? AND kind = 'pricing_type'))
+         ON CONFLICT (organization_id, kind, value) DO NOTHING`,
+      );
+      for (const o of orgs) insertLookup.run(o.id, o.id);
+
+      // Itemized deductions/extra pay tied to a load — what Final Load Amount is built
+      // from (see loads.ts's finalLoadAmount). Append-only, like load_documents: a
+      // detention charge or an approved TONU fee is evidence in a payment dispute, not a
+      // value to quietly edit later. No cascade from loads on purpose, matching
+      // load_documents (see BUGS.md 2026-09-02) — tenant-lifecycle.ts deletes it
+      // explicitly, in order, rather than relying on a cascade a future migration can't
+      // retrofit without a table rebuild.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS load_adjustments (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          load_id         INTEGER NOT NULL,
+          kind            TEXT NOT NULL,
+          description     TEXT NOT NULL,
+          amount          REAL NOT NULL,
+          created_at      TEXT NOT NULL,
+          created_by      INTEGER,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, load_id)    REFERENCES loads (organization_id, id),
+          FOREIGN KEY (organization_id, created_by) REFERENCES users (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_load_adjustments_org ON load_adjustments (organization_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_load_adjustments_load ON load_adjustments (organization_id, load_id)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_load_adjustments_org_id ON load_adjustments (organization_id, id)");
+
+      // Asterism -> Carrier dispatch invoices today. `invoice_type` leaves room for
+      // Carrier -> Broker freight invoices later without a rebuild — the same
+      // one-table-many-kinds shape `lookups` already uses in this schema. See the design
+      // doc §1: only 'dispatch' is ever inserted by this phase's code.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS invoices (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          invoice_type    TEXT NOT NULL DEFAULT 'dispatch',
+          carrier_id      INTEGER NOT NULL,
+          status          TEXT NOT NULL DEFAULT 'pending',
+          issued_on       TEXT NOT NULL,
+          paid_on         TEXT,
+          total_amount    REAL NOT NULL,
+          notes           TEXT,
+          created_at      TEXT NOT NULL,
+          created_by      INTEGER,
+          updated_at      TEXT NOT NULL,
+          updated_by      INTEGER,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, carrier_id) REFERENCES carriers (organization_id, id),
+          FOREIGN KEY (organization_id, created_by) REFERENCES users    (organization_id, id),
+          FOREIGN KEY (organization_id, updated_by) REFERENCES users    (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_invoices_org ON invoices (organization_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_invoices_org_carrier ON invoices (organization_id, carrier_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_invoices_org_status ON invoices (organization_id, status)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_org_id ON invoices (organization_id, id)");
+
+      // One row per included load, amounts snapshotted at creation — an invoice is a
+      // historical financial document, so it must not silently reflow if the load's rate
+      // or adjustments change later. Cascades from invoices (a line has no existence
+      // apart from its invoice, same shape as load_stops cascading from loads); no
+      // cascade from loads, same reasoning as load_adjustments above.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS invoice_lines (
+          id                 INTEGER PRIMARY KEY,
+          organization_id    INTEGER NOT NULL,
+          invoice_id         INTEGER NOT NULL,
+          load_id            INTEGER NOT NULL,
+          final_load_amount  REAL NOT NULL,
+          fee_basis          TEXT NOT NULL,
+          fee_rate           REAL NOT NULL,
+          amount             REAL NOT NULL,
+          created_at         TEXT NOT NULL,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, invoice_id) REFERENCES invoices (organization_id, id) ON DELETE CASCADE,
+          FOREIGN KEY (organization_id, load_id)    REFERENCES loads    (organization_id, id),
+          UNIQUE (organization_id, invoice_id, load_id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_invoice_lines_org ON invoice_lines (organization_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice ON invoice_lines (organization_id, invoice_id)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_lines_org_id ON invoice_lines (organization_id, id)");
+    },
+  },
 ];
 
 export function addColumn(
