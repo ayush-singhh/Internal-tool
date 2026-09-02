@@ -119,9 +119,13 @@ test("a content type outside the allow-list is rejected", async () => {
 test("a file over the size limit is rejected", async () => {
   const { Org } = await import("../src/lib/tenant-db.ts");
   const { DOCUMENT_MAX_BYTES } = await import("../src/lib/constants.ts");
+  // The buffer itself is oversized, not just the claimed `size` — the check validates
+  // what was actually uploaded (see BUGS.md, M2/I2 fix wave), so a mismatched pair would
+  // no longer trip it.
+  const oversized = Buffer.alloc(DOCUMENT_MAX_BYTES + 1);
   const result = await docs.uploadLoadDocument(
     new Org(alpha.id), alphaLoad, "other",
-    { name: "x.pdf", type: "application/pdf", size: DOCUMENT_MAX_BYTES + 1, buffer: Buffer.from("x") },
+    { name: "x.pdf", type: "application/pdf", size: oversized.length, buffer: oversized },
     alpha.ownerId,
   );
   assert.equal(result.ok, false);

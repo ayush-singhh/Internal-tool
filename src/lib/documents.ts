@@ -33,7 +33,9 @@ const SELECT = `
 
 export function listLoadDocuments(org: Org, loadId: number): DocumentRow[] {
   return all<DocumentRow>(
-    `${SELECT} WHERE d.organization_id = ? AND d.load_id = ? ORDER BY d.created_at DESC`,
+    // `, d.id DESC` tiebreaks two documents written in the same millisecond, so "newest
+    // first" is deterministic rather than whatever order SQLite happens to return.
+    `${SELECT} WHERE d.organization_id = ? AND d.load_id = ? ORDER BY d.created_at DESC, d.id DESC`,
     [org.id, loadId],
   );
 }
@@ -61,8 +63,12 @@ export async function uploadLoadDocument(
   if (!(DOCUMENT_ALLOWED_TYPES as readonly string[]).includes(file.type)) {
     return { ok: false, error: "Only PDF, JPEG or PNG files are accepted." };
   }
-  if (file.size > DOCUMENT_MAX_BYTES) {
-    return { ok: false, error: "File is larger than 10MB." };
+  // The buffer, not file.size: file.size is the caller's claim about what it is about to
+  // upload, and what actually gets stored/checked has to be the thing that was actually
+  // uploaded — otherwise a caller that passes a mismatched pair validates one size and
+  // persists another.
+  if (file.buffer.length > DOCUMENT_MAX_BYTES) {
+    return { ok: false, error: `File is larger than ${DOCUMENT_MAX_BYTES / 1024 / 1024}MB.` };
   }
   if (!documentsConfigured()) {
     return { ok: false, error: "Document storage is not configured." };
@@ -71,13 +77,18 @@ export async function uploadLoadDocument(
   // No filename in the key: the original name is never trusted for a path, and a
   // random key needs no collision check.
   const key = `${org.id}/loads/${loadId}/${randomUUID()}`;
-  await putObject(destination(process.env.DOCUMENTS_S3_URL!), key, file.buffer);
+  await putObject(destination(process.env.DOCUMENTS_S3_URL!, "DOCUMENTS_S3_URL"), key, file.buffer);
 
+  // Array.from, not .slice: .slice(0, 200) counts UTF-16 code units and can split a
+  // surrogate pair at the boundary, storing an unpaired surrogate — which is > U+00FF and
+  // hits the same header ByteString wall as I2 the moment the document is downloaded.
+  // Array.from iterates by codepoint, so the cut never lands inside one.
+  const filename = Array.from(file.name).slice(0, 200).join("");
   run(
     `INSERT INTO load_documents
        (organization_id, load_id, kind, filename, storage_key, content_type, size_bytes, uploaded_by, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [org.id, loadId, kind, file.name.slice(0, 200), key, file.type, file.size, userId, new Date().toISOString()],
+    [org.id, loadId, kind, filename, key, file.type, file.buffer.length, userId, new Date().toISOString()],
   );
   return { ok: true, id: get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id };
 }

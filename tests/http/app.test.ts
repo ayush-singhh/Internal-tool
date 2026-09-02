@@ -11,9 +11,18 @@
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { createServer, type Server } from "node:http";
 import { startApp, type Harness } from "./harness.ts";
 
 let app: Harness;
+
+/** A fake S3 the download route can actually reach — same shape `documents.test.ts` and
+ *  `backup.test.ts` use, a real `node:http` server rather than a mocking library. Started
+ *  before `startApp()`, not per-test: `next start` is spawned as a child process that gets
+ *  its environment as a one-time snapshot, so `DOCUMENTS_S3_URL` has to be set before that
+ *  spawn, not while a test is running. */
+let fakeS3: Server;
+const DOC_BODY = "%PDF-1.4 fake bill of lading bytes";
 
 /** Strings that must never appear in a response the caller was not entitled to. */
 const VICTIM = ["SECRET VICTIM CARRIER", "Confidential Owner", "555000111", "Victim Logistics"];
@@ -34,6 +43,11 @@ let supportNoMfa: string;
 let supportMfa: string;
 
 before(async () => {
+  fakeS3 = createServer((_req, res) => { res.writeHead(200).end(DOC_BODY); });
+  await new Promise<void>((resolve) => fakeS3.listen(0, "127.0.0.1", () => resolve()));
+  const fakeS3Port = (fakeS3.address() as { port: number }).port;
+  process.env.DOCUMENTS_S3_URL = `http://KEY:SECRET@127.0.0.1:${fakeS3Port}/docs`;
+
   app = await startApp();
   const { db } = app;
   const now = new Date().toISOString();
@@ -75,7 +89,11 @@ before(async () => {
   supportMfa = app.session("mfa@platform.test");
 });
 
-after(() => app?.stop());
+after(() => {
+  app?.stop();
+  fakeS3?.close();
+  delete process.env.DOCUMENTS_S3_URL;
+});
 
 test("an unauthenticated visitor is sent to sign in and shown nothing", async () => {
   for (const path of ["/", "/carriers", "/reports", "/team", "/audit"]) {
@@ -206,6 +224,41 @@ test("one tenant cannot download another tenant's document", async () => {
   assert.equal(res.status, 404);
   assertNoVictimData(res.body, `/api/documents/${documentId}`);
   assert.ok(!res.body.includes("CONFIDENTIAL-POD"), "the filename never reaches an outsider either");
+});
+
+test("a legitimate load:view user downloads their own document, non-ASCII filename included", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg, lookupId } = await import("../helpers.ts");
+  const { Org } = await import("../../src/lib/tenant-db.ts");
+  const owner = seedOrg(app.db, "Doc Download Dispatch", "docdownload@doctest.test");
+
+  app.db.run(
+    `INSERT INTO carriers (organization_id, legal_name, status_id, created_at, updated_at)
+     VALUES (?, 'Download Test Carrier', ?, ?, ?)`,
+    [owner.id, lookupId(app.db, owner.id, "status", "active"), now, now],
+  );
+  const carrierId = app.db.get<{ id: number }>(
+    "SELECT id FROM carriers WHERE organization_id = ?", [owner.id])!.id;
+  const { createLoad } = await import("../../src/lib/load-write.ts");
+  const loadResult = createLoad(new Org(owner.id), {
+    carrierId, stops: [{ kind: "pickup", city: "Dallas" }, { kind: "delivery", city: "Newark" }],
+  }, owner.ownerId) as { ok: true; id: number };
+
+  // A non-Latin-1 filename — exactly what made every download 500 before I2's fix, because
+  // the Content-Disposition sanitiser only stripped control characters and let any
+  // character above U+00FF straight through into the header.
+  app.db.run(
+    `INSERT INTO load_documents
+       (organization_id, load_id, kind, filename, storage_key, content_type, size_bytes, uploaded_by, created_at)
+     VALUES (?, ?, 'bol', '提单.pdf', 'unused-key', 'application/pdf', ?, ?, ?)`,
+    [owner.id, loadResult.id, DOC_BODY.length, owner.ownerId, now],
+  );
+  const documentId = app.db.get<{ id: number }>(
+    "SELECT id FROM load_documents WHERE organization_id = ?", [owner.id])!.id;
+
+  const res = await app.get(`/api/documents/${documentId}`, app.session("docdownload@doctest.test"));
+  assert.equal(res.status, 200, "a legitimate load:view user gets the document, not a 404 or 500");
+  assert.equal(res.body, DOC_BODY, "the exact bytes the fake object store served");
 });
 
 test("the report export is rate-limited and every pull is recorded", async () => {
