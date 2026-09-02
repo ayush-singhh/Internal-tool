@@ -18,6 +18,52 @@ conversation it was noticed in.
 
 ---
 
+## 2026-09-02 — `AdjustmentManager`'s "Kind" select reused an `id` already on the page
+
+**Severity:** low · **Status:** fixed · **Reached users:** no (caught in this session's own
+browser verification, before commit)
+
+The new Adjustments card on `/loads/[id]` (invoicing, Phase 15) gave its "Kind" `<select>`
+`id="kind"`. `DocumentManager`'s Documents card, already on the same page, has used
+`id="kind"` for its own "Kind" `<select>` since Phase 15's Load Documents work. Two elements
+with the same `id` is invalid HTML: `<label htmlFor="kind">` is now ambiguous, so clicking
+either card's "Kind" label could focus the wrong select depending on DOM order, and a
+`document.getElementById("kind")` call would silently return only the first one.
+
+Surfaced as a React hydration-mismatch console warning
+(`caret-color: transparent` appearing on inputs across the page after a client-side
+navigation) rather than as an obvious visual bug — the actual defect (a duplicate `id`) is
+several inference steps away from that symptom, and the warning's own text lists five
+unrelated causes before "invalid HTML" without naming duplicate ids specifically. Chasing it
+took ruling out two other candidates first: `page.screenshot({ fullPage: true })` in the
+verification script turned out to *also* independently trigger a cosmetic version of the
+same console warning (a Playwright/headless-Chromium screenshot-capture artifact, confirmed
+by A/B testing with and without the screenshot calls) — real, but unrelated to the shipped
+code, and a false lead that had to be ruled out before the actual duplicate-id cause was
+findable by diffing hydration errors against `git stash` of the new page changes.
+
+**Fix.** Renamed the Adjustments card's fields to `adjustment-kind` / `adjustment-description`
+/ `adjustment-amount`, with matching `htmlFor` updates. General rule: a form component meant
+to be composed onto a page alongside other forms needs ids namespaced to that component, not
+generic field names — `DocumentManager` got away with `id="kind"` only because nothing else
+on `/loads/[id]` used it yet.
+
+**Why it was missed.** Duplicate DOM ids produce no error or warning by default in React
+dev mode or in the browser — the only visible signal was an indirect, generically-worded
+hydration warning several steps removed from the actual cause, and the initial hypothesis
+(browser/tooling noise) was reasonable given a `fullPage` screenshot really was contributing
+noise in the same investigation. **When two client components render on the same page,
+check their field ids for collisions explicitly** — nothing else will flag it.
+
+**Guarded by.** Nothing automated — this was one instance of a general authoring discipline
+(namespace a reusable form component's ids), not a rule worth a bespoke lint or test for a
+single occurrence. Verified by hand: re-ran the full Playwright flow (add an adjustment,
+create an invoice, mark it paid) after the rename with zero console errors, including a
+screenshot-free isolation run that specifically confirmed the duplicate id — not the
+screenshot artifact — was the fix that mattered.
+
+---
+
 ## 2026-09-02 — `load_documents` was never added to tenant deletion or export
 
 **Severity:** moderate · **Status:** fixed · **Reached users:** no (caught in final review, before merge)
