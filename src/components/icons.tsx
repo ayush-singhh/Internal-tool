@@ -14,7 +14,7 @@ export type IconName =
   | "investigations" | "reports" | "team" | "settings" | "import"
   | "search" | "plus" | "filter" | "chevron" | "columns" | "download"
   | "logout" | "note" | "history" | "warning" | "check" | "close" | "edit" | "back"
-  | "loads" | "drivers";
+  | "loads" | "drivers" | "brokers";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   dashboard: <><rect x="2.5" y="2.5" width="6" height="6" rx="1.3"/><rect x="11.5" y="2.5" width="6" height="6" rx="1.3"/><rect x="2.5" y="11.5" width="6" height="6" rx="1.3"/><rect x="11.5" y="11.5" width="6" height="6" rx="1.3"/></>,
@@ -32,6 +32,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
   // A pallet on the move: the load itself, distinct from the truck used for carriers.
   loads: <><rect x="2.4" y="6.2" width="8.4" height="7.6" rx="1.2"/><path d="M2.4 9.4h8.4"/><path d="M6.6 6.2v7.6"/><path d="M13.2 8.4h1.9a1.4 1.4 0 0 1 1.25.77l1.05 2.05a1.4 1.4 0 0 1 .15.63v1.15a.8.8 0 0 1-.8.8h-3.55Z"/><circle cx="15.4" cy="15.6" r="1.5"/></>,
   drivers: <><circle cx="10" cy="6.2" r="2.8"/><path d="M4.6 16.6a5.4 5.4 0 0 1 10.8 0"/><path d="M2.6 12.2h1.6M15.8 12.2h1.6"/></>,
+  // A briefcase: the broker is the outside party, distinct from drivers and the load itself.
+  brokers: <><rect x="3" y="7.2" width="14" height="9" rx="1.6"/><path d="M7.4 7.2V5.6a1.6 1.6 0 0 1 1.6-1.6h2a1.6 1.6 0 0 1 1.6 1.6v1.6"/><path d="M3 11.6h14"/></>,
   filter: <path d="M3 4.6h14M5.8 10h8.4M8.6 15.4h2.8"/>,
   chevron: <path d="m7.5 4.5 5 5.5-5 5.5"/>,
   columns: <><rect x="2.6" y="3.4" width="14.8" height="13.2" rx="1.6"/><path d="M7.6 3.4v13.2M12.4 3.4v13.2"/></>,

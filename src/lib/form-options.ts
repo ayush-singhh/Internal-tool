@@ -3,6 +3,7 @@ import { all } from "./db.ts";
 import type { Org } from "./tenant-db.ts";
 import { options } from "./lookups.ts";
 import type { CarrierFormOptions } from "@/components/carrier-form";
+import type { FormOption } from "@/components/form-fields";
 
 export function carrierFormOptions(org: Org): CarrierFormOptions {
   const kind = (k: Parameters<typeof options>[1]) =>
@@ -26,12 +27,16 @@ export function carrierFormOptions(org: Org): CarrierFormOptions {
   };
 }
 
-/** Everything the load form's three pickers need, in one pass. */
-export function loadFormOptions(org: Org): import("@/components/load-form").LoadFormOptions {
-  const carriers = all<{ id: number; legal_name: string }>(
+export function carrierOptions(org: Org): FormOption[] {
+  return all<{ id: number; legal_name: string }>(
     "SELECT id, legal_name FROM carriers WHERE organization_id = ? ORDER BY legal_name",
     [org.id],
   ).map((c) => ({ id: c.id, label: c.legal_name }));
+}
+
+/** Everything the load form's three pickers need, in one pass. */
+export function loadFormOptions(org: Org): import("@/components/load-form").LoadFormOptions {
+  const carriers = carrierOptions(org);
 
   // `carrierId` rides along so the form can narrow the driver list once a carrier is
   // chosen: a driver belongs to one carrier, and asking twice invites disagreement.

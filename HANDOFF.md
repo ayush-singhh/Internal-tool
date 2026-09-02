@@ -28,8 +28,9 @@ sequencing are now stale — see below).
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** has uncommitted step-3 work — see "In flight" below. **Tests:** 332
-passing (`npm test`) + 10 over HTTP (`npm run test:http`). **Build:** clean.
+**Working tree:** clean — Phase 15 (loads, drivers/brokers, documents) is fully committed;
+only invoicing remains, blocked on the client. **Tests:** 333 passing (`npm test`) + 11 over
+HTTP (`npm run test:http`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -39,55 +40,10 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ## In flight — pick this up first
 
-Step 3 of three (roles → load UI → drivers/brokers) is now built. **All three steps of the
-original sequencing are done**; uncommitted on the branch:
-
-- `src/lib/dispatch-admin.ts` (new) — `listDrivers`/`saveDriver`/`setDriverActive`,
-  `listBrokers`/`addBroker`/`updateBroker`. The broker split is enforced here, not just in
-  the UI: `addBroker` and `updateBroker` are two functions, not one with a flag.
-- `src/lib/dispatch-admin-actions.ts` (new) — Server Action wrappers, each re-checking
-  `can()` independently of what the page renders.
-- `tests/dispatch-admin.test.ts` (new) — 10 cases: phone normalisation, the carrier-scope
-  check on a driver, the open-load deactivation guard, the seeded-vs-added broker split,
-  case-insensitive duplicate detection, edit-in-place, retiring keeps load history, and
-  cross-tenant invisibility. (The **332 passing** figure above includes 9 tests from this
-  file; it, and the drivers/brokers source it tests, are still uncommitted.)
-- `/drivers` and `/brokers` pages, `driver-manager.tsx` / `broker-manager.tsx` (new) — same
-  add/edit-dialog shape as `team-manager.tsx`. `Dialog`, `DialogActions` and `Banner` were
-  pulled out of `team-manager.tsx` into `ui.tsx` so a third copy wasn't written — `team-manager.tsx`
-  now imports them too.
-- `form-options.ts` gained `carrierOptions()` (the driver form's carrier picker),
-  `loadFormOptions()` now calls it instead of repeating the query.
-- `icons.tsx` gained a `brokers` icon; `app-shell.tsx`'s Dispatch group now lists Load
-  Management, Drivers and Brokers.
-- **The driver-deactivation race is closed the same way team member deactivation already
-  is**: `listDrivers` returns `open_loads` per row, and the row's Deactivate button is
-  disabled with a tooltip when it's nonzero — not a server round trip that might silently
-  no-op. `setDriverActive` still refuses server-side regardless, so a stale count fails
-  closed, not open.
-- Browser-verified with Playwright against a freshly seeded org (migration 15 needs a fresh
-  or newly-provisioned org to see all 100 seeded brokers — an org created before migration
-  15 gets the tables but not the backfill, since nothing backfills brokers for pre-existing
-  orgs; not fixed here, out of scope for this step): dispatcher can add a driver with or
-  without a carrier, edit one, and cannot deactivate one on an open load; dispatcher can add
-  a broker and cannot see an edit icon; admin can correct and retire one; zero console/network
-  errors either session.
-
-Next: documents (RC/BOL/POD), which need file storage — Carrier Hub has none, only S3
-signing for backups. That's the next real infrastructure decision, and it's blocked on the
-two invoice samples from the client either way.
-
-**Documents landed since the above was written.** RC/BOL/POD (plus an "Other" catch-all)
-now attach to a load: `src/lib/documents.ts` (list/get/upload, plain module per AI Rules
-§8), `src/lib/document-actions.ts` (the upload Server Action, re-checks `load:manage`),
-`src/app/api/documents/[id]/route.ts` (streamed download, `load:view`-gated, a 404 for
-missing/wrong-tenant/unauthorized alike), `document-manager.tsx` (the Documents card on
-`/loads/[id]`), migration 16 (`load_documents`). S3-backed via `DOCUMENTS_S3_URL` — a
-separate bucket and credentials from `BACKUP_S3_URL`, since backups are operational and
-documents are customer-facing content. Uploads are append-only, load-scoped, no delete
-anywhere (same rule as `carrier_activity`). Design in
-`docs/superpowers/specs/2026-09-02-load-documents-design.md`. Only invoicing remains on
-Phase 15, still blocked on the two invoice samples from the client.
+Nothing is in flight. Phase 15 (Asterism dispatch: loads, drivers/brokers, documents) is
+complete and committed — see "Asterism dispatch — what exists ✅" below for what's there.
+Only invoicing remains, still blocked on the two invoice samples (owner-operator,
+two-driver) requested from the client.
 
 ---
 
@@ -111,7 +67,12 @@ Phase 15, still blocked on the two invoice samples from the client.
   are built from them.
 - `dispatch-admin.ts` — drivers and brokers, the two reference lists a load is built from.
   `/drivers` and `/brokers` screens, with the add/edit split enforced by two permissions,
-  not one screen with a hidden button.
+  not one screen with a hidden button. The driver-deactivation race is closed the same way
+  team member deactivation already is: `listDrivers` returns `open_loads` per row, and the
+  row's Deactivate button is disabled client-side when it's nonzero; `setDriverActive`
+  still refuses server-side regardless, so a stale count fails closed, not open. Migration
+  15's 100 seeded brokers only backfill onto orgs created after it — an org from before
+  gets the tables but not the seed rows; not fixed, out of scope.
 - `documents.ts` / `document-actions.ts` — RC/BOL/POD (plus an "Other" catch-all) attached
   to a load, migration 16, S3-backed via `DOCUMENTS_S3_URL`. `/api/documents/[id]` streams
   the download, gated on `load:view`; upload re-checks `load:manage`. `document-manager.tsx`

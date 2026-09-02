@@ -7,7 +7,7 @@ import {
 } from "@/lib/admin-actions";
 import { issueResetAction, type IssueState } from "@/lib/reset-actions";
 import { ROLE_LABELS, ROLES, type Role } from "@/lib/constants";
-import { Badge } from "./ui";
+import { Badge, Banner, Dialog, DialogActions } from "./ui";
 import { Icon } from "./icons";
 import { Text } from "./form-fields";
 
@@ -50,24 +50,6 @@ function RoleSelect({ name, defaultValue }: { name: string; defaultValue?: Role 
       ))}
     </select>
   );
-}
-
-function Banner({ state }: { state: AdminState }) {
-  if (state.error) {
-    return (
-      <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-        {state.error}
-      </p>
-    );
-  }
-  if (state.ok) {
-    return (
-      <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-        {state.ok}
-      </p>
-    );
-  }
-  return null;
 }
 
 export function TeamManager({ team, currentUserId }: { team: TeamRow[]; currentUserId: number }) {
@@ -336,62 +318,3 @@ function PasswordForm({
   );
 }
 
-function DialogActions({
-  dialogRef,
-  pending,
-  label,
-}: {
-  dialogRef: React.RefObject<HTMLDialogElement | null>;
-  pending: boolean;
-  label: string;
-}) {
-  return (
-    <div className="flex justify-end gap-2 border-t border-line pt-3">
-      <button
-        type="button"
-        onClick={() => dialogRef.current?.close()}
-        className="rounded-lg border border-line-strong bg-surface px-4 py-2 text-sm font-semibold text-ink-700 transition hover:bg-ink-50"
-      >
-        Close
-      </button>
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60"
-      >
-        {pending ? "Saving…" : label}
-      </button>
-    </div>
-  );
-}
-
-function Dialog({
-  ref,
-  title,
-  children,
-}: {
-  ref: React.RefObject<HTMLDialogElement | null>;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <dialog
-      ref={ref}
-      onClick={(e) => { if (e.target === ref.current) ref.current?.close(); }}
-      className="m-auto w-[min(34rem,92vw)] rounded-card border border-line bg-surface p-0 shadow-pop backdrop:bg-ink-950/50"
-    >
-      <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{title}</h2>
-        <button
-          type="button"
-          onClick={() => ref.current?.close()}
-          aria-label="Close"
-          className="rounded p-1 text-ink-400 hover:text-ink-800"
-        >
-          <Icon name="close" />
-        </button>
-      </div>
-      <div className="p-5">{children}</div>
-    </dialog>
-  );
-}

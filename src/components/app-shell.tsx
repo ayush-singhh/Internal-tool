@@ -29,6 +29,8 @@ const GROUPS: Group[] = [
     heading: "Dispatch",
     items: [
       { href: "/loads", label: "Load Management", icon: "loads", count: "loads" },
+      { href: "/drivers", label: "Drivers", icon: "drivers" },
+      { href: "/brokers", label: "Brokers", icon: "brokers" },
     ],
   },
   { heading: "Insights", items: [{ href: "/reports", label: "Reports", icon: "reports" }] },

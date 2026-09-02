@@ -413,9 +413,7 @@ Full write-up and reasoning in `HANDOFF.md`.
       split (a dispatcher may add a broker, only an administrator may correct one)
 - [x] A driver on an open load cannot be deactivated — guarded server-side and disabled in
       the UI so the failure is never silent
-- [x] Tests: 332 passing overall (9 of those, plus the drivers/brokers source they test,
-      are still uncommitted — see `HANDOFF.md`); browser-verified end to end for both new
-      screens
+- [x] Tests: 333 passing overall; browser-verified end to end for both new screens
 - [x] Documents (RC/BOL/POD, plus an "Other" catch-all) — migration 16, S3-backed via
       `DOCUMENTS_S3_URL` (separate bucket/credentials from `BACKUP_S3_URL`), append-only,
       load-scoped. Design in `docs/superpowers/specs/2026-09-02-load-documents-design.md`.
