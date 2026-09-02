@@ -45,3 +45,6 @@ data/
 
 # demo database (synthetic, never real carrier data)
 data/demo.db*
+
+# subagent-driven-development scratch (ledgers, briefs, review packages)
+.superpowers/

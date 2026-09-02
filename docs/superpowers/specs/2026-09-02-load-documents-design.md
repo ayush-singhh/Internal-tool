@@ -1,8 +1,11 @@
 # Load documents (RC / BOL / POD) — design
 
-**Status:** approved, not yet implemented
+**Status:** implemented
 **Date:** 2026-09-02
 **Branch:** `multi-tenant`
+**Amended:** during the implementation plan's pre-flight scan — `DOCUMENT_MAX_BYTES`
+lowered from 15MB to 10MB (see the note beside the constant). The design's other
+approved decisions are unchanged.
 
 ## Context
 
@@ -108,7 +111,11 @@ export const DOCUMENT_KIND_TONE: Record<DocumentKind, Tone> = {
 /** Content-Type allow-list. Reject anything else at upload — never trust the browser's
  *  declared type alone for what gets served back to a browser later. */
 export const DOCUMENT_ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"] as const;
-export const DOCUMENT_MAX_BYTES = 15 * 1024 * 1024; // 15MB
+// 10MB, not 15MB: next.config.ts already caps Server Action bodies at 12mb (raised from
+// the 1MB default for CSV import), and the multipart/form-data envelope around the file
+// adds overhead beyond the raw bytes. 10MB leaves headroom under that ceiling rather than
+// raising a limit shared by every Server Action in the app for one feature.
+export const DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
 ```
 
 ## Storage layer
