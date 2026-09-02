@@ -43,9 +43,23 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 Nothing is in flight. Phase 15 (Asterism dispatch: loads, drivers/brokers, documents,
 invoicing) is complete and committed — see "Asterism dispatch — what exists ✅" below for
-what's there. The next work on this product half is whatever the client asks for next:
-the Carrier → Broker freight invoice (schema already leaves room, no code exists yet — see
-`docs/superpowers/specs/2026-09-02-invoicing-design.md` §1) is the most likely candidate.
+what's there.
+
+**Candidates for what's next, roughly ready-now → waiting-on-something:**
+
+1. **Redeploy `carrier-hub.fly.dev`.** The live app is still on migration 16 —
+   invoicing (migration 17) isn't usable there yet. Ready to do now, same process as the
+   last redeploy (migrate through 17, restart the one machine). No code work needed.
+2. **Carrier → Broker freight invoice.** The natural next phase of the invoicing work —
+   schema already leaves room (`invoices.invoice_type`, see
+   `docs/superpowers/specs/2026-09-02-invoicing-design.md` §1) — but only worth starting
+   once the client actually asks for it. Not requested yet.
+3. **Known coverage gaps** (pre-existing, not urgent, not blocking anything): `/support`'s
+   org summary and the Reports page are still carrier-only — no visibility into loads,
+   drivers, brokers, documents, or invoices. `seed-demo.ts` also only seeds carrier data.
+4. **Merge `multi-tenant` → `main`, or the Postgres move.** Both deliberately deferred
+   until the whole multi-tenant SaaS effort is done, not tied to any one feature — see
+   "Decisions already made" below.
 
 ---
 
