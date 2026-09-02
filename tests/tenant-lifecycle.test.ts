@@ -80,6 +80,27 @@ before(async () => {
        VALUES (?, ?, 'pod', 'proof.pdf', 'unused-key', 'application/pdf', 5, ?, ?)`,
       [org.id, loadResult.id, org.ownerId, now],
     );
+
+    // Same reasoning, for the invoicing tables migration 17 added: a fixture with no rows
+    // in load_adjustments/invoices/invoice_lines would let the drift guard below pass while
+    // deletion or export were silently wrong for any of the three, the same way I1 slipped
+    // through for load_documents.
+    db.run(
+      `INSERT INTO load_adjustments (organization_id, load_id, kind, description, amount, created_at, created_by)
+       VALUES (?, ?, 'extra_pay', 'Detention', 150, ?, ?)`,
+      [org.id, loadResult.id, now, org.ownerId],
+    );
+    db.run(
+      `INSERT INTO invoices (organization_id, invoice_type, carrier_id, status, issued_on, total_amount, created_at, created_by, updated_at, updated_by)
+       VALUES (?, 'dispatch', ?, 'pending', ?, 15, ?, ?, ?, ?)`,
+      [org.id, carrierId, now.slice(0, 10), now, org.ownerId, now, org.ownerId],
+    );
+    const invoiceId = db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
+    db.run(
+      `INSERT INTO invoice_lines (organization_id, invoice_id, load_id, final_load_amount, fee_basis, fee_rate, amount, created_at)
+       VALUES (?, ?, ?, 150, 'flat', 15, 15, ?)`,
+      [org.id, invoiceId, loadResult.id, now],
+    );
   }
 });
 
@@ -135,7 +156,8 @@ test("deleting one tenant leaves the one next door completely intact", () => {
   const countFor = (orgId: number) =>
     Object.fromEntries(
       ["users", "lookups", "app_settings", "carriers", "carrier_notes", "carrier_activity",
-       "offboarding_records", "saved_filters", "audit_log", "loads", "load_documents"].map((t) => [
+       "offboarding_records", "saved_filters", "audit_log", "loads", "load_documents",
+       "load_adjustments", "invoices", "invoice_lines"].map((t) => [
         t,
         db.systemQuery(
           () => db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${t} WHERE organization_id = ?`, [orgId])!.n,
