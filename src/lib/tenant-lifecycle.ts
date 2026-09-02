@@ -26,10 +26,10 @@ import { LATEST_VERSION } from "./migrations.ts";
 const REDACTED = ["password_hash", "mfa_secret"] as const;
 
 /** Tenant-owned tables, in the order a reader would want them. */
-const OWNED = [
+export const OWNED = [
   "users", "lookups", "app_settings", "carriers", "carrier_notes",
   "carrier_activity", "offboarding_records", "saved_filters", "audit_log",
-  "drivers", "brokers", "loads", "load_stops",
+  "drivers", "brokers", "load_documents", "loads", "load_stops",
 ] as const;
 
 export type TenantExport = {
@@ -143,8 +143,10 @@ export function deleteOrganization(orgId: number, opts: { exported: boolean }): 
 
   return systemQuery(() =>
     transaction(() => {
-      // Dispatch first, and in this order: loads reference drivers, brokers, carriers and
+      // Dispatch first, and in this order: load_documents references loads (NO ACTION, no
+      // cascade), so it goes before loads. loads references drivers, brokers, carriers and
       // users, so they cannot outlive any of them. load_stops cascades from loads.
+      del("load_documents", "DELETE FROM load_documents WHERE organization_id = ?", [orgId]);
       del("loads", "DELETE FROM loads WHERE organization_id = ?", [orgId]);
       del("drivers", "DELETE FROM drivers WHERE organization_id = ?", [orgId]);
       del("brokers", "DELETE FROM brokers WHERE organization_id = ?", [orgId]);

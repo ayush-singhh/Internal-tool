@@ -18,12 +18,15 @@ process.env.CARRIER_DB_PATH = DB;
 
 let db: typeof import("../src/lib/db.ts");
 let life: typeof import("../src/lib/tenant-lifecycle.ts");
+let write: typeof import("../src/lib/load-write.ts");
 let leaving: TestOrg;
 let staying: TestOrg;
 
 before(async () => {
   db = await import("../src/lib/db.ts");
   life = await import("../src/lib/tenant-lifecycle.ts");
+  write = await import("../src/lib/load-write.ts");
+  const { Org } = await import("../src/lib/tenant-db.ts");
   const now = new Date().toISOString();
 
   leaving = seedOrg(db, "Leaving Freight", "owner@leaving.test");
@@ -64,6 +67,19 @@ before(async () => {
     db.run("INSERT INTO sessions (id, user_id, created_at, expires_at, mfa_pending) VALUES (?, ?, ?, ?, 0)", [
       `sess-${org.id}`, org.ownerId, now, new Date(Date.now() + 86_400_000).toISOString(),
     ]);
+
+    // A load and a document on it — load_documents is the table I1 found missing from
+    // tenant-lifecycle.ts. Without a row here, the drift guard could pass while deletion
+    // and export were both still silently wrong for it.
+    const loadResult = write.createLoad(new Org(org.id), {
+      carrierId, stops: [{ kind: "pickup", city: "Dallas" }, { kind: "delivery", city: "Newark" }],
+    }, org.ownerId) as { ok: true; id: number };
+    db.run(
+      `INSERT INTO load_documents
+         (organization_id, load_id, kind, filename, storage_key, content_type, size_bytes, uploaded_by, created_at)
+       VALUES (?, ?, 'pod', 'proof.pdf', 'unused-key', 'application/pdf', 5, ?, ?)`,
+      [org.id, loadResult.id, org.ownerId, now],
+    );
   }
 });
 
@@ -119,7 +135,7 @@ test("deleting one tenant leaves the one next door completely intact", () => {
   const countFor = (orgId: number) =>
     Object.fromEntries(
       ["users", "lookups", "app_settings", "carriers", "carrier_notes", "carrier_activity",
-       "offboarding_records", "saved_filters", "audit_log"].map((t) => [
+       "offboarding_records", "saved_filters", "audit_log", "loads", "load_documents"].map((t) => [
         t,
         db.systemQuery(
           () => db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${t} WHERE organization_id = ?`, [orgId])!.n,
@@ -157,4 +173,15 @@ test("deleting one tenant leaves the one next door completely intact", () => {
     [],
     "nothing is left pointing at what was removed",
   );
+});
+
+test("every tenant-owned table is exported and deleted with the tenant", async () => {
+  // Nothing else ties OWNED to TENANT_TABLES — the source of truth the fail-closed query
+  // guard already uses. Migration 15 added four tables and updated OWNED for all of them;
+  // migration 16 added load_documents and updated neither (see BUGS.md, I1). This is the
+  // guard that stops the next migration from repeating it silently.
+  const { TENANT_TABLES } = await import("../src/lib/tenant-db.ts");
+  for (const t of TENANT_TABLES) {
+    assert.ok(life.OWNED.includes(t), `${t} is missing from tenant-lifecycle.ts's OWNED`);
+  }
 });
