@@ -18,6 +18,105 @@ conversation it was noticed in.
 
 ---
 
+## 2026-09-02 — `load_documents` was never added to tenant deletion or export
+
+**Severity:** moderate · **Status:** fixed · **Reached users:** no (caught in final review, before merge)
+
+Migration 15 added `drivers`, `brokers`, `loads` and `load_stops`, and correctly added all
+four to `tenant-lifecycle.ts`'s `OWNED` list plus an explicit delete for the three that
+don't cascade. **Migration 16 added `load_documents` and did neither.** Nothing in the
+load-documents diff touches `tenant-lifecycle.ts`, which is exactly why eight per-task
+reviews of that feature never saw it.
+
+Proven against a throwaway database seeded with one org, one carrier, one load and one
+document:
+
+- `exportOrganization` — the file's own header calls this "everything one organisation
+  owns," a data-subject deliverable — silently omitted every document row. The export ran,
+  printed its counts, and the missing table was invisible unless you already knew to look
+  for it.
+- `deleteOrganization` threw `FOREIGN KEY constraint failed` deleting from `loads`, because
+  `load_documents.load_id` references `loads (organization_id, id)` with **no
+  `ON DELETE CASCADE`** (unlike `load_stops`, which has one) and the database runs with
+  `PRAGMA foreign_keys = ON`. Any tenant that had ever attached a single document could no
+  longer be offboarded.
+
+Fails closed on deletion — the transaction rolls back, so no data loss and no cross-tenant
+exposure, which is why this is moderate rather than critical. The export miss is the
+sharper half: a wrong answer that nothing flags as wrong.
+
+**Fix.** `load_documents` added to `OWNED`, ordered before `loads` (both because a reader
+would expect it near the table it documents, and because it now has to be deleted first).
+`deleteOrganization` gained `del("load_documents", ...)` immediately before
+`del("loads", ...)`.
+
+**Why it was missed.** The load-documents review package was scoped to its own diff, and
+`tenant-lifecycle.ts` is not in it — a diff-scoped review finds defects *inside* a change;
+this one lived in a caller the change forgot, which is by definition outside it. Finding it
+took asking a different question than "does this diff look right": *what else in this repo
+enumerates tenant-owned tables, and did this migration update it the way the last one did?*
+Every new table, constant or route needs that same outward walk, not just a read of its own
+diff.
+
+**Guarded by.** `tests/tenant-lifecycle.test.ts` — "every tenant-owned table is exported and
+deleted with the tenant": asserts every entry in `tenant-db.ts`'s `TENANT_TABLES` (the
+fail-closed query guard's own source of truth) also appears in `OWNED`, so the next
+migration that adds a tenant table and forgets this file fails a test instead of shipping
+quietly. The existing "deleting one tenant leaves the neighbour intact" test was also
+extended: its fixture seeded no loads at all, so even with the drift guard in place that
+test would not have proven deletion actually worked for `load_documents` — it now seeds a
+load and a document per organisation and tracks both tables in the neighbour-untouched
+assertion.
+
+---
+
+## 2026-09-02 — a non-Latin-1 filename made a document permanently undownloadable
+
+**Severity:** high · **Status:** fixed · **Reached users:** no (caught in final review, before merge)
+
+`/api/documents/[id]/route.ts` built its `Content-Disposition` header as
+`` `attachment; filename="${doc.filename.replace(/[\x00-\x1f"]/g, "")}"` `` — a regex that
+strips C0 control characters and double quotes and nothing else. HTTP header values must be
+**ByteStrings**: every character ≤ U+00FF. Any filename with a CJK, Cyrillic, Arabic,
+Hebrew, Greek or Thai character, or an emoji throws inside the `Response` constructor
+(`TypeError: Cannot convert argument to a ByteString because the character ... is greater
+than 255`), and the route 500s.
+
+The document uploads successfully, appears in the Documents card with its correct name and
+size, and is then unreachable forever — this feature is deliberately append-only with no
+delete, so the only recourse is uploading a second copy under a Latin-1 name and leaving the
+dead row on the load permanently.
+
+This is the same line that already took a mid-plan fix round. The original finding was
+control characters in a filename; the fix widened the regex from stripping `"` alone to
+stripping `\x00-\x1f` as well, and the re-review that closed it verified exactly that — the
+regex boundaries were correct for `0x00`–`0x1f` inclusive. `提单.pdf` still 500s after that
+fix shipped; nothing about the regex touches characters above `\x1f`.
+
+**Fix.** RFC 5987/6266: an ASCII fallback in `filename=`, the real name percent-encoded in
+`filename*=UTF-8''...`. Both halves are pure ASCII, so the ByteString constraint holds —
+old clients take the fallback, every current browser prefers `filename*` and shows the real
+name. The same root cause was fixed at the write side too: `documents.ts` stored
+`file.name.slice(0, 200)`, and `.slice` counts UTF-16 code units, so a 200-character
+boundary landing inside a surrogate pair stores an unpaired surrogate — also > U+00FF, also
+a 500 on download, just rarer. Replaced with codepoint-safe truncation
+(`Array.from(name).slice(0, 200).join("")`).
+
+**Why it was missed.** A fix round that verifies a patch against the *reported symptom* —
+here, C0 control characters — instead of the *general rule* the symptom was one instance
+of — here, HTTP header values must be ByteStrings, ≤ U+00FF — closes the specific instance
+and leaves the broader category open. The widened regex passed its own re-review cleanly
+while every non-Latin-1 filename kept failing identically. The question that catches this
+class of bug is never "does the fix cover what the report named," it is "what is the actual
+rule here, and does the fix cover *that*."
+
+**Guarded by.** `tests/http/app.test.ts` — "a legitimate load:view user downloads their own
+document, non-ASCII filename included": drives a real production server end to end through
+a fake S3 backend, with a document filed under `提单.pdf`, and asserts a 200 with the exact
+bytes. 500s immediately against the unfixed header line.
+
+---
+
 ## 2026-09-01 — the test suite wrote into the development database (twice)
 
 **Severity:** high · **Status:** fixed · **Reached users:** no (a developer's database, not a customer's)
