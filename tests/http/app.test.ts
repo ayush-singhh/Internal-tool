@@ -289,3 +289,56 @@ test("the report export is rate-limited and every pull is recorded", async () =>
   // Its own budget: spending the report allowance must not close the carrier export.
   assert.equal((await app.get("/api/export", owner)).status, 200);
 });
+
+test("an unauthenticated visitor is sent to sign in from every invoices route", async () => {
+  for (const path of ["/invoices", "/invoices/new", `/invoices/1`]) {
+    const res = await app.get(path);
+    assert.equal(res.status, 307);
+    assert.match(res.location ?? "", /\/login/);
+  }
+});
+
+test("a dispatcher can view invoices but not create one", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const owner = seedOrg(app.db, "Invoice Test Dispatch", "invowner@invtest.test");
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Dee Dispatcher', 'invdispatch@invtest.test', 'x', ?, 1, ?, ?, ?)`,
+    [owner.id, ROLES.DISPATCHER, now, now, now],
+  );
+  const dispatcherSession = app.session("invdispatch@invtest.test");
+
+  const list = await app.get("/invoices", dispatcherSession);
+  assert.equal(list.status, 200, "invoice:view is universal to any non-sales, non-support role");
+
+  const create = await app.get("/invoices/new", dispatcherSession);
+  assert.equal(create.status, 307, "redirected away from the create screen — no dispatcher tier for invoicing");
+  assert.match(create.location ?? "", /\/invoices$/);
+});
+
+test("an owner can reach the create screen", async () => {
+  const { seedOrg } = await import("../helpers.ts");
+  seedOrg(app.db, "Invoice Admin Dispatch", "invadmin@invtest.test");
+  const res = await app.get("/invoices/new", app.session("invadmin@invtest.test"));
+  assert.equal(res.status, 200);
+});
+
+test("one tenant cannot open another tenant's invoice", async () => {
+  const now = new Date().toISOString();
+  app.db.run(
+    `INSERT INTO invoices (organization_id, invoice_type, carrier_id, status, issued_on,
+                           total_amount, created_at, updated_at)
+     VALUES (?, 'dispatch', ?, 'pending', ?, 500, ?, ?)`,
+    [victimOrg, victimCarrier, now.slice(0, 10), now, now],
+  );
+  const invoiceId = app.db.systemQuery(
+    () => app.db.get<{ id: number }>("SELECT id FROM invoices WHERE organization_id = ?", [victimOrg])!.id,
+  );
+
+  const res = await app.get(`/invoices/${invoiceId}`, outsider);
+  assert.equal(res.status, 404);
+  assertNoVictimData(res.body, `/invoices/${invoiceId}`);
+});
