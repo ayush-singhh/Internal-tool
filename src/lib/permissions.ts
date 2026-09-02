@@ -40,6 +40,13 @@ export type Action =
   /** Correct or retire a broker. Administrators only, so one dispatcher's typo does not
    *  quietly become a second broker forever. */
   | "broker:edit"
+  // Invoicing — Asterism's dispatch fee
+  /** See invoices and what they total. Same scope as load:rate. */
+  | "invoice:view"
+  /** Generate a dispatch invoice and change its status (paid / disputed). No dispatcher
+   *  tier exists here — the whole lifecycle is administrators only, same rationale as
+   *  load:close. */
+  | "invoice:manage"
   // Administration
   | "team:manage"
   | "settings:manage";
@@ -79,6 +86,7 @@ export function can(
     case "carrier:view":
     case "export:run":
     case "load:view":
+    case "invoice:view":
       return true;
 
     // Everyone left who can see a load can see what it pays. The people who must never
@@ -108,6 +116,7 @@ export function can(
     case "import:run":
     case "load:close":
     case "broker:edit":
+    case "invoice:manage":
     case "team:manage":
     case "settings:manage":
       return false;
