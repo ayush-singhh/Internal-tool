@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { requireOrg } from "./auth.ts";
 import { can } from "./permissions.ts";
 import { uploadLoadDocument } from "./documents.ts";
-import type { DocumentKind } from "./constants.ts";
 
 export type DocumentState = { error?: string; ok?: string };
 
@@ -15,7 +14,7 @@ export async function uploadDocumentAction(_prev: DocumentState, form: FormData)
   const loadId = Number(form.get("load_id"));
   if (!Number.isInteger(loadId) || loadId <= 0) return { error: "Unknown load." };
 
-  const kind = String(form.get("kind") ?? "") as DocumentKind;
+  const kind = String(form.get("kind") ?? "");
   const file = form.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a file." };
 

@@ -32,7 +32,7 @@ export function DocumentManager({
               <tr className="border-b border-line bg-ink-50/70">
                 {["Kind", "File", "Uploaded by", "Date", ""].map((h) => (
                   <th key={h} scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-ink-600">
-                    {h}
+                    {h === "" ? <span className="sr-only">Download</span> : h}
                   </th>
                 ))}
               </tr>

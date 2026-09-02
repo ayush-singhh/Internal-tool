@@ -229,6 +229,16 @@ A 404 for both "not found" and "wrong tenant" and "not authorized" — same non-
 pattern the rest of the app already uses (carriers, loads) so a probe can't tell which case
 it hit.
 
+**No rate limit here, decided out loud.** `BUGS.md`'s report-export entry concludes that
+when one route gets a control, the sibling route needs the same decision made explicitly —
+even when the answer is "not this one." `/api/export` is rate-limited and audited because it
+is a bulk, broad data-out event: one request can reconstruct a large slice of the carrier
+book. A single document download is neither: it is one indexed lookup by primary key
+(`getLoadDocument`, `organization_id` + `id`) plus one streamed fetch from object storage,
+scoped to a document the caller already has `load:view` on — the same content they can
+already see rendered on the load's page. There is no aggregation to throttle and no bulk
+extraction the limiter on `/api/export` exists to catch.
+
 ## UI
 
 A "Documents" card on `/loads/[id]`, below the existing status/detail sections:

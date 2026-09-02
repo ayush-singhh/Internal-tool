@@ -111,10 +111,17 @@ export function signRequest(
  */
 export type Destination = { base: URL; credentials: Credentials };
 
-export function destination(raw: string, region = process.env.BACKUP_S3_REGION ?? "auto"): Destination {
+export function destination(
+  raw: string,
+  /** Named by the caller so a malformed-URL error points at the env var that is actually
+   *  broken — this is called with both BACKUP_S3_URL and DOCUMENTS_S3_URL. Region stays
+   *  tied to BACKUP_S3_REGION regardless: one provider today, revisit if that changes. */
+  varName = "BACKUP_S3_URL",
+  region = process.env.BACKUP_S3_REGION ?? "auto",
+): Destination {
   const url = new URL(raw);
   if (!url.username || !url.password) {
-    throw new Error("BACKUP_S3_URL needs credentials: https://KEY:SECRET@endpoint/bucket");
+    throw new Error(`${varName} needs credentials: https://KEY:SECRET@endpoint/bucket`);
   }
   const credentials: Credentials = {
     accessKeyId: decodeURIComponent(url.username),
