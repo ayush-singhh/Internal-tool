@@ -4,10 +4,11 @@ This file is the resume point for a fresh session. It is kept current at the end
 working session. For the full picture read, in order: `PRD.md` → `Architecture.md` →
 `AI Rules.md` → `Plan.md` → `MIGRATION-PLAN.md`.
 
-**Last updated:** 2026-09-01. The product has a second half now: the **Asterism dispatch
-domain**, built from scratch on this codebase. Read `BUGS.md` first — the test suite was
-found writing into `data/carrier-hub.db`, and the guard that was meant to prevent that
-checked the wrong thing (fixed).
+**Last updated:** 2026-09-02. The product has a second half now: the **Asterism dispatch
+domain**, built from scratch on this codebase. Phase 15 is now fully complete, including
+invoicing. Read `BUGS.md` first — the test suite was found writing into
+`data/carrier-hub.db`, and the guard that was meant to prevent that checked the wrong thing
+(fixed).
 
 ---
 
@@ -28,9 +29,9 @@ sequencing are now stale — see below).
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean — Phase 15 (loads, drivers/brokers, documents) is fully committed;
-only invoicing remains, blocked on the client. **Tests:** 333 passing (`npm test`) + 11 over
-HTTP (`npm run test:http`). **Build:** clean.
+**Working tree:** clean — Phase 15 (loads, drivers/brokers, documents, invoicing) is fully
+committed. **Tests:** 355 passing (`npm test`) + 15 over HTTP (`npm run test:http`).
+**Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -40,10 +41,11 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ## In flight — pick this up first
 
-Nothing is in flight. Phase 15 (Asterism dispatch: loads, drivers/brokers, documents) is
-complete and committed — see "Asterism dispatch — what exists ✅" below for what's there.
-Only invoicing remains, still blocked on the two invoice samples (owner-operator,
-two-driver) requested from the client.
+Nothing is in flight. Phase 15 (Asterism dispatch: loads, drivers/brokers, documents,
+invoicing) is complete and committed — see "Asterism dispatch — what exists ✅" below for
+what's there. The next work on this product half is whatever the client asks for next:
+the Carrier → Broker freight invoice (schema already leaves room, no code exists yet — see
+`docs/superpowers/specs/2026-09-02-invoicing-design.md` §1) is the most likely candidate.
 
 ---
 
@@ -82,19 +84,38 @@ two-driver) requested from the client.
   is admin-only, and `broker:create` is separate from `broker:edit` so a dispatcher's typo
   cannot quietly become a permanent broker. Matrix tested exhaustively in
   `tests/security.test.ts`.
+- **Invoicing** — the Asterism → Carrier dispatch fee, migration 17. No sample invoice
+  ever arrived; built instead from the client's six-point answer to the question list (see
+  `docs/superpowers/specs/2026-09-02-invoicing-design.md` for the design, and the plan at
+  `docs/superpowers/plans/2026-09-02-invoicing.md`). `load_adjustments` (itemized
+  deductions/extra pay, append-only) redefines a load's **Final Load Amount** — rate plus
+  approved extra pay, minus approved deductions, with a TONU/cancelled load billing only
+  what was explicitly approved, never the raw rate — and RPM now divides by that instead of
+  the raw rate. `invoices` + `invoice_lines` snapshot amounts at creation, since an invoice
+  is a historical document, not a live view; batching several loads onto one carrier's
+  invoice is supported (schema and `createInvoice`), the create screen just picks loads by
+  hand rather than auto-batching a date range. `loads.status` gained `paid` between
+  Invoiced and Closed — creating an invoice advances its loads to Invoiced, marking the
+  invoice Paid advances them to Paid, and correcting an invoice's own status (a free
+  three-state field: pending/paid/disputed) never walks a load status backward.
+  `invoice:view` is universal like `load:rate`; `invoice:manage` (create, change status) is
+  administrators only — no dispatcher tier exists for invoicing at all. `/invoices`,
+  `/invoices/new` (carrier + load picker with a live fee preview), `/invoices/[id]`.
+  Browser-verified end to end with Playwright against a seeded scenario. **Not built**:
+  Carrier → Broker freight invoices, date-range auto-batching, a printable/PDF layout — see
+  the design doc's "What's explicitly not built" for the reasoning behind each.
 
 **Decided, in `Plan.md`:** no HR module; live truck tracking is V2 and only on request.
-
-**Still needed from the client:** the two invoice samples (one owner-operator, one
-two-driver) before invoicing can be built sensibly.
 
 **Postgres is deferred, not cancelled.** I attempted the async conversion and reverted it:
 ~700 edits across 65 files, automation reaches ~85%, and the remainder has semantic traps
 (`assert.throws` must become `await assert.rejects` or the test asserts nothing). My earlier
 "several times more expensive later" was overstated — measured, it is roughly 17% more per
-phase. Do it as its own dedicated run, not alongside features. File storage for RC/BOL/POD was
-the other infrastructure decision blocking progress — it's resolved now (`DOCUMENTS_S3_URL`,
-see "Asterism dispatch" above); only invoicing is still waiting on the client.
+phase. Do it as its own dedicated run, not alongside features. File storage for RC/BOL/POD
+was the other infrastructure decision blocking progress — it's resolved now
+(`DOCUMENTS_S3_URL`, see "Asterism dispatch" above), and invoicing (also blocked, on the
+client's sample) shipped anyway once they answered in prose instead. Nothing on this
+product half is currently blocked.
 
 ---
 

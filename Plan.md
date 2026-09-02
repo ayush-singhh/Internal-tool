@@ -398,7 +398,7 @@ a certificate of insurance lapses, and a load dispatched against it is a claim.
 
 Smaller, whenever they get in the way: none currently.
 
-## Phase 15 — Asterism dispatch domain 🔨 (2026-09-01)
+## Phase 15 — Asterism dispatch domain ✅ (2026-09-02)
 
 New product half, built from scratch on this base — no previous app code exists to port.
 Full write-up and reasoning in `HANDOFF.md`.
@@ -417,8 +417,25 @@ Full write-up and reasoning in `HANDOFF.md`.
 - [x] Documents (RC/BOL/POD, plus an "Other" catch-all) — migration 16, S3-backed via
       `DOCUMENTS_S3_URL` (separate bucket/credentials from `BACKUP_S3_URL`), append-only,
       load-scoped. Design in `docs/superpowers/specs/2026-09-02-load-documents-design.md`.
-- [ ] Invoicing — blocked on the two invoice samples (owner-operator, two-driver) requested
-      from the client
+- [x] Invoicing — the Asterism → Carrier dispatch invoice. No sample ever arrived from the
+      client; built from the six-point answer the client gave instead of the two documents
+      originally requested. Migration 17: `load_adjustments` (itemized deductions/extra
+      pay), `invoices` + `invoice_lines` (amounts snapshotted at creation, not live),
+      `flat_per_load` pricing type, backfilled into every existing organisation.
+      `loads.status` gains `paid` (Delivered → Invoiced → Paid → Closed). RPM redefined
+      around Final Load Amount (rate plus approved extra pay, minus approved deductions —
+      a TONU/cancelled load bills only what was explicitly approved, never the raw rate).
+      `invoice:view` (universal) / `invoice:manage` (administrators only, whole lifecycle —
+      no dispatcher tier). `/invoices`, `/invoices/new` (carrier + load picker with a live
+      fee preview), `/invoices/[id]` (line items, status controls); an Adjustments card and
+      Final Load Amount on the load page. Design in
+      `docs/superpowers/specs/2026-09-02-invoicing-design.md`, plan in
+      `docs/superpowers/plans/2026-09-02-invoicing.md`. Browser-verified end to end with
+      Playwright. Tests: 355 unit + 15 HTTP passing overall.
+      **Deliberately not built** — schema leaves room, no code exists yet: Carrier → Broker
+      freight invoices (line-itemized linehaul + deductions as a customer-facing document,
+      factoring remit-to/payee), date-range/weekly auto-batching (loads are picked by hand
+      on the create screen), a printable/PDF invoice layout.
 
 **Decided:** no HR module; live truck tracking is V2 and only on request (see "Deferred by
 design" below).
