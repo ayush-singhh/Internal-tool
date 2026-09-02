@@ -225,6 +225,11 @@ is the date a restore would take you back to. A card showing `degraded` means th
 was fine and the upload was refused: the copy is on the same disk as the database, so
 losing the volume loses both.
 
+`DOCUMENTS_S3_URL` is the same idea for a different feature: **optional**, same
+`https://KEY:SECRET@endpoint/bucket` shape, but a separate bucket and credentials from
+`BACKUP_S3_URL` — it's where uploaded load documents (RC/BOL/POD) live, not backups.
+Leave it unset and the Documents card on a load simply doesn't offer an upload form.
+
 ### Ending a tenancy
 
 Out of band, like `support-user.ts` — `/support` is read-only and gets no exception for the

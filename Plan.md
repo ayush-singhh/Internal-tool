@@ -398,6 +398,31 @@ a certificate of insurance lapses, and a load dispatched against it is a claim.
 
 Smaller, whenever they get in the way: none currently.
 
+## Phase 15 — Asterism dispatch domain 🔨 (2026-09-01)
+
+New product half, built from scratch on this base — no previous app code exists to port.
+Full write-up and reasoning in `HANDOFF.md`.
+
+- [x] Migration 15: `drivers`, `brokers`, `loads`, `load_stops`, tenant-owned with composite
+      foreign keys
+- [x] Role model: `sales` role added; seven dispatch actions incl. `load:rate` separate
+      from `load:view`, `load:close` admin-only, `broker:create` separate from `broker:edit`
+- [x] `loads.ts` / `load-write.ts` — RPM, forward-only status flow, multi-stop; `/loads`
+      list, `/loads/new`, `/loads/[id]` with status controls
+- [x] `dispatch-admin.ts` — drivers and brokers; `/drivers`, `/brokers` screens, add/edit
+      split (a dispatcher may add a broker, only an administrator may correct one)
+- [x] A driver on an open load cannot be deactivated — guarded server-side and disabled in
+      the UI so the failure is never silent
+- [x] Tests: 332 passing overall; browser-verified end to end for both new screens
+- [x] Documents (RC/BOL/POD, plus an "Other" catch-all) — migration 16, S3-backed via
+      `DOCUMENTS_S3_URL` (separate bucket/credentials from `BACKUP_S3_URL`), append-only,
+      load-scoped. Design in `docs/superpowers/specs/2026-09-02-load-documents-design.md`.
+- [ ] Invoicing — blocked on the two invoice samples (owner-operator, two-driver) requested
+      from the client
+
+**Decided:** no HR module; live truck tracking is V2 and only on request (see "Deferred by
+design" below).
+
 ---
 
 ## Phase 11 — Making it sellable ✅
