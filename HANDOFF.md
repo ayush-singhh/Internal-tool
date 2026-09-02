@@ -50,7 +50,8 @@ original sequencing are done**; uncommitted on the branch:
 - `tests/dispatch-admin.test.ts` (new) — 10 cases: phone normalisation, the carrier-scope
   check on a driver, the open-load deactivation guard, the seeded-vs-added broker split,
   case-insensitive duplicate detection, edit-in-place, retiring keeps load history, and
-  cross-tenant invisibility.
+  cross-tenant invisibility. (The **332 passing** figure above includes 9 tests from this
+  file; it, and the drivers/brokers source it tests, are still uncommitted.)
 - `/drivers` and `/brokers` pages, `driver-manager.tsx` / `broker-manager.tsx` (new) — same
   add/edit-dialog shape as `team-manager.tsx`. `Dialog`, `DialogActions` and `Banner` were
   pulled out of `team-manager.tsx` into `ui.tsx` so a third copy wasn't written — `team-manager.tsx`
