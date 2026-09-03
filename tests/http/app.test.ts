@@ -342,3 +342,111 @@ test("one tenant cannot open another tenant's invoice", async () => {
   assert.equal(res.status, 404);
   assertNoVictimData(res.body, `/invoices/${invoiceId}`);
 });
+
+// ── Role panels (Phase 16) ───────────────────────────────────────────────────
+
+/**
+ * The sidebar rendered over the wire, per role.
+ *
+ * `tests/nav.test.ts` pins `visibleNav()` in isolation; these assert what a browser
+ * actually receives, which is the half that was wrong before Phase 16 — the filtering
+ * lived in the component, so no unit test could have seen it.
+ */
+test("a sales agent's page carries no carrier, load or invoice link, and no carrier data", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg, lookupId } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Panel Test Dispatch", "panelowner@panel.test");
+  app.db.run(
+    `INSERT INTO carriers (organization_id, legal_name, owner_name, phone, mc_number,
+                           status_id, created_at, updated_at)
+     VALUES (?, 'PANEL SECRET CARRIER LLC', 'Panel Owner', '555222333', '888222', ?, ?, ?)`,
+    [org.id, lookupId(app.db, org.id, "status", "active"), now, now],
+  );
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Sal Sales', 'panelsales@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.SALES, now, now, now],
+  );
+
+  const res = await app.get("/", app.session("panelsales@panel.test"));
+  assert.equal(res.status, 200, "sales reaches its own dashboard rather than an error");
+
+  for (const href of ["/carriers", "/active", "/onboarding", "/loads", "/drivers",
+                      "/brokers", "/invoices", "/reports", "/team", "/settings", "/import"]) {
+    assert.ok(
+      !res.body.includes(`href="${href}"`),
+      `the sales sidebar must not link to ${href}`,
+    );
+  }
+  assert.ok(res.body.includes('href="/activity"'), "sales still gets My Activity");
+  assert.ok(
+    !res.body.includes("PANEL SECRET CARRIER LLC"),
+    "the sales dashboard must not render carrier data",
+  );
+  assert.ok(!res.body.includes("Add Carrier"), "no Add Carrier button without carrier:create");
+});
+
+test("a dispatcher's sidebar keeps carriers and dispatch but drops Administration", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Panel Dispatcher Co", "paneldispowner@panel.test");
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Dee Dispatcher', 'paneldisp@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.DISPATCHER, now, now, now],
+  );
+
+  const res = await app.get("/", app.session("paneldisp@panel.test"));
+  assert.equal(res.status, 200);
+  for (const href of ["/carriers", "/loads", "/brokers", "/invoices", "/reports", "/activity"]) {
+    assert.ok(res.body.includes(`href="${href}"`), `dispatcher should see ${href}`);
+  }
+  for (const href of ["/team", "/settings", "/import", "/audit"]) {
+    assert.ok(!res.body.includes(`href="${href}"`), `dispatcher must not see ${href}`);
+  }
+});
+
+test("My Activity is reachable by every role and shows only that user's own entries", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg, lookupId } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Activity Panel Co", "actowner@panel.test");
+  app.db.run(
+    `INSERT INTO carriers (organization_id, legal_name, owner_name, phone, mc_number,
+                           status_id, created_at, updated_at)
+     VALUES (?, 'ACTIVITY CARRIER LLC', 'A Owner', '555444555', '777333', ?, ?, ?)`,
+    [org.id, lookupId(app.db, org.id, "status", "active"), now, now],
+  );
+  const carrierId = app.db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Ann Other', 'actother@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.DISPATCHER, now, now, now],
+  );
+  const otherId = app.db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
+
+  // One entry by the owner, one by somebody else. Only the owner's may come back.
+  app.db.run(
+    `INSERT INTO carrier_activity (organization_id, carrier_id, user_id, type, summary, created_at)
+     VALUES (?, ?, ?, 'field', 'OWNS THIS ENTRY', ?)`,
+    [org.id, carrierId, org.ownerId, now],
+  );
+  app.db.run(
+    `INSERT INTO carrier_activity (organization_id, carrier_id, user_id, type, summary, created_at)
+     VALUES (?, ?, ?, 'field', 'SOMEBODY ELSES ENTRY', ?)`,
+    [org.id, carrierId, otherId, now],
+  );
+
+  const res = await app.get("/activity", app.session("actowner@panel.test"));
+  assert.equal(res.status, 200);
+  assert.ok(res.body.includes("OWNS THIS ENTRY"), "the user's own entry is shown");
+  assert.ok(
+    !res.body.includes("SOMEBODY ELSES ENTRY"),
+    "My Activity is self-scoped — another user's entry must never appear",
+  );
+});

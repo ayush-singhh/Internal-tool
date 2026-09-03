@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ActivityRow, ActivityType } from "@/lib/activity";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import type { Tone } from "@/lib/constants";
@@ -26,7 +27,16 @@ const DOT: Record<Tone, string> = {
   purple: "bg-purple-500",
 };
 
-export function ActivityTimeline({ entries }: { entries: ActivityRow[] }) {
+/**
+ * A carrier's history, or a cross-carrier feed. Rows that carry `legal_name` get a link
+ * to the carrier — the profile page passes rows without one, so it needs no flag to
+ * suppress a heading it never wanted.
+ */
+export function ActivityTimeline({
+  entries,
+}: {
+  entries: (ActivityRow & { legal_name?: string })[];
+}) {
   if (entries.length === 0) {
     return <p className="py-4 text-center text-sm text-ink-400">No recorded changes yet.</p>;
   }
@@ -45,6 +55,14 @@ export function ActivityTimeline({ entries }: { entries: ActivityRow[] }) {
               DOT[TYPE_TONE[e.type] ?? "slate"]
             }`}
           />
+          {e.legal_name && (
+            <Link
+              href={`/carriers/${e.carrier_id}`}
+              className="text-[0.83rem] font-medium text-ink-900 underline-offset-2 hover:text-brand-700 hover:underline"
+            >
+              {e.legal_name}
+            </Link>
+          )}
           <p className="text-[0.83rem] leading-snug text-ink-800">{e.summary}</p>
           {e.old_value !== null && e.new_value !== null && (
             <p className="mt-0.5 text-xs text-ink-500">

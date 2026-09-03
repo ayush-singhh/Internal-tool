@@ -61,16 +61,26 @@ export function carrierActivity(org: Org, carrierId: number, limit = 200): Activ
   );
 }
 
-export function recentActivity(org: Org, limit = 12): (ActivityRow & { legal_name: string })[] {
+/**
+ * The organisation's activity feed, or one person's when `userId` is given —
+ * the same query, because "My Activity" differs from the dashboard feed by a
+ * single predicate and not by anything worth a second function.
+ */
+export function recentActivity(
+  org: Org,
+  limit = 12,
+  userId?: number,
+): (ActivityRow & { legal_name: string })[] {
+  const mine = userId === undefined ? "" : " AND a.user_id = ?";
   return all<ActivityRow & { legal_name: string }>(
     `SELECT a.*, u.name AS user_name, c.legal_name
        FROM carrier_activity a
        LEFT JOIN users u ON u.id = a.user_id
        JOIN carriers c ON c.id = a.carrier_id
-      WHERE a.organization_id = ?
+      WHERE a.organization_id = ?${mine}
       ORDER BY a.created_at DESC, a.id DESC
       LIMIT ?`,
-    [org.id, limit],
+    userId === undefined ? [org.id, limit] : [org.id, userId, limit],
   );
 }
 

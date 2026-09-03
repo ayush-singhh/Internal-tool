@@ -18,6 +18,81 @@ conversation it was noticed in.
 
 ---
 
+## 2026-09-04 — the sidebar showed every non-administration page to every role
+
+**Severity:** medium · **Status:** fixed · **Reached users:** no known instance — `sales`
+was added in Phase 15 and no customer is known to have created one before this fix
+
+`AppShell` decided the sidebar with a single `canAdmin` boolean and a hardcoded list of four
+hrefs:
+
+```ts
+group.items.filter((item) => canAdmin || !["/team","/audit","/settings","/import"].includes(item.href))
+```
+
+The list is an *administration* deny-list, so the rule it actually encoded was "anyone who
+is not an administrator sees everything except these four." Every other page — All Carriers,
+Active, Onboarding, Offboarded, Investigations, Loads, Drivers, Brokers, Invoices, Reports —
+was shown to **every** signed-in role unconditionally. That included `sales`, whose entire
+definition in `constants.ts` is that it "sees no rate, no load and no invoice — the sales
+sidebar has no Carrier or Load Management on it at all," and whose `can()` branch returns
+`false` for every action. The nav had simply never asked `can()`.
+
+Two more instances of the same root cause turned up while fixing it, both affordances that
+never asked `can()`:
+
+- the header's "Add Carrier" button was shown to a `viewer`, which has no `carrier:create`;
+- the dashboard's **empty state** (`m.total === 0`) led with "Import spreadsheet" for every
+  role, so a dispatcher opening a fresh organisation was pointed at `/import`, a page
+  `import:run` refuses them. This one was invisible to the sidebar work and to
+  `tests/nav.test.ts` — it is not in the nav at all — and was caught only because the HTTP
+  test asserted on the whole rendered page rather than on the nav data structure.
+
+Server-side authorization was never bypassed: `can()`/`assertCan()` still refused the
+actions, and the pages themselves re-check. The exposure was the **navigation surface** —
+a sales user saw, and could click through to, carrier and load screens they had no business
+knowing existed. Whether each destination page then refused them was never the sidebar's
+decision to make.
+
+**Fix.** Every nav item now names the `Action` that reveals it, and `visibleNav(user)` in
+`src/lib/nav.ts` filters with `can()`, dropping groups left empty. The header's search and
+Add Carrier are gated on `carrier:view` / `carrier:create` in the layout, and the dashboard
+empty state gates each of its two buttons (and its copy) the same way. `AppShell` renders
+what it is handed and decides nothing.
+
+**Why it was missed.** The filter was written in Phase 2, when four roles existed and all
+four legitimately saw carriers, so "not an administrator" and "may see this page" were the
+same set and the deny-list was correct. Phase 15 added `sales` — a role defined by what it
+*cannot* see — and the nav was not revisited, because nothing connects the two files: the
+comment on `AppShell`'s prop even claims the layout decides "so a new role never has to be
+remembered here," which was true of that one boolean and false of the list beside it.
+**A deny-list of routes silently grants every route added after it, and every role added
+after it. Gate navigation on the same permission the action is gated on, never on a
+role-shaped boolean** — then adding a role is one edit to `permissions.ts`, and forgetting
+the sidebar is impossible.
+
+The empty-state instance adds a second lesson: **a unit test over the nav data structure
+cannot see an affordance that is not in the nav.** The `/import` button was found only by
+asserting against the whole rendered HTML over HTTP, which is the same reason
+`tests/http/` exists at all (see the `/support` leak in the 2026-08-30 entry).
+
+**Guarded by.** `tests/nav.test.ts` — nine cases pinning all three panels.
+`"regression: the old admin-href deny-list served sales the carrier and load pages"`
+reconstructs the deny-list rule and asserts it both leaks `/carriers`, `/loads` and
+`/invoices` **and** disagrees with the permission-gated nav, so the defect stays executable
+rather than only described here. `"sales sees only the dashboard and its own activity"`
+pins the exact href list, and `"a deactivated administrator loses every gated item"` covers
+the `!user.active` path the old boolean never consulted.
+
+Three cases in `tests/http/app.test.ts` assert the rendered page rather than the data
+structure, which is what caught the empty-state `/import` button:
+`"a sales agent's page carries no carrier, load or invoice link, and no carrier data"`,
+`"a dispatcher's sidebar keeps carriers and dispatch but drops Administration"` (the one
+that failed on `/import`), and `"My Activity is reachable by every role and shows only
+that user's own entries"`.
+
+---
+
 ## 2026-09-02 — `AdjustmentManager`'s "Kind" select reused an `id` already on the page
 
 **Severity:** low · **Status:** fixed · **Reached users:** no (caught in this session's own

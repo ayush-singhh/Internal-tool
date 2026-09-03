@@ -442,6 +442,70 @@ design" below).
 
 ---
 
+## Phase 16 — Role panels ✅ (2026-09-04)
+
+The client supplied a three-panel menu spec (Admin / Sales Agent / Dispatcher, ~40 feature
+areas). Most of it does not exist yet; this phase builds the **frame** the rest hangs on,
+and is sub-project **A** of seven — see "Role-panel spec decomposition" below.
+
+- [x] Sidebar is permission-driven. Every item in `NAV_GROUPS` (`src/lib/nav.ts`) names the
+      `Action` that reveals it; `visibleNav(user)` filters with `can()` and drops empty
+      groups. The three panels are not three lists — they are what is left of one list
+      after `can()` runs, so no role is named in a component and a role that gains an
+      action gains the page in the same edit.
+- [x] **Bug this closed:** `AppShell` previously filtered on a hardcoded list of four
+      administration hrefs, so every non-administrator still got Carriers, Dispatch,
+      Invoices and Reports — including `sales`, whose definition in `constants.ts` is that
+      it sees no carrier, no load and no rate. A `viewer` was also shown an "Add Carrier"
+      button it had no permission to use.
+- [x] Header's carrier search and Add Carrier button gated on `carrier:view` /
+      `carrier:create`, decided in the layout like the rest.
+- [x] Dashboard empty state gates its two buttons and its copy the same way — it used to
+      lead every role with "Import spreadsheet", pointing a dispatcher at a page
+      `import:run` refuses them. Found by the HTTP test, not the unit test: the button is
+      not in the nav, so only an assertion against the whole rendered page could see it.
+- [x] Dashboard branches on `carrier:view`, not on a role name: a role that cannot see
+      carriers gets its own body instead of the carrier metrics. Sales is that role today.
+- [x] `/activity` — My Activity, self-scoped by construction (the only id it accepts is the
+      session's own), so it needs no permission and every role has a real page on day one.
+      `recentActivity()` took an optional `userId` rather than growing a second function.
+- [x] `ActivityTimeline` links to the carrier when a row carries `legal_name`, so the same
+      component serves a carrier's history and a cross-carrier feed with no flag.
+- [x] Tests: `tests/nav.test.ts` pins all three panels at the data layer (9 cases, one of
+      them reconstructing the old deny-list so the defect stays executable); three new
+      cases in `tests/http/app.test.ts` assert the *rendered* page per role —
+      **364 unit + 18 HTTP passing**. tsc and `next build` clean.
+
+**Decided, against the supplied spec:** dispatchers keep carrier access. The client's
+Dispatcher menu omits Carriers, but `PRD.md` §2 grants it and every carrier row has a
+`dispatcher_id` — the menu is a sketch, not a permission revocation, and removing it would
+break the assignment model. Revisit only if the client asks explicitly.
+
+**Not built here:** a distinct Dispatcher dashboard. It would only differ decoratively
+until Tasks and Alerts exist, so it lands in sub-project C rather than being invented now.
+
+### Role-panel spec decomposition
+
+The supplied spec is seven sub-projects, not one. Each gets its own spec → plan → build.
+
+| # | Sub-project | Status |
+|---|---|---|
+| A | Role-scoped panels + nav | ✅ this phase |
+| B | Leads (entity, Submit Lead, lead → carrier conversion) | ⬜ next |
+| C | Tasks + Announcements + Alerts (one phase — shared "needs my attention" feed; `attention.ts` is half of it already) | ⬜ |
+| D | Communication (internal threads, dispatch ↔ sales) | ⬜ |
+| E | Planning Calendar, Working Notes, Brokers DNU list | ⬜ |
+| F | Accounts payable / receivable, Team Performance Report | ⬜ |
+| G | Map, Weather | ⬜ external APIs, recurring cost — see "Deferred by design" |
+
+Already covered by existing screens, despite appearing in the spec as new: Active Carriers
+(`/active`), Pre-onboarding (`/onboarding`), Carriers Account (`/carriers`), Load
+Management (`/loads`), Employee Management (`/team`), Reports, Invoice (the dispatch-fee
+half of Billing), Safety & Compliance (insurance-expiry rules only), My Activity
+(`/activity`, this phase).
+
+---
+
 ## Phase 11 — Making it sellable ✅
 
 The tool is being sold to other dispatch companies, so it now has to survive people the

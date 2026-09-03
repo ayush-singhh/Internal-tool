@@ -3,48 +3,11 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Icon, type IconName } from "./icons";
+import { Icon } from "./icons";
 import { Wordmark } from "./logo";
 import { signOutAction } from "@/lib/session-actions";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
-import type { NavCounts } from "@/lib/nav";
-
-type Item = { href: string; label: string; icon: IconName; count?: keyof NavCounts };
-type Group = { heading?: string; items: Item[]; adminOnly?: boolean };
-
-const GROUPS: Group[] = [
-  { items: [{ href: "/", label: "Dashboard", icon: "dashboard" }] },
-  {
-    heading: "Carriers",
-    items: [
-      { href: "/carriers", label: "All Carriers", icon: "carriers", count: "carriers" },
-      { href: "/active", label: "Active Carriers", icon: "active", count: "active" },
-      { href: "/onboarding", label: "Onboarding", icon: "onboarding", count: "onboarding" },
-      { href: "/offboarded", label: "Offboarded / Inactive", icon: "offboarded", count: "offboarded" },
-      { href: "/investigations", label: "Investigations", icon: "investigations", count: "investigations" },
-    ],
-  },
-  {
-    // Doc 2's order: Carrier Management, then Driver Management, then Load Management.
-    heading: "Dispatch",
-    items: [
-      { href: "/loads", label: "Load Management", icon: "loads", count: "loads" },
-      { href: "/drivers", label: "Drivers", icon: "drivers" },
-      { href: "/brokers", label: "Brokers", icon: "brokers" },
-      { href: "/invoices", label: "Invoices", icon: "note" },
-    ],
-  },
-  { heading: "Insights", items: [{ href: "/reports", label: "Reports", icon: "reports" }] },
-  {
-    heading: "Administration",
-    items: [
-      { href: "/team", label: "Team", icon: "team" },
-      { href: "/audit", label: "Audit Log", icon: "history" },
-      { href: "/settings", label: "Settings", icon: "settings" },
-      { href: "/import", label: "Import Data", icon: "import" },
-    ],
-  },
-];
+import type { NavCounts, NavGroup } from "@/lib/nav";
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
@@ -63,13 +26,17 @@ function initials(name: string) {
 export function AppShell({
   user,
   counts,
-  canAdmin,
+  groups,
+  canSearchCarriers,
+  canAddCarrier,
   children,
 }: {
   user: { name: string; email: string; role: Role };
   counts: NavCounts;
-  /** Decided by the layout with `can()`, so a new role never has to be remembered here. */
-  canAdmin: boolean;
+  /** Already filtered by `visibleNav()` in the layout — this component renders, it never decides. */
+  groups: NavGroup[];
+  canSearchCarriers: boolean;
+  canAddCarrier: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -78,11 +45,7 @@ export function AppShell({
 
   const nav = (
     <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
-      {GROUPS.map((group, gi) => {
-        const items = group.items.filter(
-          (item) => canAdmin || !["/team", "/audit", "/settings", "/import"].includes(item.href),
-        );
-        if (items.length === 0) return null;
+      {groups.map((group, gi) => {
         return (
           <div key={gi}>
             {group.heading && (
@@ -91,7 +54,7 @@ export function AppShell({
               </p>
             )}
             <ul className="space-y-0.5">
-              {items.map((item) => {
+              {group.items.map((item) => {
                 const current = isActive(pathname, item.href);
                 const n = item.count ? counts[item.count] : undefined;
                 return (
@@ -201,26 +164,30 @@ export function AppShell({
             <Icon name="filter" />
           </button>
 
-          <form action="/carriers" className="relative max-w-md flex-1">
-            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400">
-              <Icon name="search" className="h-4 w-4" />
-            </span>
-            <input
-              type="search"
-              name="q"
-              placeholder="Search name, owner, phone, email, MC, USDOT…"
-              aria-label="Search carriers"
-              className="field field-sm pl-8"
-            />
-          </form>
+          {canSearchCarriers && (
+            <form action="/carriers" className="relative max-w-md flex-1">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400">
+                <Icon name="search" className="h-4 w-4" />
+              </span>
+              <input
+                type="search"
+                name="q"
+                placeholder="Search name, owner, phone, email, MC, USDOT…"
+                aria-label="Search carriers"
+                className="field field-sm pl-8"
+              />
+            </form>
+          )}
 
-          <Link
-            href="/carriers/new"
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-[0.44rem] text-[0.82rem] font-semibold text-white shadow-sm transition hover:bg-brand-700"
-          >
-            <Icon name="plus" className="h-4 w-4" />
-            <span className="hidden sm:inline">Add Carrier</span>
-          </Link>
+          {canAddCarrier && (
+            <Link
+              href="/carriers/new"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-[0.44rem] text-[0.82rem] font-semibold text-white shadow-sm transition hover:bg-brand-700"
+            >
+              <Icon name="plus" className="h-4 w-4" />
+              <span className="hidden sm:inline">Add Carrier</span>
+            </Link>
+          )}
         </header>
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>

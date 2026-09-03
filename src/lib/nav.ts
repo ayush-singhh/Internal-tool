@@ -2,6 +2,8 @@ import "server-only";
 import { get } from "./db.ts";
 import type { Org } from "./tenant-db.ts";
 import { idsOf } from "./lookups.ts";
+import { can, type Action, type SessionUser } from "./permissions.ts";
+import type { IconName } from "../components/icons.tsx";
 import { STATUS, OFFBOARDING_STATUSES, LOAD_STATUS, LOAD_STATUS_ORDER } from "./constants.ts";
 
 /** Counts shown as badges in the sidebar, so the rail doubles as a workload summary. */
@@ -37,3 +39,71 @@ export function navCounts(org: Org) {
 }
 
 export type NavCounts = ReturnType<typeof navCounts>;
+
+export type NavItem = {
+  href: string;
+  label: string;
+  icon: IconName;
+  count?: keyof NavCounts;
+  /** Permission that reveals this item. Omitted means every signed-in user sees it. */
+  action?: Action;
+};
+export type NavGroup = { heading?: string; items: NavItem[] };
+
+/**
+ * The whole sidebar, with each item naming the permission that reveals it.
+ *
+ * The three panels the roles see — Admin, Dispatcher, Sales — are not three lists;
+ * they are what is left of this one after `can()` runs. That is why a role is never
+ * named here: adding one is a change to `permissions.ts` alone, and a role that gains
+ * an action gains the page in the same edit. The previous version filtered on a
+ * hardcoded list of four admin hrefs, which silently showed every *other* page to
+ * every role — including `sales`, which is meant to see no carrier at all.
+ */
+const NAV_GROUPS: NavGroup[] = [
+  { items: [{ href: "/", label: "Dashboard", icon: "dashboard" }] },
+  {
+    heading: "Carriers",
+    items: [
+      { href: "/carriers", label: "All Carriers", icon: "carriers", count: "carriers", action: "carrier:view" },
+      { href: "/active", label: "Active Carriers", icon: "active", count: "active", action: "carrier:view" },
+      { href: "/onboarding", label: "Onboarding", icon: "onboarding", count: "onboarding", action: "carrier:view" },
+      { href: "/offboarded", label: "Offboarded / Inactive", icon: "offboarded", count: "offboarded", action: "carrier:view" },
+      { href: "/investigations", label: "Investigations", icon: "investigations", count: "investigations", action: "carrier:view" },
+    ],
+  },
+  {
+    // Doc 2's order: Carrier Management, then Driver Management, then Load Management.
+    heading: "Dispatch",
+    items: [
+      { href: "/loads", label: "Load Management", icon: "loads", count: "loads", action: "load:view" },
+      { href: "/drivers", label: "Drivers", icon: "drivers", action: "load:view" },
+      { href: "/brokers", label: "Brokers", icon: "brokers", action: "load:view" },
+      { href: "/invoices", label: "Invoices", icon: "note", action: "invoice:view" },
+    ],
+  },
+  {
+    heading: "Insights",
+    items: [
+      { href: "/reports", label: "Reports", icon: "reports", action: "carrier:view" },
+      { href: "/activity", label: "My Activity", icon: "history" },
+    ],
+  },
+  {
+    heading: "Administration",
+    items: [
+      { href: "/team", label: "Team", icon: "team", action: "team:manage" },
+      { href: "/audit", label: "Audit Log", icon: "history", action: "settings:manage" },
+      { href: "/settings", label: "Settings", icon: "settings", action: "settings:manage" },
+      { href: "/import", label: "Import Data", icon: "import", action: "import:run" },
+    ],
+  },
+];
+
+/** The sidebar this user is allowed to see. Empty groups drop out entirely. */
+export function visibleNav(user: SessionUser): NavGroup[] {
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.action || can(user, item.action)),
+  })).filter((group) => group.items.length > 0);
+}

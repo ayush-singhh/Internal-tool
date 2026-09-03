@@ -7,25 +7,51 @@ import {
 } from "@/lib/stats";
 import { needsAttention, attentionTotal } from "@/lib/attention";
 import { recentActivity } from "@/lib/activity";
+import { can } from "@/lib/permissions";
 import { idOf } from "@/lib/lookups";
 import { STATUS } from "@/lib/constants";
 import { relativeTime } from "@/lib/format";
 import { Card, CardHeader, PageHeader, Badge, EmptyState } from "@/components/ui";
+import { ActivityTimeline } from "@/components/activity-timeline";
 import { BarList, TrendChart, StatTile } from "@/components/charts";
 import { Icon } from "@/components/icons";
 
 export default async function DashboardPage() {
   const { user, org } = await requireOrg();
-  const m = dashboardMetrics(org);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
+  // Every figure below this line counts carriers, so a role without `carrier:view` —
+  // sales today — must not reach it. Branching on the permission rather than on the
+  // role name means a later role that cannot see carriers is safe here for free.
+  if (!can(user, "carrier:view")) {
+    return (
+      <>
+        <PageHeader
+          title={`${greeting}, ${user.name.split(" ")[0]}`}
+          subtitle="Your recent work."
+        />
+        <Card>
+          <CardHeader title="Your activity" subtitle="Everything you have recorded, newest first." />
+          <ActivityTimeline entries={recentActivity(org, 20, user.id)} />
+        </Card>
+      </>
+    );
+  }
+
+  const m = dashboardMetrics(org);
   const statusHref = (value: string) => {
     const id = idOf(org, "status", value);
     return id ? `/carriers?status=${id}` : "/carriers";
   };
 
   if (m.total === 0) {
+    // Same rule as the sidebar: an affordance asks `can()` before it offers itself.
+    // These two were shown to every role, so a dispatcher's empty dashboard led with
+    // "Import spreadsheet" — a page `import:run` refuses them.
+    const mayImport = can(user, "import:run");
+    const mayAdd = can(user, "carrier:create");
     return (
       <>
         <PageHeader
@@ -34,16 +60,28 @@ export default async function DashboardPage() {
         />
         <EmptyState
           title="No carriers yet"
-          description="Import your existing carrier spreadsheet to get started, or add the first carrier manually. Every number on this dashboard is read live from the database."
+          description={
+            mayImport
+              ? "Import your existing carrier spreadsheet to get started, or add the first carrier manually. Every number on this dashboard is read live from the database."
+              : mayAdd
+                ? "Add the first carrier to get started. Every number on this dashboard is read live from the database."
+                : "No carriers have been added yet. Every number on this dashboard is read live from the database."
+          }
           action={
-            <div className="flex flex-wrap justify-center gap-2">
-              <Link href="/import" className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-brand-700">
-                Import spreadsheet
-              </Link>
-              <Link href="/carriers/new" className="rounded-lg border border-line-strong bg-surface px-3.5 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-50">
-                Add carrier
-              </Link>
-            </div>
+            mayImport || mayAdd ? (
+              <div className="flex flex-wrap justify-center gap-2">
+                {mayImport && (
+                  <Link href="/import" className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                    Import spreadsheet
+                  </Link>
+                )}
+                {mayAdd && (
+                  <Link href="/carriers/new" className="rounded-lg border border-line-strong bg-surface px-3.5 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-50">
+                    Add carrier
+                  </Link>
+                )}
+              </div>
+            ) : undefined
           }
         />
       </>
