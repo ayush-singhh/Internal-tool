@@ -23,6 +23,9 @@ Authentication is required for every page. There are no public routes except `/l
 
 ## 3. Core Objects
 
+- **Lead** — a carrier prospect, before there is a carrier record. Owned by the sales rep
+  working it. Converts into a Carrier exactly once, and is kept afterwards as the record of
+  how that carrier arrived.
 - **Carrier** — the central record. Identity, contact, regulatory, equipment, team
   assignment, onboarding, commercial terms, agreement/billing.
 - **Team Member (User)** — staff who log in and are assignable as Dispatcher or Account Manager.
@@ -42,6 +45,26 @@ Charts: by Status, by Dispatcher, by Account Manager, by Lead Source, Plan distr
 Monthly Onboarding trend, Monthly Offboarding trend.
 
 Plus **Recent Activity** (latest audit entries) and **Needs Attention** (see 4.8).
+
+### 4.1b Leads
+The sales pipeline, ahead of the carrier database.
+
+A lead carries only what is known before a relationship exists: company, contact, phone,
+email, MC/USDOT, fleet size, trailer type, lead source and free notes. No dispatcher, no
+plan, no rate, no agreement — those are carrier facts and are filled in after conversion.
+
+**Stages:** New → Contacted → Qualified, with Lost as the exit. **Won is not settable.**
+A lead becomes Won only by being converted, so a lead marked Won always has a carrier
+behind it.
+
+**Conversion** creates a carrier at *About to Be Active* carrying across exactly what the
+lead held, and nothing invented. It happens once. The lead survives, marked Won and
+pointing at the carrier, and is read-only from then on — it is the sales history of how
+that customer arrived, and rewriting it would make that history say something untrue.
+
+**Who sees what:** a sales rep sees and edits their own leads. Administrators and owners
+see the whole pipeline and are the only roles that may convert, because conversion writes
+a carrier record. Dispatchers, account managers and viewers have no lead access at all.
 
 ### 4.2 Carrier Database
 Sortable, filterable, searchable table with user-selectable visible columns.

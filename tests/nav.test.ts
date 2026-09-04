@@ -41,7 +41,7 @@ const hrefs = (role: string, active = 1) =>
 
 test("an administrator sees every section, Administration included", () => {
   const seen = hrefs(ROLES.ADMIN);
-  for (const href of ["/", "/carriers", "/loads", "/invoices", "/reports", "/team", "/settings", "/import", "/audit"]) {
+  for (const href of ["/", "/leads", "/carriers", "/loads", "/invoices", "/reports", "/team", "/settings", "/import", "/audit"]) {
     assert.ok(seen.includes(href), `admin should see ${href}`);
   }
 });
@@ -50,25 +50,27 @@ test("an owner sees the same sidebar as an administrator", () => {
   assert.deepEqual(hrefs(ROLES.OWNER), hrefs(ROLES.ADMIN));
 });
 
-test("a dispatcher gets carriers and dispatch but no Administration", () => {
+test("a dispatcher gets carriers and dispatch but no Administration and no pipeline", () => {
   const seen = hrefs(ROLES.DISPATCHER);
   for (const href of ["/", "/carriers", "/loads", "/drivers", "/brokers", "/invoices", "/reports", "/activity"]) {
     assert.ok(seen.includes(href), `dispatcher should see ${href}`);
   }
-  for (const href of ["/team", "/settings", "/import", "/audit"]) {
+  // The supplied Dispatcher menu has no Lead Management on it, and leads are refused
+  // rather than merely unlisted — see permissions.ts.
+  for (const href of ["/leads", "/team", "/settings", "/import", "/audit"]) {
     assert.ok(!seen.includes(href), `dispatcher must not see ${href}`);
   }
 });
 
-test("sales sees only the dashboard and its own activity — no carrier, load or invoice", () => {
-  assert.deepEqual(hrefs(ROLES.SALES), ["/", "/activity"]);
+test("sales sees leads and its own activity — no carrier, load or invoice", () => {
+  assert.deepEqual(hrefs(ROLES.SALES), ["/", "/leads", "/activity"]);
 });
 
-test("a viewer reads the book but reaches no administration page", () => {
+test("a viewer reads the book but reaches neither the pipeline nor an administration page", () => {
   const seen = hrefs(ROLES.VIEWER);
   assert.ok(seen.includes("/carriers"));
   assert.ok(seen.includes("/reports"));
-  for (const href of ["/team", "/settings", "/import", "/audit"]) {
+  for (const href of ["/leads", "/team", "/settings", "/import", "/audit"]) {
     assert.ok(!seen.includes(href), `viewer must not see ${href}`);
   }
 });
@@ -95,7 +97,7 @@ test("regression: the old admin-href deny-list served sales the carrier and load
     assert.ok(underOldRule.includes(leaked), `the old rule showed sales ${leaked}`);
   }
   assert.notDeepEqual(underOldRule, hrefs(ROLES.SALES));
-  assert.deepEqual(hrefs(ROLES.SALES), ["/", "/activity"]);
+  assert.deepEqual(hrefs(ROLES.SALES), ["/", "/leads", "/activity"]);
 });
 
 test("a group with no visible items is dropped rather than rendered empty", () => {

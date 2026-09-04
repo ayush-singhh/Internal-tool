@@ -752,6 +752,56 @@ export const MIGRATIONS: Migration[] = [
       db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_lines_org_id ON invoice_lines (organization_id, id)");
     },
   },
+  {
+    version: 18,
+    name: "leads: the sales pipeline ahead of a carrier record",
+    up: (db) => {
+      // A lead is a prospect a sales rep is working, before anything in `carriers` exists.
+      // Deliberately a separate table rather than a carrier with a "prospect" status: a
+      // lead has no dispatcher, no plan, no rate and no agreement, and every attention
+      // rule, report and export in the product treats a carriers row as a real customer.
+      // Widening `carriers` would have quietly changed the meaning of all of them.
+      //
+      // `owner_id` is the sales rep, and the only thing that scopes a sales user's view —
+      // see permissions.ts's Scope. `converted_carrier_id` is the whole conversion record:
+      // a converted lead is kept forever as the history of how that carrier arrived.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS leads (
+          id                   INTEGER PRIMARY KEY,
+          organization_id      INTEGER NOT NULL,
+          company_name         TEXT NOT NULL,
+          contact_name         TEXT,
+          phone                TEXT,
+          phone_digits         TEXT,
+          email                TEXT,
+          mc_number            TEXT,
+          usdot                TEXT,
+          truck_count          INTEGER,
+          trailer_type_id      INTEGER,
+          lead_source_id       INTEGER,
+          status               TEXT NOT NULL DEFAULT 'new',
+          notes                TEXT,
+          owner_id             INTEGER,
+          converted_carrier_id INTEGER,
+          converted_at         TEXT,
+          created_at           TEXT NOT NULL,
+          created_by           INTEGER,
+          updated_at           TEXT NOT NULL,
+          updated_by           INTEGER,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, trailer_type_id)      REFERENCES lookups  (organization_id, id),
+          FOREIGN KEY (organization_id, lead_source_id)       REFERENCES lookups  (organization_id, id),
+          FOREIGN KEY (organization_id, owner_id)             REFERENCES users    (organization_id, id),
+          FOREIGN KEY (organization_id, converted_carrier_id) REFERENCES carriers (organization_id, id),
+          FOREIGN KEY (organization_id, created_by)           REFERENCES users    (organization_id, id),
+          FOREIGN KEY (organization_id, updated_by)           REFERENCES users    (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_leads_org ON leads (organization_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_leads_org_owner ON leads (organization_id, owner_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_leads_org_status ON leads (organization_id, status)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_org_id ON leads (organization_id, id)");
+    },
+  },
 ];
 
 export function addColumn(

@@ -7,6 +7,7 @@ import {
 } from "@/lib/stats";
 import { needsAttention, attentionTotal } from "@/lib/attention";
 import { recentActivity } from "@/lib/activity";
+import { leadMetrics, type LeadMetrics } from "@/lib/leads";
 import { can } from "@/lib/permissions";
 import { idOf } from "@/lib/lookups";
 import { STATUS } from "@/lib/constants";
@@ -16,11 +17,37 @@ import { ActivityTimeline } from "@/components/activity-timeline";
 import { BarList, TrendChart, StatTile } from "@/components/charts";
 import { Icon } from "@/components/icons";
 
+/** The pipeline strip. `scope` only changes the labels — the figures were already
+ *  narrowed by the caller, because narrowing them here would be a second rule to keep
+ *  in step with the one on /leads. */
+function LeadTiles({ leads, scope }: { leads: LeadMetrics; scope: "all" | "mine" }) {
+  return (
+    <section aria-label="Lead pipeline" className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <StatTile
+        label={scope === "all" ? "Total leads" : "My leads"}
+        value={leads.total}
+        emphasis
+        href="/leads"
+        hint="Every prospect, converted and lost included"
+      />
+      <StatTile label="New" value={leads.new} tone="blue" href="/leads" />
+      <StatTile label="Qualified" value={leads.qualified} tone="purple" href="/leads" />
+      <StatTile label="Converted" value={leads.won} tone="green" href="/leads" hint="Became carrier records" />
+    </section>
+  );
+}
+
 export default async function DashboardPage() {
   const { user, org } = await requireOrg();
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
+  // Whoever manages the whole pipeline sees all of it; a rep sees their own. Same rule
+  // as /leads, and it has to be the same rule, or the tiles and the list disagree.
+  const leads = can(user, "lead:view")
+    ? leadMetrics(org, can(user, "lead:convert") ? undefined : user.id)
+    : null;
 
   // Every figure below this line counts carriers, so a role without `carrier:view` —
   // sales today — must not reach it. Branching on the permission rather than on the
@@ -30,12 +57,15 @@ export default async function DashboardPage() {
       <>
         <PageHeader
           title={`${greeting}, ${user.name.split(" ")[0]}`}
-          subtitle="Your recent work."
+          subtitle={leads ? "Your pipeline and your recent work." : "Your recent work."}
         />
-        <Card>
-          <CardHeader title="Your activity" subtitle="Everything you have recorded, newest first." />
-          <ActivityTimeline entries={recentActivity(org, 20, user.id)} />
-        </Card>
+        <div className="space-y-5">
+          {leads && <LeadTiles leads={leads} scope="mine" />}
+          <Card>
+            <CardHeader title="Your activity" subtitle="Everything you have recorded, newest first." />
+            <ActivityTimeline entries={recentActivity(org, 20, user.id)} />
+          </Card>
+        </div>
       </>
     );
   }
@@ -100,6 +130,8 @@ export default async function DashboardPage() {
       />
 
       <div className="space-y-5">
+        {leads && <LeadTiles leads={leads} scope="all" />}
+
         <section aria-label="Headline metrics" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile label="Total carriers" value={m.total} emphasis href="/carriers" hint="All records, including offboarded" />
           <StatTile label="Active" value={m.active} emphasis tone="green" href="/active" />

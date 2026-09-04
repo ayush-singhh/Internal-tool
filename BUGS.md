@@ -18,6 +18,44 @@ conversation it was noticed in.
 
 ---
 
+## 2026-09-04 — `transaction()` could not be nested, so reusing a write function broke it
+
+**Severity:** low · **Status:** fixed · **Reached users:** no — caught while building
+`convertLead`, before it shipped
+
+`transaction()` in `src/lib/db.ts` issued a bare `BEGIN`. SQLite has no nested
+transactions, so `BEGIN` inside an open transaction is an error — which meant any composite
+write that wanted to reuse an existing write function was blocked by whether that function
+happened to transact internally. `convertLead` has to create a carrier and mark the lead
+won together; `createCarrier` already transacts.
+
+**The trap, not the error.** The failure mode is not the visible throw. It is the *fix a
+person reaches for*: seeing "cannot start a transaction within a transaction", the obvious
+move is to drop the outer `transaction()` and run the two writes in sequence. That
+compiles, passes a happy-path test, and quietly gives up atomicity — a carrier created with
+no lead pointing at it, or a lead marked won with no carrier behind it. The second-most
+obvious move, inlining a copy of `createCarrier`'s INSERT, duplicates the activity-logging
+it does and drifts from it later.
+
+**Why it was missed:** every previous caller transacted at exactly one level, so the
+constraint never showed. `transaction()` reads like a general-purpose combinator and gives
+no hint that it composes with nothing — the kind of limitation that stays invisible until
+the first feature genuinely built from two others, which is precisely when someone is least
+inclined to go and change a shared primitive.
+
+**Fixed:** nested calls join the outer transaction through a `SAVEPOINT` and release it,
+rather than beginning a second one. An outer rollback still discards everything the inner
+call wrote — the savepoint only makes an inner failure recoverable, it does not let an
+inner success survive an outer failure. The savepoint name interpolates a private counter,
+which is the one interpolation SQLite leaves no parameter for; nothing caller-supplied
+reaches it.
+
+**Guarded by:** three cases in `tests/leads.test.ts` — nesting joins rather than throws, an
+outer rollback discards the nested writes, and a caught inner failure loses only the inner
+writes.
+
+---
+
 ## 2026-09-04 — the sidebar showed every non-administration page to every role
 
 **Severity:** medium · **Status:** fixed · **Reached users:** no known instance — `sales`

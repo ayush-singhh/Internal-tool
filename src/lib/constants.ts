@@ -51,6 +51,55 @@ export const OFFBOARDING_STATUSES: string[] = [
 ];
 
 /**
+ * A lead's position in the sales pipeline — the stage before a carrier record exists.
+ *
+ * Kept out of `lookups` for the same reason LOAD_STATUS is: these drive behaviour rather
+ * than label it. `won` in particular is not a value a person may pick; it is what
+ * `convertLead` writes, and the only thing that writes it.
+ */
+export const LEAD_STATUS = {
+  NEW: "new",
+  CONTACTED: "contacted",
+  QUALIFIED: "qualified",
+  WON: "won",
+  LOST: "lost",
+} as const;
+
+export type LeadStatus = (typeof LEAD_STATUS)[keyof typeof LEAD_STATUS];
+
+/** The stages a person may set by hand. `won` is absent on purpose — a lead becomes won
+ *  by being converted into a carrier, never by someone choosing it from a dropdown. */
+export const LEAD_STATUS_SETTABLE: LeadStatus[] = [
+  LEAD_STATUS.NEW,
+  LEAD_STATUS.CONTACTED,
+  LEAD_STATUS.QUALIFIED,
+  LEAD_STATUS.LOST,
+];
+
+/** Still worth working. Everything else has left the pipeline in one direction or the other. */
+export const LEAD_STATUS_OPEN: LeadStatus[] = [
+  LEAD_STATUS.NEW,
+  LEAD_STATUS.CONTACTED,
+  LEAD_STATUS.QUALIFIED,
+];
+
+export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
+  new: "New",
+  contacted: "Contacted",
+  qualified: "Qualified",
+  won: "Won — Converted",
+  lost: "Lost",
+};
+
+export const LEAD_STATUS_TONE: Record<LeadStatus, Tone> = {
+  new: "blue",
+  contacted: "amber",
+  qualified: "purple",
+  won: "green",
+  lost: "slate",
+};
+
+/**
  * A load's position in the workflow. One value at a time, and it only moves forward.
  *
  * Kept out of `lookups` on purpose, unlike carrier status: these seven drive behaviour

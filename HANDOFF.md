@@ -4,11 +4,12 @@ This file is the resume point for a fresh session. It is kept current at the end
 working session. For the full picture read, in order: `PRD.md` → `Architecture.md` →
 `AI Rules.md` → `Plan.md` → `MIGRATION-PLAN.md`.
 
-**Last updated:** 2026-09-02. The product has a second half now: the **Asterism dispatch
-domain**, built from scratch on this codebase. Phase 15 is now fully complete, including
-invoicing. Read `BUGS.md` first — the test suite was found writing into
-`data/carrier-hub.db`, and the guard that was meant to prevent that checked the wrong thing
-(fixed).
+**Last updated:** 2026-09-04. The product has a second half now: the **Asterism dispatch
+domain**, built from scratch on this codebase. Phase 15 is fully complete, including
+invoicing; **Phases 16 (role panels) and 17 (leads)** then landed the first two of seven
+sub-projects decomposed from the client's three-panel menu spec. Read `BUGS.md` first —
+the 2026-09-04 entry (the sidebar's deny-list served every page to every role) is the one
+to have in mind before touching any permission or nav code.
 
 ---
 
@@ -29,9 +30,9 @@ sequencing are now stale — see below).
 **Branch:** `multi-tenant` (NOT merged to `main`). `main` is at the single-tenant
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
-**Working tree:** clean — Phase 15 (loads, drivers/brokers, documents, invoicing) is fully
-committed. **Tests:** 355 passing (`npm test`) + 15 over HTTP (`npm run test:http`).
-**Build:** clean.
+**Working tree:** clean — Phases 15 (loads, drivers/brokers, documents, invoicing), 16
+(role panels) and 17 (leads) are all committed. **Tests:** 386 passing (`npm test`) + 20
+over HTTP (`npm run test:http`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -41,15 +42,20 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ## In flight — pick this up first
 
-Nothing is in flight. Phase 15 (Asterism dispatch: loads, drivers/brokers, documents,
-invoicing) is complete and committed — see "Asterism dispatch — what exists ✅" below for
-what's there.
+Nothing is in flight. Phases 15, 16 and 17 are complete and committed.
+
+**The client's three-panel spec is seven sub-projects (A–G)** — the table lives in
+`Plan.md` under Phase 16, and it is the roadmap now. **A (role panels) and B (leads) are
+done. C — Tasks + Announcements + Alerts — is next**, and is the largest remaining chunk:
+it appears on all three panels, and `attention.ts` is already half of the "needs my
+attention" feed it needs.
 
 **Candidates for what's next, roughly ready-now → waiting-on-something:**
 
-1. **Redeploy `carrier-hub.fly.dev`.** The live app is still on migration 16 —
-   invoicing (migration 17) isn't usable there yet. Ready to do now, same process as the
-   last redeploy (migrate through 17, restart the one machine). No code work needed.
+1. **Redeploy `carrier-hub.fly.dev`.** The live app is still on migration 16 — invoicing
+   (17) and leads (18) are not usable there yet. Ready to do now, same process as the last
+   redeploy (migrate through 18, restart the one machine). No code work needed. **This has
+   now slipped two phases behind; it is the one item that gets worse by waiting.**
 2. **Carrier → Broker freight invoice.** The natural next phase of the invoicing work —
    schema already leaves room (`invoices.invoice_type`, see
    `docs/superpowers/specs/2026-09-02-invoicing-design.md` §1) — but only worth starting
@@ -93,7 +99,8 @@ what's there.
   to a load, migration 16, S3-backed via `DOCUMENTS_S3_URL`. `/api/documents/[id]` streams
   the download, gated on `load:view`; upload re-checks `load:manage`. `document-manager.tsx`
   is the Documents card on `/loads/[id]`. Append-only — no delete, ever.
-- **Roles** — added `sales` (refused everything: their sidebar has neither Carrier nor Load
+- **Roles** — added `sales`, which was refused everything until Phase 17 gave it the four
+  `lead:*` actions and nothing else (its sidebar still carries neither Carrier nor Load
   Management). Seven dispatch actions; `load:rate` is separate from `load:view`, `load:close`
   is admin-only, and `broker:create` is separate from `broker:edit` so a dispatcher's typo
   cannot quietly become a permanent broker. Matrix tested exhaustively in
@@ -120,6 +127,37 @@ what's there.
   the design doc's "What's explicitly not built" for the reasoning behind each.
 
 **Decided, in `Plan.md`:** no HR module; live truck tracking is V2 and only on request.
+
+---
+
+## Role panels and leads — what exists ✅ (Phases 16–17)
+
+- **The sidebar is a permission surface, not decoration.** Every item in `NAV_GROUPS`
+  (`src/lib/nav.ts`) names the `Action` that reveals it; `visibleNav(user)` filters with
+  `can()` and drops empty groups. No role is named in a component. Before this, `AppShell`
+  filtered on a hardcoded list of four administration hrefs, so the rule it actually
+  encoded was "not an administrator ⇒ sees everything else" — and `sales`, defined by
+  seeing no carrier and no load, was served both. See `BUGS.md`, 2026-09-04.
+- **Leads are a table, not a carrier status** (migration 18). A lead has no dispatcher,
+  plan, rate or agreement, and every attention rule, report and export treats a `carriers`
+  row as a real customer — widening `carriers` would have changed the meaning of all of
+  them. `leads` is registered in `TENANT_TABLES` and in `tenant-lifecycle.ts`'s `OWNED`
+  plus its ordered deletion (before carriers/users/lookups; none of those cascade).
+- **`won` is unreachable by hand.** It is what `convertLead` writes and the only thing
+  that writes it; `LEAD_STATUS_SETTABLE` omits it and both write paths refuse it.
+  Conversion is one-time, creates a carrier at *About to Be Active* carrying only what the
+  lead held, keeps the lead as the record of how that customer arrived, and makes it
+  read-only from then on.
+- **`transaction()` nests now** (`src/lib/db.ts`) — nested calls join the outer
+  transaction through a savepoint instead of hitting SQLite's "cannot BEGIN inside a
+  transaction". `convertLead` calls `createCarrier`, which already transacts; without this
+  a composite write had to inline a copy of whatever it reused. An outer rollback still
+  discards everything the inner one wrote (three cases in `tests/leads.test.ts`).
+- **One page serves both panels.** `/leads` narrows by *query* (`listLeads(org, ownerId?)`)
+  rather than filtering rendered rows, so another rep's prospect never reaches the HTML.
+  The dashboard picks its scope with the identical `can(user, "lead:convert")` test.
+- **`Scope` replaced `CarrierScope`** (old name kept as an alias) and gained `owner_id`, so
+  one ownership check serves "carriers assigned to me" and "leads I submitted" both.
 
 **Postgres is deferred, not cancelled.** I attempted the async conversion and reverted it:
 ~700 edits across 65 files, automation reaches ~85%, and the remainder has semantic traps

@@ -27,6 +27,32 @@ export function carrierFormOptions(org: Org): CarrierFormOptions {
   };
 }
 
+/**
+ * The lead form's three pickers. `owners` lists only the people who actually work a
+ * pipeline — sales, account managers and administrators — so a lead cannot be parked
+ * with a dispatcher by picking them out of a list of everybody.
+ */
+export function leadFormOptions(org: Org): {
+  trailerTypes: FormOption[];
+  sources: FormOption[];
+  owners: FormOption[];
+} {
+  const kind = (k: Parameters<typeof options>[1]) =>
+    options(org, k).map((l) => ({ id: l.id, label: l.label }));
+
+  return {
+    trailerTypes: kind("trailer_type"),
+    sources: kind("lead_source"),
+    owners: all<{ id: number; name: string; role: string }>(
+      `SELECT id, name, role FROM users
+        WHERE organization_id = ? AND active = 1
+          AND role IN ('sales', 'account_manager', 'admin', 'owner')
+        ORDER BY name`,
+      [org.id],
+    ).map((u) => ({ id: u.id, label: u.name })),
+  };
+}
+
 export function carrierOptions(org: Org): FormOption[] {
   return all<{ id: number; legal_name: string }>(
     "SELECT id, legal_name FROM carriers WHERE organization_id = ? ORDER BY legal_name",

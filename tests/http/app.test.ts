@@ -381,6 +381,7 @@ test("a sales agent's page carries no carrier, load or invoice link, and no carr
     );
   }
   assert.ok(res.body.includes('href="/activity"'), "sales still gets My Activity");
+  assert.ok(res.body.includes('href="/leads"'), "sales gets the pipeline, which is its job");
   assert.ok(
     !res.body.includes("PANEL SECRET CARRIER LLC"),
     "the sales dashboard must not render carrier data",
@@ -405,9 +406,86 @@ test("a dispatcher's sidebar keeps carriers and dispatch but drops Administratio
   for (const href of ["/carriers", "/loads", "/brokers", "/invoices", "/reports", "/activity"]) {
     assert.ok(res.body.includes(`href="${href}"`), `dispatcher should see ${href}`);
   }
-  for (const href of ["/team", "/settings", "/import", "/audit"]) {
+  for (const href of ["/leads", "/team", "/settings", "/import", "/audit"]) {
     assert.ok(!res.body.includes(`href="${href}"`), `dispatcher must not see ${href}`);
   }
+});
+
+// ── Leads (Phase 17) ─────────────────────────────────────────────────────────
+
+/**
+ * A sales rep's own pipeline, over the wire.
+ *
+ * The rule is that /leads is *queried* per owner, not filtered after the fact — so the
+ * proof has to be that another rep's prospect never appears in the HTML at all. A test
+ * against `listLeads` alone would pass even if the page rendered everything and hid the
+ * rest with CSS.
+ */
+test("a sales rep's pipeline shows their own leads and never another rep's", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Pipeline Panel Co", "pipeowner@panel.test");
+
+  const addRep = (name: string, email: string) => {
+    app.db.run(
+      `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                          email_verified_at, created_at, updated_at)
+       VALUES (?, ?, ?, 'x', ?, 1, ?, ?, ?)`,
+      [org.id, name, email, ROLES.SALES, now, now, now],
+    );
+    return app.db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
+  };
+  const mine = addRep("Pip Sales", "pipesales@panel.test");
+  const theirs = addRep("Other Rep", "pipeother@panel.test");
+
+  for (const [company, owner] of [["MY OWN PROSPECT LLC", mine], ["THEIR PROSPECT LLC", theirs]] as const) {
+    app.db.run(
+      `INSERT INTO leads (organization_id, company_name, status, owner_id, created_at, updated_at)
+       VALUES (?, ?, 'new', ?, ?, ?)`,
+      [org.id, company, owner, now, now],
+    );
+  }
+
+  const res = await app.get("/leads", app.session("pipesales@panel.test"));
+  assert.equal(res.status, 200);
+  assert.ok(res.body.includes("MY OWN PROSPECT LLC"), "a rep sees their own lead");
+  assert.ok(
+    !res.body.includes("THEIR PROSPECT LLC"),
+    "another rep's prospect must not reach the page at all",
+  );
+  assert.ok(!res.body.includes(">Convert<"), "sales is not offered conversion");
+
+  // The owner runs the pipeline, so the same page shows both.
+  const asOwner = await app.get("/leads", app.session("pipeowner@panel.test"));
+  assert.equal(asOwner.status, 200);
+  assert.ok(asOwner.body.includes("MY OWN PROSPECT LLC"));
+  assert.ok(asOwner.body.includes("THEIR PROSPECT LLC"));
+});
+
+test("a dispatcher is turned away from the pipeline entirely", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "No Pipeline Co", "nopipeowner@panel.test");
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Dan Dispatch', 'nopipedisp@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.DISPATCHER, now, now, now],
+  );
+  app.db.run(
+    `INSERT INTO leads (organization_id, company_name, status, created_at, updated_at)
+     VALUES (?, 'DISPATCH MUST NOT SEE THIS LLC', 'new', ?, ?)`,
+    [org.id, now, now],
+  );
+
+  const res = await app.get("/leads", app.session("nopipedisp@panel.test"));
+  assert.ok(res.status === 307 || res.status === 302, `expected a redirect, got ${res.status}`);
+  assert.ok(
+    !res.body.includes("DISPATCH MUST NOT SEE THIS LLC"),
+    "a redirect must not carry the data it is redirecting away from",
+  );
 });
 
 test("My Activity is reachable by every role and shows only that user's own entries", async () => {

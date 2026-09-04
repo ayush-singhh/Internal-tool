@@ -5,8 +5,10 @@ phase to finish. Status is updated as part of the phase it describes.
 
 Legend: ✅ done · 🔨 in progress · ⬜ not started
 
-**All ten phases complete.** 126 tests passing, production build clean, permission matrix
-verified over HTTP for every role.
+**Phases 0–17 complete.** 386 unit + 20 HTTP tests passing, production build clean,
+permission matrix verified over HTTP for every role. Phases 16–17 are the first two of
+seven sub-projects decomposed from the client's three-panel spec — see the decomposition
+table under Phase 16.
 
 ---
 
@@ -490,9 +492,9 @@ The supplied spec is seven sub-projects, not one. Each gets its own spec → pla
 
 | # | Sub-project | Status |
 |---|---|---|
-| A | Role-scoped panels + nav | ✅ this phase |
-| B | Leads (entity, Submit Lead, lead → carrier conversion) | ⬜ next |
-| C | Tasks + Announcements + Alerts (one phase — shared "needs my attention" feed; `attention.ts` is half of it already) | ⬜ |
+| A | Role-scoped panels + nav | ✅ Phase 16 |
+| B | Leads (entity, Submit Lead, lead → carrier conversion) | ✅ Phase 17 |
+| C | Tasks + Announcements + Alerts (one phase — shared "needs my attention" feed; `attention.ts` is half of it already) | ⬜ next |
 | D | Communication (internal threads, dispatch ↔ sales) | ⬜ |
 | E | Planning Calendar, Working Notes, Brokers DNU list | ⬜ |
 | F | Accounts payable / receivable, Team Performance Report | ⬜ |
@@ -502,7 +504,61 @@ Already covered by existing screens, despite appearing in the spec as new: Activ
 (`/active`), Pre-onboarding (`/onboarding`), Carriers Account (`/carriers`), Load
 Management (`/loads`), Employee Management (`/team`), Reports, Invoice (the dispatch-fee
 half of Billing), Safety & Compliance (insurance-expiry rules only), My Activity
-(`/activity`, this phase).
+(`/activity`, Phase 16).
+
+---
+
+## Phase 17 — Leads ✅ (2026-09-04)
+
+Sub-project **B**. The Sales Agent's entire reason to exist: before this, `can()` returned
+`false` for every action a `sales` user could name, so the role had a login and nothing to
+do with it.
+
+- [x] **Migration 18 — `leads`.** A separate table, not a carrier with a "prospect"
+      status. A lead has no dispatcher, no plan, no rate and no agreement, and every
+      attention rule, report and export in the product treats a `carriers` row as a real
+      customer — widening `carriers` would have quietly changed the meaning of all of them.
+- [x] Four actions in `permissions.ts`: `lead:view`, `lead:create`, `lead:edit`,
+      `lead:convert`. The `sales` role stopped being a blanket `return false` and became a
+      switch listing what is *theirs* — still refusing everything else by default, so the
+      role gains nothing it was not given on purpose.
+- [x] `CarrierScope` became `Scope` (the old name kept as an alias) and gained `owner_id`.
+      One extra disjunct in the ownership check now serves both "the carriers assigned to
+      me" and "the leads I submitted", rather than a second scope type and a second rule.
+- [x] `/leads` — one page, both panels. A rep's own pipeline and an administrator's whole
+      pipeline are the same screen with a different **query**: `listLeads(org, ownerId?)`
+      narrows in SQL, so another rep's prospect never reaches the HTML at all. The
+      dashboard uses the identical `can(user, "lead:convert")` test to pick its scope,
+      because two rules would eventually disagree.
+- [x] `won` is not a settable stage. It is what `convertLead` writes and the only thing
+      that writes it — `LEAD_STATUS_SETTABLE` omits it, both write paths refuse it, and
+      the form never offers it. A lead marked won with no carrier behind it cannot exist.
+- [x] Conversion creates a carrier at **About to Be Active** carrying only what the lead
+      held (contact, MC/USDOT, fleet, trailer type, lead source). Plan, pricing and the
+      agreement are filled in afterwards on the carrier profile; nothing is invented.
+      The lead is kept, marked won, and points at the carrier — it is the record of how
+      that customer arrived — and is read-only from then on, for everybody.
+- [x] **`transaction()` now nests** (`src/lib/db.ts`). `convertLead` calls `createCarrier`,
+      which already transacts, and `BEGIN` inside a transaction is a SQLite error — so
+      before this a composite write had to inline a copy of whatever it wanted to reuse.
+      Nested calls join the outer transaction through a savepoint; an outer rollback still
+      discards everything the inner one wrote. Three cases pin exactly that.
+- [x] `leads` registered in `TENANT_TABLES` (the query guard) and in `OWNED` + the ordered
+      deletion in `tenant-lifecycle.ts` — before carriers, users and lookups, since a lead
+      points at all three and none of those references cascades.
+- [x] Tests: `tests/leads.test.ts` (22 cases) and two new HTTP cases —
+      **386 unit + 20 HTTP passing**. tsc and `next build` clean.
+
+**Decided, against the supplied spec:** `lead:view` is admin/owner and sales, and nobody
+else. The spec puts Lead Management on the Admin and Sales Agent menus and on no other, so
+dispatchers, account managers and viewers are refused rather than quietly included — the
+temptation was to let "everyone except dispatchers" read the pipeline, which is how the
+Phase 16 deny-list bug was written in the first place.
+
+**Not built here:** a lead's own notes/activity trail (leads carry one notes field; the
+timeline belongs with sub-project C's task feed), duplicate detection against existing
+carriers by MC number, and any commission tracking — `sales` still has no commission
+action because there is no commission feature.
 
 ---
 

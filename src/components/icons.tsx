@@ -14,12 +14,14 @@ export type IconName =
   | "investigations" | "reports" | "team" | "settings" | "import"
   | "search" | "plus" | "filter" | "chevron" | "columns" | "download"
   | "logout" | "note" | "history" | "warning" | "check" | "close" | "edit" | "back"
-  | "loads" | "drivers" | "brokers";
+  | "loads" | "drivers" | "brokers" | "leads";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   dashboard: <><rect x="2.5" y="2.5" width="6" height="6" rx="1.3"/><rect x="11.5" y="2.5" width="6" height="6" rx="1.3"/><rect x="2.5" y="11.5" width="6" height="6" rx="1.3"/><rect x="11.5" y="11.5" width="6" height="6" rx="1.3"/></>,
   carriers: <><rect x="1.8" y="5" width="11" height="8" rx="1.5"/><path d="M12.8 7.5h2.6a1.4 1.4 0 0 1 1.2.68l1.3 2.2a1.4 1.4 0 0 1 .2.72V12a1 1 0 0 1-1 1h-4.3"/><circle cx="6" cy="15" r="1.8"/><circle cx="14.4" cy="15" r="1.8"/></>,
   active: <><circle cx="10" cy="10" r="7.3"/><path d="m6.9 10.2 2.1 2.1 4.1-4.4"/></>,
+  // A funnel — the pipeline, narrowing toward a carrier.
+  leads: <><path d="M3 3.6h14l-5.4 6.4v6.2l-3.2-1.8v-4.4L3 3.6Z"/></>,
   onboarding: <><path d="M10 2.6v9.8M6.6 9l3.4 3.4L13.4 9"/><path d="M3.2 13.4v2.2a1.8 1.8 0 0 0 1.8 1.8h10a1.8 1.8 0 0 0 1.8-1.8v-2.2"/></>,
   offboarded: <><path d="M10 12.4V2.6M6.6 6l3.4-3.4L13.4 6"/><path d="M3.2 13.4v2.2a1.8 1.8 0 0 0 1.8 1.8h10a1.8 1.8 0 0 0 1.8-1.8v-2.2"/></>,
   investigations: <><circle cx="8.8" cy="8.8" r="5.6"/><path d="m13 13 4 4"/><path d="M8.8 6.2v2.8M8.8 11.3v.05"/></>,

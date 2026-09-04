@@ -165,20 +165,38 @@ export function exec(sql: string): void {
   conn().exec(sql);
 }
 
+let depth = 0;
+
 /**
  * Runs `fn` in a single transaction and rolls back on any throw. Imports and multi-row
  * mutations use this so a partial write can never land.
+ *
+ * Nested calls join the outer transaction through a savepoint rather than failing:
+ * `BEGIN` inside a transaction is an error in SQLite, so before this a composite
+ * operation could not reuse a write function that already transacted — it had to inline
+ * a copy of it. `convertLead` calls `createCarrier` and must still be all-or-nothing.
+ *
+ * The savepoint name is interpolated because SQLite accepts no parameter there. It is a
+ * private counter, never a caller's value; the no-interpolation rule in AI Rules.md is
+ * about untrusted input reaching SQL, and nothing untrusted can reach this.
  */
 export function transaction<T>(fn: () => T): T {
   const database = conn();
-  database.exec("BEGIN");
+  const nested = depth > 0;
+  const savepoint = `tx_${depth}`;
+  database.exec(nested ? `SAVEPOINT ${savepoint}` : "BEGIN");
+  depth++;
   try {
     const result = fn();
-    database.exec("COMMIT");
+    database.exec(nested ? `RELEASE ${savepoint}` : "COMMIT");
     return result;
   } catch (error) {
-    database.exec("ROLLBACK");
+    // Rethrown either way, so an inner rollback always reaches the outer one and the
+    // whole operation unwinds — the savepoint only makes the inner half tidy.
+    database.exec(nested ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK");
     throw error;
+  } finally {
+    depth--;
   }
 }
 

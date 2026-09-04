@@ -9,13 +9,30 @@ export type SessionUser = {
   active: number;
 };
 
-/** The subset of a carrier needed to decide ownership. */
-export type CarrierScope = {
-  dispatcher_id: number | null;
-  account_manager_id: number | null;
+/**
+ * The subset of a record needed to decide ownership — a carrier's assignments, or a
+ * lead's owner. Every field is optional so a caller passes whichever its row has; a
+ * missing one simply never matches, which keeps the check fail-closed by default.
+ */
+export type Scope = {
+  dispatcher_id?: number | null;
+  account_manager_id?: number | null;
+  /** Leads: the person who submitted it and works it. */
+  owner_id?: number | null;
 };
 
+/** The carrier call sites' name for it. Same shape. */
+export type CarrierScope = Scope;
+
 export type Action =
+  // Leads — the stage before a carrier record exists
+  /** See the pipeline. Sales see only their own; the scope argument is what decides. */
+  | "lead:view"
+  | "lead:create"
+  | "lead:edit"
+  /** Turn a qualified lead into a carrier record. It writes a carrier, so it belongs to
+   *  the people who may create one — which is never sales. */
+  | "lead:convert"
   // Carriers — the CRM half
   | "carrier:view"
   | "carrier:create"
@@ -61,7 +78,7 @@ export type Action =
 export function can(
   user: SessionUser | null | undefined,
   action: Action,
-  carrier?: CarrierScope | null,
+  scope?: Scope | null,
 ): boolean {
   if (!user || !user.active) return false;
   // Platform support is not a role *inside* an organisation. Their access is read-only,
@@ -72,15 +89,30 @@ export function can(
   // does. Tenancy added the role; this is the only place that decides what it means.
   if (user.role === ROLES.ADMIN || user.role === ROLES.OWNER) return true;
 
-  // Sales submits leads and tracks onboarding. They see no rate, no invoice and no load,
-  // and their sidebar carries neither Carrier nor Load Management — so rather than listing
-  // what they are refused, they are refused everything not explicitly theirs. Leads and
-  // commission become their own actions when those features exist.
-  if (user.role === ROLES.SALES) return false;
-
   const assigned =
-    !!carrier &&
-    (carrier.dispatcher_id === user.id || carrier.account_manager_id === user.id);
+    !!scope &&
+    (scope.dispatcher_id === user.id ||
+      scope.account_manager_id === user.id ||
+      scope.owner_id === user.id);
+
+  // Sales submits leads and works them. They see no rate, no invoice and no load, and
+  // their sidebar carries neither Carrier nor Load Management — so rather than listing
+  // what they are refused, they are refused everything not explicitly theirs. Commission
+  // becomes its own action when that feature exists.
+  if (user.role === ROLES.SALES) {
+    switch (action) {
+      case "lead:view":
+      case "lead:create":
+        return true;
+      // Their own leads, and no one else's. Without a scope this answers "could this role
+      // ever edit a lead?" — which is what decides whether the button renders at all.
+      case "lead:edit":
+        return scope === undefined ? true : assigned;
+      // Not lead:convert. Converting writes a carrier record, and sales cannot create one.
+      default:
+        return false;
+    }
+  }
 
   switch (action) {
     case "carrier:view":
@@ -104,7 +136,7 @@ export function can(
       // Without a specific carrier this answers "could this role ever edit?" —
       // used to decide whether to render an action at all.
       if (user.role !== ROLES.DISPATCHER && user.role !== ROLES.ACCOUNT_MANAGER) return false;
-      return carrier === undefined ? true : assigned;
+      return scope === undefined ? true : assigned;
 
     // Dispatch is the dispatcher's job, and nobody else's below administrator.
     case "load:manage":
@@ -112,6 +144,13 @@ export function can(
     case "broker:create":
       return user.role === ROLES.DISPATCHER;
 
+    // The supplied panel spec puts Lead Management on the Admin and Sales menus and on no
+    // other. Dispatchers, account managers and viewers are therefore refused rather than
+    // quietly included — the last thing this sidebar needs is a second deny-list.
+    case "lead:view":
+    case "lead:create":
+    case "lead:edit":
+    case "lead:convert":
     case "carrier:delete":
     case "import:run":
     case "load:close":
@@ -126,9 +165,9 @@ export function can(
 export function assertCan(
   user: SessionUser | null | undefined,
   action: Action,
-  carrier?: CarrierScope | null,
+  scope?: Scope | null,
 ): asserts user is SessionUser {
-  if (!can(user, action, carrier)) {
+  if (!can(user, action, scope)) {
     throw new Error("Not authorized to perform this action.");
   }
 }

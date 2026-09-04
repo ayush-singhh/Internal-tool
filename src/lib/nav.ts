@@ -4,7 +4,9 @@ import type { Org } from "./tenant-db.ts";
 import { idsOf } from "./lookups.ts";
 import { can, type Action, type SessionUser } from "./permissions.ts";
 import type { IconName } from "../components/icons.tsx";
-import { STATUS, OFFBOARDING_STATUSES, LOAD_STATUS, LOAD_STATUS_ORDER } from "./constants.ts";
+import {
+  STATUS, OFFBOARDING_STATUSES, LOAD_STATUS, LOAD_STATUS_ORDER, LEAD_STATUS_OPEN,
+} from "./constants.ts";
 
 /** Counts shown as badges in the sidebar, so the rail doubles as a workload summary. */
 export function navCounts(org: Org) {
@@ -26,6 +28,12 @@ export function navCounts(org: Org) {
   const open = LOAD_STATUS_ORDER.slice(0, LOAD_STATUS_ORDER.indexOf(LOAD_STATUS.DELIVERED));
 
   return {
+    // Open leads only — the badge is a workload figure, and a won or lost lead has
+    // stopped being work. Same rule as the loads badge below.
+    leads: get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM leads WHERE organization_id = ? AND status IN (${LEAD_STATUS_OPEN.map(() => "?").join(",")})`,
+      [org.id, ...LEAD_STATUS_OPEN],
+    )!.n,
     carriers: get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers WHERE organization_id = ?", [org.id])!.n,
     loads: get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM loads WHERE organization_id = ? AND status IN (${open.map(() => "?").join(",")})`,
@@ -62,6 +70,14 @@ export type NavGroup = { heading?: string; items: NavItem[] };
  */
 const NAV_GROUPS: NavGroup[] = [
   { items: [{ href: "/", label: "Dashboard", icon: "dashboard" }] },
+  {
+    // The sales rep's whole panel, and the front of the admin's. It sits above Carriers
+    // because that is the order the work happens in: a lead becomes a carrier.
+    heading: "Sales",
+    items: [
+      { href: "/leads", label: "Lead Management", icon: "leads", count: "leads", action: "lead:view" },
+    ],
+  },
   {
     heading: "Carriers",
     items: [
