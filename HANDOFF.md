@@ -43,7 +43,47 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ## In flight — pick this up first
 
-Nothing is in flight. Phases 15–21 are complete and committed.
+**Phase 22 (sub-project F) is half-started and uncommitted.** Everything through Phase 21
+is committed and green; the working tree has two extra files that compile, pass, and are
+not yet wired to anything:
+
+- **`src/lib/finance.ts` (new, complete, untested).** Aged receivables (`receivables()`)
+  and the team-performance aggregate (`teamPerformance()`, `performanceTotals()`). Written
+  and typechecking; **no tests yet and no page renders it.**
+- **`src/lib/constants.ts`** gained `INVOICE_TERM_DAYS = 30` (net-30, the only thing
+  ageing needs to call an invoice overdue).
+
+**What was deliberately reverted:** an edit to `src/lib/reports.ts` that added ten dispatch
+and money report keys to `ReportKey` without their `REPORTS` entries or `runReport` cases —
+it would not have compiled. Redo it whole rather than resuming from a half-applied diff.
+
+**The finding that shapes this phase — read before building the AP screen.** The client
+asked for accounts payable *and* receivable. **Only receivable exists.** This product
+invoices carriers for Asterism's dispatch fee, and that is the entirety of the money it
+models; there is no record of the organisation owing anybody. A payables ledger needs the
+**Carrier → Broker freight invoice**, which `invoices.invoice_type` leaves room for and
+which was deliberately deferred (see `docs/superpowers/specs/2026-09-02-invoicing-design.md`
+§1). `finance.ts`'s `payablesGap()` states that plainly on the page rather than faking a
+ledger out of columns that mean something else — **an empty truth beats a populated fiction
+on a finance screen.** Raise it with the client; it is a decision, not a discovery.
+
+**The rest of Phase 22, as planned:**
+
+1. `/billing` — receivables: the four ageing buckets, outstanding/overdue/disputed totals,
+   paid-this-month, delivered-but-never-invoiced loads, and the oldest dozen unpaid.
+   Gate on `invoice:manage` (already administrators-only — the whole invoicing lifecycle
+   is). Plus the payables panel above.
+2. `/performance` — Team Performance Report: one row per active person, columns for
+   carriers, loads, delivered, dispatch-fee revenue, leads, converted, tasks open/done,
+   with a totals row. Gate on `team:manage`. Spec puts it on the Admin menu only.
+3. **Extend `reports.ts`** with the dispatch and money reports — this is the debt worth
+   paying: the page counts carriers and nothing else in a product that is now half loads
+   and invoicing. `ReportDef` needs a `unit` ("carriers" | "loads" | "money" | "leads")
+   so `reportToCsvRows` stops hardcoding "Carriers" as its second column heading.
+4. **Working Notes** — the last of sub-project E, folded in here. Sales panel only, almost
+   certainly one text column on `users` in the shape of `announcements_seen_at`.
+
+Everything else is complete and committed. Phases 15–21 shipped.
 
 **The client's three-panel spec is seven sub-projects (A–G)** — the table lives in
 `Plan.md` under Phase 16, and it is the roadmap now. **A (role panels), B (leads),
