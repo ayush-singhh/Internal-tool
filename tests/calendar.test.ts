@@ -210,6 +210,32 @@ test("open task due dates appear; completed ones do not", () => {
   );
 });
 
+/**
+ * The scoped half of the task rule, which every other case here skipped by reading the
+ * calendar as an owner — and an owner's scope is `undefined`, so the branch that actually
+ * binds parameters never ran. A dispatcher sees their own due dates and nobody else's,
+ * the same narrowing `/tasks`, the badge and the alerts feed apply.
+ */
+test("a dispatcher's month carries their own task due dates and no one else's", () => {
+  const other = db.get<{ id: number }>(
+    "SELECT id FROM users WHERE organization_id = ? AND id != ? AND id != ?",
+    [alpha.id, dee, alpha.ownerId],
+  )?.id ?? alpha.ownerId;
+
+  tasks.saveTask(org, { title: "MINE TO DO", assignedTo: dee, dueOn: day(9) }, dee);
+  tasks.saveTask(org, { title: "SOMEBODY ELSES", assignedTo: other, dueOn: day(10) }, alpha.ownerId);
+
+  const titles = entriesFor(asUser(dee, C.ROLES.DISPATCHER))
+    .filter((e) => e.kind === "task")
+    .map((e) => e.title);
+  assert.deepEqual(titles, ["MINE TO DO"]);
+
+  // The owner may assign, so the whole board is theirs and both appear.
+  const all = entriesFor(owner()).filter((e) => e.kind === "task").map((e) => e.title);
+  assert.equal(all.length, 2);
+  assert.ok(all.includes("SOMEBODY ELSES"));
+});
+
 test("insurance expiries appear for live carriers", () => {
   db.run("UPDATE carriers SET insurance_expires_on = ? WHERE organization_id = ? AND id = ?",
     [day(20), alpha.id, carrier]);

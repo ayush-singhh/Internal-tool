@@ -13,6 +13,7 @@ process.env.APP_URL = "https://hub.example.com";
 let db: typeof import("../src/lib/db.ts");
 let signup: typeof import("../src/lib/signup.ts");
 let login: typeof import("../src/lib/login.ts");
+let lifecycle: typeof import("../src/lib/tenant-lifecycle.ts");
 
 const sent: Mail[] = [];
 const collect = async (mail: Mail) => {
@@ -31,6 +32,7 @@ before(async () => {
   db = await import("../src/lib/db.ts");
   signup = await import("../src/lib/signup.ts");
   login = await import("../src/lib/login.ts");
+  lifecycle = await import("../src/lib/tenant-lifecycle.ts");
 });
 
 after(() => {
@@ -43,17 +45,26 @@ beforeEach(() => {
   db.run("DELETE FROM login_attempts");
   db.systemQuery(() => {
     db.run("DELETE FROM email_verifications");
+    // Every organisation a test made, removed the way the product removes one.
+    //
+    // This used to be a hand-written sequence of DELETEs in dependency order — the fourth
+    // place a new tenant-owned table had to be registered, and the only one of the four
+    // with neither the compiler nor a test behind it. Adding `channels` in Phase 19 and
+    // `calendar_events` in Phase 21 each broke six unrelated tests here with a bare
+    // `FOREIGN KEY constraint failed`, which names neither the table nor the reason.
+    //
+    // `deleteOrganization` already owns that order, and runs `PRAGMA foreign_key_check`
+    // inside its own transaction. Calling it means this teardown cannot drift from the
+    // product — and if a future table is missed *there*, it fails here loudly and in the
+    // right place instead of silently leaving rows behind.
+    //
+    // `exported: true` is the one untruth: nothing is being archived, and the guard exists
+    // so a real deletion cannot happen without a file to show for it.
+    for (const org of db.all<{ id: number }>("SELECT id FROM organizations WHERE id > 1")) {
+      lifecycle.deleteOrganization(org.id, { exported: true });
+    }
+    // Anything a test left on the baseline organisation, which no tenant deletion touches.
     db.run("DELETE FROM users WHERE email LIKE '%.test'");
-    db.run("DELETE FROM brokers WHERE organization_id > 1");
-    // Seeded by provisioning like brokers are, and pointing at the organisation, so they
-    // have to go before it does or the delete below trips the foreign key.
-    db.run("DELETE FROM messages WHERE organization_id > 1");
-    db.run("DELETE FROM channel_reads WHERE organization_id > 1");
-    db.run("DELETE FROM channels WHERE organization_id > 1");
-    db.run("DELETE FROM calendar_events WHERE organization_id > 1");
-    db.run("DELETE FROM lookups WHERE organization_id > 1");
-    db.run("DELETE FROM app_settings WHERE organization_id > 1");
-    db.run("DELETE FROM organizations WHERE id > 1");
   });
 });
 

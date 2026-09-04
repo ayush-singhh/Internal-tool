@@ -1,7 +1,7 @@
 import "server-only";
 import type { Org } from "./tenant-db.ts";
 import type { SessionUser } from "./permissions.ts";
-import { can } from "./permissions.ts";
+import { can, taskScope } from "./permissions.ts";
 import { needsAttention, attentionTotal, type AttentionRule } from "./attention.ts";
 import { pressingTasks, taskCounts, type TaskRow } from "./tasks.ts";
 import { unreadCount } from "./announcements.ts";
@@ -45,8 +45,8 @@ export type Alerts = {
 
 export function alertsFor(org: Org, user: SessionUser): Alerts {
   // Whoever may put work on other people's lists is looking at the whole board; everyone
-  // else is looking at their own. Same test as /tasks, because two rules would drift.
-  const scope = can(user, "task:assign") ? undefined : user.id;
+  // else is looking at their own. One rule, in permissions.ts, because two would drift.
+  const scope = taskScope(user);
 
   const attention = can(user, "carrier:view") ? needsAttention(org) : [];
   const tasks = taskCounts(org, scope);

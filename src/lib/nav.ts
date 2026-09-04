@@ -2,7 +2,7 @@ import "server-only";
 import { get } from "./db.ts";
 import type { Org } from "./tenant-db.ts";
 import { idsOf } from "./lookups.ts";
-import { can, type Action, type SessionUser } from "./permissions.ts";
+import { can, taskScope, type Action, type SessionUser } from "./permissions.ts";
 import { taskCounts } from "./tasks.ts";
 import { unreadCount } from "./announcements.ts";
 import { unreadMessages } from "./communication.ts";
@@ -37,12 +37,11 @@ export function navCounts(org: Org, user: SessionUser) {
   // figure, so a delivered load has stopped being work.
   const open = LOAD_STATUS_ORDER.slice(0, LOAD_STATUS_ORDER.indexOf(LOAD_STATUS.DELIVERED));
 
-  // Whoever may assign work is watching the whole board; everyone else watches their own.
-  // The same test `/tasks` and `alerts.ts` use, so the badge cannot disagree with the page.
-  const taskScope = can(user, "task:assign") ? undefined : user.id;
-
   return {
-    tasks: taskCounts(org, taskScope).open,
+    // Whoever may assign work is watching the whole board; everyone else watches their
+    // own. `taskScope` is that rule, shared with /tasks, the dashboard, alerts and the
+    // calendar — so this badge cannot come to disagree with the page it links to.
+    tasks: taskCounts(org, taskScope(user)).open,
     announcements: unreadCount(org, user.id),
     messages: unreadMessages(org, user),
     // Open leads only — the badge is a workload figure, and a won or lost lead has

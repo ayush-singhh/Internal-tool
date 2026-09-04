@@ -240,6 +240,24 @@ export function can(
   }
 }
 
+/**
+ * Whose tasks this person is looking at: `undefined` for the whole board, or their own id.
+ *
+ * The rule is one line — whoever may put work on somebody else's list is watching all of
+ * it — but it decides the scope of five separate queries: `/tasks`, the dashboard strip,
+ * the sidebar badge, the alerts feed and the calendar's due dates. Written out at each of
+ * them it was five copies that could disagree, and a disagreement is not a crash: the
+ * badge would simply count a different set of tasks than the page it links to, and no
+ * test that checks each screen on its own would notice.
+ *
+ * Deliberately *not* used by `task-actions.ts`. That asks a different question with the
+ * same permission — who a task may be assigned *to* — and its fallback is the caller
+ * rather than a scope. Two questions through one function is how a helper starts lying.
+ */
+export function taskScope(user: SessionUser): number | undefined {
+  return can(user, "task:assign") ? undefined : user.id;
+}
+
 export function assertCan(
   user: SessionUser | null | undefined,
   action: Action,

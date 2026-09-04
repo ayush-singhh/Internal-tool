@@ -9,7 +9,7 @@ import { needsAttention, attentionTotal } from "@/lib/attention";
 import { recentActivity } from "@/lib/activity";
 import { leadMetrics, type LeadMetrics } from "@/lib/leads";
 import { taskCounts, type TaskCounts } from "@/lib/tasks";
-import { can } from "@/lib/permissions";
+import { can, taskScope } from "@/lib/permissions";
 import { idOf } from "@/lib/lookups";
 import { STATUS } from "@/lib/constants";
 import { relativeTime } from "@/lib/format";
@@ -72,7 +72,7 @@ export default async function DashboardPage() {
   const leads = can(user, "lead:view")
     ? leadMetrics(org, can(user, "lead:convert") ? undefined : user.id)
     : null;
-  const tasks = taskCounts(org, can(user, "task:assign") ? undefined : user.id);
+  const tasks = taskCounts(org, taskScope(user));
 
   // Every figure below this line counts carriers, so a role without `carrier:view` —
   // sales today — must not reach it. Branching on the permission rather than on the

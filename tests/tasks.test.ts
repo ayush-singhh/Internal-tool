@@ -364,6 +364,35 @@ test("assigning work and posting to everyone are administrators only", () => {
   }
 });
 
+/**
+ * `taskScope` is one line that decides the scope of five separate queries — /tasks, the
+ * dashboard strip, the sidebar badge, the alerts feed and the calendar's due dates. It
+ * used to be written out at each of them, and the failure mode of a disagreement is not a
+ * crash: the badge would simply count a different set of tasks than the page it links to,
+ * and every per-screen test would still pass. This is the case that makes them agree.
+ */
+test("taskScope: the whole board for whoever may assign, your own id for everyone else", () => {
+  const { taskScope } = permissions;
+  for (const role of [C.ROLES.ADMIN, C.ROLES.OWNER]) {
+    assert.equal(taskScope(asUser(dee, role)), undefined, `${role} watches the whole board`);
+  }
+  for (const role of [C.ROLES.DISPATCHER, C.ROLES.ACCOUNT_MANAGER, C.ROLES.SALES, C.ROLES.VIEWER]) {
+    assert.equal(taskScope(asUser(dee, role)), dee, `${role} watches their own`);
+  }
+  // It tracks `task:assign` rather than restating it — the two cannot come apart.
+  for (const role of [C.ROLES.ADMIN, C.ROLES.DISPATCHER, C.ROLES.SALES]) {
+    const user = asUser(dee, role);
+    assert.equal(
+      taskScope(user) === undefined,
+      permissions.can(user, "task:assign"),
+      `${role}: scope and permission must agree`,
+    );
+  }
+  // A deactivated administrator loses the board with everything else, rather than keeping
+  // the widest scope in the product.
+  assert.equal(taskScope({ ...asUser(dee, C.ROLES.ADMIN), active: 0 }), dee);
+});
+
 test("a task is manageable by its assignee and by whoever raised it, and nobody else", () => {
   const { can } = permissions;
   const task = { owner_id: sal, created_by: dee };

@@ -1,7 +1,7 @@
 import "server-only";
 import { all, get, run } from "./db.ts";
 import type { Org } from "./tenant-db.ts";
-import { can, type SessionUser } from "./permissions.ts";
+import { can, taskScope, type SessionUser } from "./permissions.ts";
 import { idsOf } from "./lookups.ts";
 import { STATUS, TASK_STATUS, type Tone } from "./constants.ts";
 
@@ -193,9 +193,9 @@ export function monthEntries(org: Org, user: SessionUser, month: string): Calend
 
   // ── derived: tasks ─────────────────────────────────────────────────────────
   // Same scope rule as /tasks, navCounts and alerts.ts — whoever may assign sees the whole
-  // board, everyone else their own. A fourth place that has to agree with the other three.
-  const taskScope = can(user, "task:assign") ? undefined : user.id;
-  const mine = taskScope === undefined ? "" : " AND (t.assigned_to = ? OR t.created_by = ?)";
+  // board, everyone else their own. All four now read it from the one place it is written.
+  const scope = taskScope(user);
+  const mine = scope === undefined ? "" : " AND (t.assigned_to = ? OR t.created_by = ?)";
   const tasks = all<{ id: number; title: string; due_on: string; assignee: string | null }>(
     `SELECT t.id, t.title, t.due_on, u.name AS assignee
        FROM tasks t
@@ -203,7 +203,7 @@ export function monthEntries(org: Org, user: SessionUser, month: string): Calend
       WHERE t.organization_id = ? AND t.status = ?
         AND t.due_on IS NOT NULL AND t.due_on BETWEEN ? AND ?${mine}
       ORDER BY t.due_on`,
-    [org.id, TASK_STATUS.OPEN, first, last, ...(taskScope === undefined ? [] : [taskScope, taskScope])],
+    [org.id, TASK_STATUS.OPEN, first, last, ...(scope === undefined ? [] : [scope, scope])],
   );
   for (const task of tasks) {
     entries.push({
