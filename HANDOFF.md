@@ -31,9 +31,9 @@ sequencing are now stale — see below).
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
 **Working tree:** clean — Phases 15 (loads, drivers/brokers, documents, invoicing), 16
-(role panels), 17 (leads), 18 (tasks/announcements/alerts) and 19 (communication) are all
-committed. **Tests:** 436 passing (`npm test`) + 25 over HTTP (`npm run test:http`).
-**Build:** clean.
+(role panels), 17 (leads), 18 (tasks/announcements/alerts), 19 (communication) and 20
+(brokers DNU) are all committed. **Tests:** 443 passing (`npm test`) + 27 over HTTP
+(`npm run test:http`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -43,22 +43,29 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ## In flight — pick this up first
 
-Nothing is in flight. Phases 15, 16, 17, 18 and 19 are complete and committed.
+Nothing is in flight. Phases 15–20 are complete and committed.
 
 **The client's three-panel spec is seven sub-projects (A–G)** — the table lives in
 `Plan.md` under Phase 16, and it is the roadmap now. **A (role panels), B (leads),
-C (tasks/announcements/alerts) and D (communication) are done. E is next**: Planning
-Calendar, Working Notes, Brokers DNU list. Of those the DNU list is the smallest and most
-obviously useful — `brokers` already exists, so it is a status on a row plus a guard where
-a load picks one.
+C (tasks/announcements/alerts) and D (communication) are done; E is part-done** — the
+Brokers DNU list shipped as Phase 20. What is left of E:
+
+- **Planning Calendar.** The largest unspecified thing remaining, and it needs a decision
+  before code: does it *derive* (load pickup/delivery dates, task due dates, insurance
+  expiries — everything already in the database) or does it own an `events` table people
+  type into? Deriving is far less code and cannot go stale; owning is what "planning"
+  usually means. Ask the client rather than guessing — this one is genuinely ambiguous.
+- **Working Notes.** On the Sales panel only. A personal scratchpad, so probably one text
+  column per user rather than a table, in the shape of `users.announcements_seen_at`.
 
 **Candidates for what's next, roughly ready-now → waiting-on-something:**
 
 1. **Redeploy `carrier-hub.fly.dev`.** The live app is still on migration 16 — invoicing
-   (17), leads (18), tasks/announcements (19) and communication (20) are not usable there
-   yet. Ready to do now, same process as the last redeploy (migrate through 20, restart
-   the one machine). No code work needed. **This has now slipped four phases behind; it is
-   the one item that gets worse by waiting.**
+   (17), leads (18), tasks/announcements (19), communication (20) and the DNU flag (21)
+   are not usable there yet. Ready to do now, same process as the last redeploy (migrate
+   through 21, restart the one machine). No code work needed. **Five migrations behind,
+   and none of them has ever run against a database with real data in it — which is
+   exactly the situation `BUGS.md`'s worst entry describes. Back up first.**
 2. **Carrier → Broker freight invoice.** The natural next phase of the invoicing work —
    schema already leaves room (`invoices.invoice_type`, see
    `docs/superpowers/specs/2026-09-02-invoicing-design.md` §1) — but only worth starting
@@ -176,6 +183,11 @@ a load picks one.
   badge and `can()` cannot drift. **Messages are append-only** (no edit, no delete —
   `carrier_notes`' rule), and unread is **per channel** (`channel_reads`), not a second
   watermark column; a test fails if somebody collapses it into one.
+- **A broker can be flagged Do Not Use** (Phase 20) — distinct from `active = 0`. Retiring
+  hides one; DNU keeps one visible with its reason, because the next person about to book
+  them needs to learn why not. Enforced in `createLoad` (the only place a load's broker is
+  set), not retroactive, reason required. Gated on the existing `broker:edit` — no new
+  action, since the audience is identical.
 - **Adding a tenant-owned table means editing four places**, and the compiler catches none
   of them: `TENANT_TABLES` (the query guard), `OWNED` + the ordered deletion in
   `tenant-lifecycle.ts`, `seedOrganizationData` if it seeds rows, and **`tests/signup.test.ts`'s

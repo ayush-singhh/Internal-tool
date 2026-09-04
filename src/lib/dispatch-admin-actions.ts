@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireOrg } from "./auth.ts";
 import { can } from "./permissions.ts";
-import { addBroker, saveDriver, setDriverActive, updateBroker } from "./dispatch-admin.ts";
+import { addBroker, saveDriver, setBrokerDnu, setDriverActive, updateBroker } from "./dispatch-admin.ts";
 
 export type AdminState = { error?: string; ok?: string };
 
@@ -76,4 +76,32 @@ export async function updateBrokerAction(_prev: AdminState, form: FormData): Pro
   if (!result.ok) return { error: result.error };
   revalidatePath("/brokers");
   return { ok: "Broker updated." };
+}
+
+/**
+ * Putting a broker on the Do Not Use list, or taking them off it.
+ *
+ * Gated on `broker:edit` rather than an action of its own: the audience is identical
+ * (administrators), and the client's spec puts the DNU list on the Admin panel only. A
+ * separate `broker:dnu` would be a second row in the permission matrix that always
+ * answers the same as this one. Give it its own action the day dispatch is allowed to
+ * *flag* a broker for an administrator to confirm — that is a different audience.
+ */
+export async function setBrokerDnuAction(_prev: AdminState, form: FormData): Promise<AdminState> {
+  const { user, org } = await requireOrg();
+  if (!can(user, "broker:edit")) {
+    return { error: "Only an administrator can change the Do Not Use list." };
+  }
+  const brokerId = id(form, "id");
+  if (!brokerId) return { error: "Unknown broker." };
+
+  const dnu = form.get("dnu") === "1";
+  const result = setBrokerDnu(org, brokerId, { dnu, reason: text(form, "dnu_reason") }, user.id);
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath("/brokers");
+  // A load can no longer be booked against them, so the form that offers the choice has
+  // to be rebuilt too.
+  revalidatePath("/loads/new");
+  return { ok: dnu ? "Added to the Do Not Use list." : "Removed from the Do Not Use list." };
 }

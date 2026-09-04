@@ -76,10 +76,18 @@ export function loadFormOptions(org: Org): import("@/components/load-form").Load
     carrierId: d.carrier_id,
   }));
 
-  const brokers = all<{ id: number; name: string }>(
-    "SELECT id, name FROM brokers WHERE organization_id = ? AND active = 1 ORDER BY name",
+  // DNU brokers stay in the list, disabled and labelled, rather than disappearing from it.
+  // A name silently missing teaches nobody why, and invites the dispatcher to add it back
+  // under a slightly different spelling — the exact failure the add/edit split exists to
+  // prevent. `createLoad` refuses them regardless; this is the half that explains.
+  const brokers = all<{ id: number; name: string; dnu: number }>(
+    "SELECT id, name, dnu FROM brokers WHERE organization_id = ? AND active = 1 ORDER BY name",
     [org.id],
-  ).map((b) => ({ id: b.id, label: b.name }));
+  ).map((b) => ({
+    id: b.id,
+    label: b.dnu ? `${b.name} · DO NOT USE` : b.name,
+    disabled: b.dnu === 1,
+  }));
 
   return { carriers, drivers, brokers };
 }

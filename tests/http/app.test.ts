@@ -704,6 +704,68 @@ test("only an administrator is offered a way to open a channel", async () => {
   assert.ok(asOwner.body.includes("New channel"));
 });
 
+// ── Brokers Do Not Use (Phase 20) ────────────────────────────────────────────
+
+/**
+ * The DNU flag on the two screens that matter.
+ *
+ * A unit test proves `createLoad` refuses one. What it cannot see is whether the load
+ * form still *offers* the broker — and offering a choice the server will reject is how a
+ * dispatcher ends up adding a duplicate under a different spelling. It has to be present,
+ * marked, and unselectable.
+ */
+test("a flagged broker stays in the load form, marked and unselectable", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg, lookupId } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "DNU Panel Co", "dnuowner@panel.test");
+  app.db.run(
+    `INSERT INTO carriers (organization_id, legal_name, status_id, created_at, updated_at)
+     VALUES (?, 'DNU Test Carrier', ?, ?, ?)`,
+    [org.id, lookupId(app.db, org.id, "status", "active"), now, now],
+  );
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Dee DNU', 'dnudisp@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.DISPATCHER, now, now, now],
+  );
+  app.db.run(
+    `INSERT INTO brokers (organization_id, name, seeded, active, dnu, dnu_reason, dnu_at, created_at)
+     VALUES (?, 'BLOCKED BROKER MARKER', 0, 1, 1, 'Did not pay on three loads.', ?, ?)`,
+    [org.id, now, now],
+  );
+
+  const form = await app.get("/loads/new", app.session("dnudisp@panel.test"));
+  assert.equal(form.status, 200);
+  assert.ok(
+    form.body.includes("BLOCKED BROKER MARKER"),
+    "the broker is still listed — a name that silently vanishes teaches nobody why",
+  );
+  assert.ok(form.body.includes("DO NOT USE"), "and it is labelled as such");
+  // The option carries `disabled`, so the browser will not let it be chosen. The server
+  // refuses it regardless; this is the half that explains rather than the half that guards.
+  const option = form.body.match(/<option[^>]*>[^<]*BLOCKED BROKER MARKER[^<]*<\/option>/)?.[0] ?? "";
+  assert.ok(option.includes("disabled"), `expected a disabled option, got: ${option}`);
+});
+
+test("the Do Not Use list is on the brokers page, with its reason", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const org = seedOrg(app.db, "DNU List Co", "dnulistowner@panel.test");
+  app.db.run(
+    `INSERT INTO brokers (organization_id, name, seeded, active, dnu, dnu_reason, dnu_at, dnu_by, created_at)
+     VALUES (?, 'LISTED BROKER MARKER', 0, 1, 1, 'REASON MARKER: disputed detention.', ?, ?, ?)`,
+    [org.id, now, org.ownerId, now],
+  );
+
+  const res = await app.get("/brokers", app.session("dnulistowner@panel.test"));
+  assert.equal(res.status, 200);
+  assert.ok(res.body.includes("Do Not Use"), "the section is there");
+  assert.ok(res.body.includes("LISTED BROKER MARKER"));
+  assert.ok(res.body.includes("REASON MARKER"), "carrying the reason, which is the point");
+});
+
 test("My Activity is reachable by every role and shows only that user's own entries", async () => {
   const now = new Date().toISOString();
   const { seedOrg, lookupId } = await import("../helpers.ts");

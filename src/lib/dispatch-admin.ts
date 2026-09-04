@@ -37,6 +37,12 @@ export type BrokerRow = {
   email: string | null;
   seeded: number;
   active: number;
+  /** Do Not Use. Distinct from `active` — see migration 21 and `setBrokerDnu` below. */
+  dnu: number;
+  dnu_reason: string | null;
+  dnu_at: string | null;
+  dnu_by: number | null;
+  dnu_by_name: string | null;
   load_count: number;
 };
 
@@ -139,14 +145,68 @@ export function setDriverActive(org: Org, id: number, active: boolean): Result {
 
 export function listBrokers(org: Org): BrokerRow[] {
   return all<BrokerRow>(
-    `SELECT b.*,
+    `SELECT b.*, u.name AS dnu_by_name,
             (SELECT COUNT(*) FROM loads l
               WHERE l.organization_id = b.organization_id AND l.broker_id = b.id) AS load_count
        FROM brokers b
+       LEFT JOIN users u ON u.organization_id = b.organization_id AND u.id = b.dnu_by
       WHERE b.organization_id = ?
-      ORDER BY b.active DESC, b.name`,
+      ORDER BY b.dnu DESC, b.active DESC, b.name`,
     [org.id],
   );
+}
+
+/**
+ * The Do Not Use list.
+ *
+ * A DNU broker is not retired — it stays on the list, at the top, carrying its reason,
+ * because the point is that the next person about to book them learns why not. Retiring
+ * (`active = 0`) is the opposite act: tidying something nobody needs to think about.
+ *
+ * A reason is required. "Do not use" without one is an argument waiting to happen at 3am,
+ * and the person who knew why has gone home.
+ */
+export function setBrokerDnu(
+  org: Org,
+  id: number,
+  input: { dnu: boolean; reason?: string | null },
+  userId: number | null,
+): Result {
+  if (!get("SELECT 1 FROM brokers WHERE organization_id = ? AND id = ?", [org.id, id])) {
+    return { ok: false, error: "Unknown broker." };
+  }
+
+  if (!input.dnu) {
+    // Clearing wipes the reason with it: a stale reason on a broker that is fine again
+    // reads as though the flag is still on.
+    run(
+      `UPDATE brokers SET dnu = 0, dnu_reason = NULL, dnu_at = NULL, dnu_by = NULL
+        WHERE organization_id = ? AND id = ?`,
+      [org.id, id],
+    );
+    return { ok: true, id };
+  }
+
+  const reason = (input.reason ?? "").trim().slice(0, 500);
+  if (!reason) return { ok: false, error: "Say why this broker must not be used." };
+
+  run(
+    `UPDATE brokers SET dnu = 1, dnu_reason = ?, dnu_at = ?, dnu_by = ?
+      WHERE organization_id = ? AND id = ?`,
+    [reason, new Date().toISOString(), userId, org.id, id],
+  );
+  return { ok: true, id };
+}
+
+/** The reason a broker must not be booked, or null if they may be. Used by the load
+ *  write path to refuse with a sentence rather than a silent absence. */
+export function brokerDnuReason(org: Org, id: number): string | null {
+  const row = get<{ name: string; dnu: number; dnu_reason: string | null }>(
+    "SELECT name, dnu, dnu_reason FROM brokers WHERE organization_id = ? AND id = ?",
+    [org.id, id],
+  );
+  if (!row || !row.dnu) return null;
+  return `${row.name} is on the Do Not Use list${row.dnu_reason ? `: ${row.dnu_reason}` : "."}`;
 }
 
 /** Adding one. Open to dispatchers — the shipped list will always be missing somebody. */

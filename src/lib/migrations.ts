@@ -947,6 +947,31 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 21,
+    name: "brokers: the Do Not Use list",
+    up: (db) => {
+      // DNU is **not** the same as `active = 0`, which already exists.
+      //
+      //   `active = 0`  — retired. Tidying: the broker is gone from the list and nobody
+      //                   needs to think about them again.
+      //   `dnu = 1`     — do not book with these people, and here is why.
+      //
+      // The difference is visibility. A retired broker should disappear; a DNU broker must
+      // stay in front of whoever is about to pick them, carrying its reason — the whole
+      // value of the list is that the next person learns *why not* rather than finding a
+      // name mysteriously missing and adding it back under a slightly different spelling.
+      addColumn(db, "brokers", "dnu", "INTEGER NOT NULL DEFAULT 0");
+      addColumn(db, "brokers", "dnu_reason", "TEXT");
+      addColumn(db, "brokers", "dnu_at", "TEXT");
+      // A soft reference, like `audit_log.user_id` and for the same reason: a composite
+      // foreign key to users would either block removing the administrator who made the
+      // call, or null `organization_id` along with them. Who flagged it must outlive their
+      // account — that is the point of recording it.
+      addColumn(db, "brokers", "dnu_by", "INTEGER");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_brokers_org_dnu ON brokers (organization_id, dnu)");
+    },
+  },
 ];
 
 export function addColumn(

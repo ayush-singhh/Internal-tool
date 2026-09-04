@@ -184,3 +184,110 @@ test("one tenant's drivers and brokers are invisible to the other", async () => 
   assert.equal(admin.setDriverActive(betaOrg, admin.listDrivers(org)[0]!.id, false).ok, false,
     "and cannot be reached by id either");
 });
+
+// ── Do Not Use ───────────────────────────────────────────────────────────────
+//
+// DNU is not `active = 0`. Retiring hides a broker nobody needs to think about; DNU keeps
+// one in front of whoever is about to book them, carrying the reason. The pair of tests
+// that matter are the guard in `createLoad` and the fact that flagging is not retroactive.
+
+test("a broker cannot be flagged without a reason", () => {
+  const id = (admin.addBroker(org, "Slow Pay Logistics", alpha.ownerId) as { id: number }).id;
+
+  const noReason = admin.setBrokerDnu(org, id, { dnu: true, reason: "   " }, alpha.ownerId);
+  assert.equal(noReason.ok, false);
+  assert.match((noReason as { error: string }).error, /say why/i);
+  assert.equal(admin.listBrokers(org).find((b) => b.id === id)!.dnu, 0, "and nothing was flagged");
+});
+
+test("flagging records the reason, who and when", () => {
+  const id = (admin.addBroker(org, "Disputed Detention Inc", alpha.ownerId) as { id: number }).id;
+  assert.equal(
+    admin.setBrokerDnu(org, id, { dnu: true, reason: "Refused a detention charge twice." }, alpha.ownerId).ok,
+    true,
+  );
+
+  const flagged = admin.listBrokers(org).find((b) => b.id === id)!;
+  assert.equal(flagged.dnu, 1);
+  assert.equal(flagged.dnu_reason, "Refused a detention charge twice.");
+  assert.equal(flagged.dnu_by, alpha.ownerId);
+  assert.ok(flagged.dnu_at, "dated, so 'when did we decide this' has an answer");
+  assert.equal(flagged.active, 1, "flagged is not retired — it stays on the list on purpose");
+});
+
+test("clearing the flag wipes the reason with it", () => {
+  const id = (admin.addBroker(org, "Reformed Freight", alpha.ownerId) as { id: number }).id;
+  admin.setBrokerDnu(org, id, { dnu: true, reason: "Was slow to pay." }, alpha.ownerId);
+  assert.equal(admin.setBrokerDnu(org, id, { dnu: false }, alpha.ownerId).ok, true);
+
+  const cleared = admin.listBrokers(org).find((b) => b.id === id)!;
+  assert.equal(cleared.dnu, 0);
+  // A reason left behind on a broker who is fine again reads as though the flag is still on.
+  assert.equal(cleared.dnu_reason, null);
+  assert.equal(cleared.dnu_at, null);
+  assert.equal(cleared.dnu_by, null);
+});
+
+test("a load cannot be created against a broker on the list", () => {
+  const id = (admin.addBroker(org, "Never Again Logistics", alpha.ownerId) as { id: number }).id;
+  admin.setBrokerDnu(org, id, { dnu: true, reason: "Did not pay." }, alpha.ownerId);
+
+  const refused = write.createLoad(org, {
+    carrierId: carrier,
+    brokerId: id,
+    stops: [{ kind: "pickup", city: "Dallas" }, { kind: "delivery", city: "Newark" }],
+  }, alpha.ownerId);
+
+  assert.equal(refused.ok, false);
+  // The refusal carries the reason. A silent "unknown broker" would send somebody looking
+  // for a bug instead of reading the note the administrator left.
+  assert.match((refused as { error: string }).error, /Never Again Logistics/);
+  assert.match((refused as { error: string }).error, /Did not pay/);
+});
+
+test("flagging is not retroactive — loads already booked keep their broker", () => {
+  const id = (admin.addBroker(org, "Late Discovery Freight", alpha.ownerId) as { id: number }).id;
+  const load = write.createLoad(org, {
+    carrierId: carrier,
+    brokerId: id,
+    stops: [{ kind: "pickup", city: "Dallas" }, { kind: "delivery", city: "Newark" }],
+  }, alpha.ownerId);
+  assert.equal(load.ok, true, "booked before anybody knew");
+
+  admin.setBrokerDnu(org, id, { dnu: true, reason: "Found out afterwards." }, alpha.ownerId);
+
+  const still = db.get<{ broker_id: number }>(
+    "SELECT broker_id FROM loads WHERE organization_id = ? AND id = ?",
+    [alpha.id, (load as { id: number }).id],
+  )!;
+  assert.equal(still.broker_id, id, "history is not rewritten by a decision made today");
+  assert.equal(admin.listBrokers(org).find((b) => b.id === id)!.load_count, 1);
+});
+
+test("a broker with no flag blocks nothing", () => {
+  const id = (admin.addBroker(org, "Perfectly Fine Freight", alpha.ownerId) as { id: number }).id;
+  assert.equal(admin.brokerDnuReason(org, id), null);
+  assert.equal(
+    write.createLoad(org, {
+      carrierId: carrier,
+      brokerId: id,
+      stops: [{ kind: "pickup", city: "Dallas" }, { kind: "delivery", city: "Newark" }],
+    }, alpha.ownerId).ok,
+    true,
+  );
+});
+
+test("one tenant's Do Not Use list does not reach the other", async () => {
+  const { Org } = await import("../src/lib/tenant-db.ts");
+  const id = (admin.addBroker(org, "Alpha Blocked Freight", alpha.ownerId) as { id: number }).id;
+  admin.setBrokerDnu(org, id, { dnu: true, reason: "Alpha's problem." }, alpha.ownerId);
+
+  const betaOrg = new Org(beta.id);
+  assert.equal(admin.brokerDnuReason(betaOrg, id), null, "beta cannot even read the flag");
+  assert.equal(
+    admin.setBrokerDnu(betaOrg, id, { dnu: false }, beta.ownerId).ok,
+    false,
+    "and cannot clear it by id",
+  );
+  assert.equal(admin.listBrokers(org).find((b) => b.id === id)!.dnu, 1);
+});

@@ -2,12 +2,13 @@
 
 import { useActionState, useRef, useState } from "react";
 import {
-  addBrokerAction, updateBrokerAction, type AdminState,
+  addBrokerAction, updateBrokerAction, setBrokerDnuAction, type AdminState,
 } from "@/lib/dispatch-admin-actions";
 import type { BrokerRow } from "@/lib/dispatch-admin";
+import { relativeTime } from "@/lib/format";
 import { Badge, Banner, Dialog, DialogActions, EmptyState } from "./ui";
 import { Icon } from "./icons";
-import { Text } from "./form-fields";
+import { Text, TextArea } from "./form-fields";
 
 export function BrokerManager({
   brokers,
@@ -19,16 +20,53 @@ export function BrokerManager({
   canEdit: boolean;
 }) {
   const [editing, setEditing] = useState<BrokerRow | null>(null);
+  const [flagging, setFlagging] = useState<BrokerRow | null>(null);
   const [q, setQ] = useState("");
   const addRef = useRef<HTMLDialogElement>(null);
   const editRef = useRef<HTMLDialogElement>(null);
+  const dnuRef = useRef<HTMLDialogElement>(null);
 
   const rows = q.trim()
     ? brokers.filter((b) => b.name.toLowerCase().includes(q.trim().toLowerCase()))
     : brokers;
 
+  const blocked = brokers.filter((b) => b.dnu === 1);
+
   return (
     <div className="space-y-4">
+      {/*
+        The Do Not Use list, at the top of the page it belongs to rather than on a route
+        of its own. A second page listing a subset of one table is a filter, and a filter
+        that lives away from the thing it filters goes stale in somebody's memory.
+      */}
+      {blocked.length > 0 && (
+        <section
+          aria-label="Do Not Use list"
+          className="rounded-card border border-red-200 bg-red-50/60 p-4"
+        >
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-red-800">
+            <Icon name="warning" className="h-4 w-4" />
+            Do Not Use — {blocked.length} broker{blocked.length === 1 ? "" : "s"}
+          </h2>
+          <ul className="mt-2.5 space-y-1.5">
+            {blocked.map((b) => (
+              <li key={b.id} className="text-xs text-red-900">
+                <span className="font-semibold">{b.name}</span>
+                {b.dnu_reason && <span> — {b.dnu_reason}</span>}
+                <span className="text-red-700/70">
+                  {b.dnu_by_name && ` · ${b.dnu_by_name}`}
+                  {b.dnu_at && ` · ${relativeTime(b.dnu_at)}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2.5 text-xs text-red-700">
+            A load cannot be created against these. Loads already booked with them are
+            untouched — flagging a broker today does not rewrite what has already run.
+          </p>
+        </section>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative min-w-[15rem] flex-1">
           <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
@@ -74,8 +112,18 @@ export function BrokerManager({
             </thead>
             <tbody>
               {rows.map((b) => (
-                <tr key={b.id} className={`border-b border-line/70 last:border-0 ${b.active ? "" : "opacity-60"}`}>
-                  <td className="px-4 py-2.5 font-medium text-ink-900">{b.name}</td>
+                <tr
+                  key={b.id}
+                  className={`border-b border-line/70 last:border-0 ${
+                    b.dnu ? "bg-red-50/40" : b.active ? "" : "opacity-60"
+                  }`}
+                >
+                  <td className="px-4 py-2.5 font-medium text-ink-900">
+                    {b.name}
+                    {b.dnu === 1 && b.dnu_reason && (
+                      <span className="mt-0.5 block text-xs font-normal text-red-700">{b.dnu_reason}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-ink-600">{b.mc_number ?? "—"}</td>
                   <td className="px-4 py-2.5 text-ink-600">{b.contact_name ?? "—"}</td>
                   <td className="px-4 py-2.5 text-ink-600">{b.phone ?? "—"}</td>
@@ -84,11 +132,26 @@ export function BrokerManager({
                   </td>
                   <td className="tnum px-4 py-2.5 text-right text-ink-700">{b.load_count}</td>
                   <td className="px-4 py-2.5">
-                    <Badge tone={b.active ? "green" : "slate"}>{b.active ? "Active" : "Retired"}</Badge>
+                    {b.dnu === 1 ? (
+                      <Badge tone="red">Do Not Use</Badge>
+                    ) : (
+                      <Badge tone={b.active ? "green" : "slate"}>{b.active ? "Active" : "Retired"}</Badge>
+                    )}
                   </td>
                   <td className="px-4 py-2.5">
                     {canEdit && (
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => { setFlagging(b); dnuRef.current?.showModal(); }}
+                          className={`rounded px-2 py-1 text-xs font-medium transition ${
+                            b.dnu
+                              ? "text-emerald-700 hover:bg-emerald-50"
+                              : "text-red-600 hover:bg-red-50"
+                          }`}
+                        >
+                          {b.dnu ? "Allow again" : "Do not use"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => { setEditing(b); editRef.current?.showModal(); }}
@@ -119,11 +182,81 @@ export function BrokerManager({
       )}
 
       {canEdit && (
-        <Dialog ref={editRef} title={editing ? `Edit ${editing.name}` : "Edit broker"}>
-          {editing && <EditBrokerForm broker={editing} dialogRef={editRef} />}
-        </Dialog>
+        <>
+          <Dialog ref={editRef} title={editing ? `Edit ${editing.name}` : "Edit broker"}>
+            {editing && <EditBrokerForm broker={editing} dialogRef={editRef} />}
+          </Dialog>
+          <Dialog
+            ref={dnuRef}
+            title={
+              flagging
+                ? flagging.dnu
+                  ? `Allow ${flagging.name} again`
+                  : `Do not use ${flagging.name}`
+                : "Do Not Use"
+            }
+          >
+            {flagging && <DnuForm broker={flagging} dialogRef={dnuRef} />}
+          </Dialog>
+        </>
       )}
     </div>
+  );
+}
+
+/**
+ * Flagging a broker, or clearing the flag.
+ *
+ * A reason is required to flag and is wiped when the flag is cleared — a stale reason on a
+ * broker who is fine again reads as though the flag is still on.
+ */
+function DnuForm({
+  broker,
+  dialogRef,
+}: {
+  broker: BrokerRow;
+  dialogRef: React.RefObject<HTMLDialogElement | null>;
+}) {
+  const [state, action, pending] = useActionState<AdminState, FormData>(setBrokerDnuAction, {});
+  const clearing = broker.dnu === 1;
+  return (
+    <form action={action} className="space-y-4">
+      <input type="hidden" name="id" value={broker.id} />
+      <input type="hidden" name="dnu" value={clearing ? "0" : "1"} />
+      <Banner state={state} />
+      {clearing ? (
+        <>
+          <p className="text-sm text-ink-600">
+            {broker.name} was flagged
+            {broker.dnu_by_name ? ` by ${broker.dnu_by_name}` : ""}
+            {broker.dnu_reason ? `: ${broker.dnu_reason}` : "."}
+          </p>
+          <p className="text-sm text-ink-600">
+            Clearing it lets loads be booked against them again, and removes the reason.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-ink-600">
+            No new load can be created against {broker.name}. The{" "}
+            {broker.load_count === 1 ? "load" : "loads"} already booked with them —{" "}
+            {broker.load_count} — {broker.load_count === 1 ? "is" : "are"} untouched.
+          </p>
+          <TextArea
+            name="dnu_reason"
+            label="Why"
+            rows={3}
+            placeholder="Slow pay, disputed a detention charge, cannot reach anyone…"
+            hint="Required. Whoever hits this in six months needs to know what happened."
+          />
+        </>
+      )}
+      <DialogActions
+        dialogRef={dialogRef}
+        pending={pending}
+        label={clearing ? "Allow again" : "Add to Do Not Use"}
+      />
+    </form>
   );
 }
 

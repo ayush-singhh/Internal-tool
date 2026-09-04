@@ -106,6 +106,21 @@ channel keeps everything said in it and accepts nothing new.
 
 Unread is tracked per channel, so opening one does not clear the others.
 
+### 4.1e Brokers — Do Not Use
+A broker may be flagged **Do Not Use**, with a required reason.
+
+This is not the same as retiring one. Retiring (`Active → Retired`) hides a broker nobody
+needs to think about again. **DNU keeps them visible** — at the top of the brokers page,
+in the load form marked and unselectable — because the point is that the next person about
+to book them learns why not, rather than finding a name mysteriously absent and adding it
+back under a slightly different spelling.
+
+No new load can be created against a flagged broker, and the refusal says why. **Loads
+already booked with them are untouched** — a decision made today does not rewrite what has
+already run.
+
+Clearing the flag removes the reason with it. Only an administrator may flag or clear.
+
 ### 4.2 Carrier Database
 Sortable, filterable, searchable table with user-selectable visible columns.
 

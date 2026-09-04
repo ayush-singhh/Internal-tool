@@ -2,7 +2,14 @@
 
 import type { ReactNode } from "react";
 
-export type FormOption = { id: number; label: string; value?: string };
+export type FormOption = {
+  id: number;
+  label: string;
+  value?: string;
+  /** Shown but unselectable — an option a reader should see and understand, not one that
+   *  vanishes. The server still refuses it; this is presentation. */
+  disabled?: boolean;
+};
 
 export function FieldRow({
   label,
@@ -113,7 +120,7 @@ export function Select({
       >
         <option value="">{placeholder}</option>
         {options.map((o) => (
-          <option key={o.id} value={o.id}>{o.label}</option>
+          <option key={o.id} value={o.id} disabled={o.disabled}>{o.label}</option>
         ))}
       </select>
     </FieldRow>

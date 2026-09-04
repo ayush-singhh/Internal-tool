@@ -6,6 +6,7 @@ import {
   type LoadException, type LoadStatus, type StopKind,
 } from "./constants.ts";
 import { nextStatuses } from "./loads.ts";
+import { brokerDnuReason } from "./dispatch-admin.ts";
 
 /**
  * Writing loads.
@@ -91,6 +92,15 @@ export function createLoad(org: Org, input: LoadInput, userId: number | null): L
   if (!belongs(org, "carriers", input.carrierId)) return { ok: false, error: "Unknown carrier." };
   if (!belongs(org, "drivers", input.driverId)) return { ok: false, error: "Unknown driver." };
   if (!belongs(org, "brokers", input.brokerId)) return { ok: false, error: "Unknown broker." };
+
+  // The Do Not Use list, enforced where it actually costs money rather than only in the
+  // picker. Existing loads keep whichever broker they were booked with — flagging one
+  // today does not rewrite what was already run — so this guards creation and nothing else,
+  // which is also the only place a load's broker is ever set.
+  if (input.brokerId) {
+    const refused = brokerDnuReason(org, input.brokerId);
+    if (refused) return { ok: false, error: refused };
+  }
 
   const now = new Date().toISOString();
   // A driver at creation means the load is already Assigned; without one it is Created.

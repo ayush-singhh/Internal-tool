@@ -5,10 +5,10 @@ phase to finish. Status is updated as part of the phase it describes.
 
 Legend: ✅ done · 🔨 in progress · ⬜ not started
 
-**Phases 0–19 complete.** 436 unit + 25 HTTP tests passing, production build clean,
-permission matrix verified over HTTP for every role. Phases 16–19 are the first four of
-seven sub-projects decomposed from the client's three-panel spec — see the decomposition
-table under Phase 16.
+**Phases 0–20 complete.** 443 unit + 27 HTTP tests passing, production build clean,
+permission matrix verified over HTTP for every role. Phases 16–20 work through the client's
+three-panel spec, decomposed into seven sub-projects — see the table under Phase 16.
+A–D are done; E is part-done (the Brokers DNU list shipped as Phase 20).
 
 ---
 
@@ -496,7 +496,7 @@ The supplied spec is seven sub-projects, not one. Each gets its own spec → pla
 | B | Leads (entity, Submit Lead, lead → carrier conversion) | ✅ Phase 17 |
 | C | Tasks + Announcements + Alerts (one phase — shared "needs my attention" feed; `attention.ts` is half of it already) | ✅ Phase 18 |
 | D | Communication (internal threads, dispatch ↔ sales) | ✅ Phase 19 |
-| E | Planning Calendar, Working Notes, Brokers DNU list | ⬜ next |
+| E | Planning Calendar, Working Notes, Brokers DNU list | 🔨 DNU done (Phase 20); Calendar + Working Notes still open |
 | F | Accounts payable / receivable, Team Performance Report | ⬜ |
 | G | Map, Weather | ⬜ external APIs, recurring cost — see "Deferred by design" |
 
@@ -674,6 +674,56 @@ not know about channels, so seeded rows held a foreign key on the organisation i
 deleting. Six tests failed with a bare `FOREIGN KEY constraint failed` — worth remembering
 that this teardown is a hand-maintained list, and every new tenant-owned table has to be
 added to it.
+
+---
+
+## Phase 20 — Brokers Do Not Use list ✅ (2026-09-04)
+
+The first third of sub-project **E**, taken on its own because it is small and it guards
+money: a load booked against a broker who does not pay is the cost this prevents. The
+other two thirds — Planning Calendar and Working Notes — are still open, and the Calendar
+in particular needs a decision about what it actually shows before it is worth building.
+
+- [x] **Migration 21** — `dnu`, `dnu_reason`, `dnu_at`, `dnu_by` on `brokers`.
+- [x] **DNU is not `active = 0`, and the difference is the whole feature.** Retiring hides
+      a broker nobody needs to think about again. DNU keeps one *in front of* whoever is
+      about to book them, carrying its reason. That is why a flagged broker sorts to the
+      top of the list rather than out of it.
+- [x] **The flag is enforced in `createLoad`**, not only in the picker — the one place a
+      load's broker is ever set. The refusal quotes the reason, because "unknown broker"
+      would send a dispatcher hunting for a bug instead of reading the note an
+      administrator left them.
+- [x] **Not retroactive.** Loads already booked keep their broker; `load_count` still
+      counts them. A decision made today does not rewrite what has already run — the same
+      rule offboarding and the invoice snapshots follow.
+- [x] **A reason is required**, and clearing the flag wipes it. "Do not use" with no reason
+      is an argument at 3am with the person who knew why already gone home; a reason left
+      behind on a broker who is fine again reads as though the flag is still on.
+- [x] `FormOption` gained `disabled`, so the load form still lists a flagged broker,
+      labelled `· DO NOT USE` and unselectable. A name that silently vanishes teaches
+      nobody, and invites the dispatcher to add it back under a different spelling — the
+      exact failure the broker add/edit split already exists to prevent.
+- [x] `dnu_by` is a **soft reference** to `users`, like `audit_log.user_id`: a composite
+      foreign key would either block removing the administrator who made the call or null
+      `organization_id` along with them, and who decided this must outlive their account.
+- [x] Tests: seven cases in `tests/dispatch-admin.test.ts` and two HTTP cases —
+      **443 unit + 27 HTTP passing**. tsc and `next build` clean.
+
+**Decided:** the DNU list is a section at the top of `/brokers`, not a route of its own,
+though the client's menu lists it separately. A second page listing a subset of one table
+is a filter, and a filter that lives away from the thing it filters goes stale in
+somebody's memory. Revisit if they ask for the menu entry specifically.
+
+**Decided:** no new permission. Flagging is gated on `broker:edit`, which is already
+administrators-only and already means "this list is not dispatch's to change". A
+`broker:dnu` action would be a second row in the matrix that always answers the same as
+that one. It earns its own action the day dispatch is allowed to *propose* a flag for an
+administrator to confirm — a different audience, and nobody has asked.
+
+**Not built here:** flagging a *carrier* the same way (`STATUS.BLACKLISTED` already covers
+it), any warning on the existing loads of a broker flagged afterwards, and an audit-log
+entry for the flag itself — `dnu_by`/`dnu_at` record the current state but not the history
+of it being turned on and off.
 
 ---
 
