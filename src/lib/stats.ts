@@ -113,7 +113,7 @@ export function activeByUser(org: Org, column: "dispatcher_id" | "account_manage
 export type TrendPoint = { month: string; value: number };
 
 /** Last `months` calendar months, with zero-filled gaps so the line has no holes. */
-function monthlySeries(rows: { month: string; n: number }[], months: number): TrendPoint[] {
+export function monthlySeries(rows: { month: string; n: number }[], months: number): TrendPoint[] {
   const found = new Map(rows.map((r) => [r.month, r.n]));
   const out: TrendPoint[] = [];
   const now = new Date();

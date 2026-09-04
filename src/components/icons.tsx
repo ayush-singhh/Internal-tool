@@ -14,7 +14,7 @@ export type IconName =
   | "investigations" | "reports" | "team" | "settings" | "import"
   | "search" | "plus" | "filter" | "chevron" | "columns" | "download"
   | "logout" | "note" | "history" | "warning" | "check" | "close" | "edit" | "back"
-  | "loads" | "drivers" | "brokers" | "leads" | "chat" | "calendar";
+  | "loads" | "drivers" | "brokers" | "leads" | "chat" | "calendar" | "money";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   dashboard: <><rect x="2.5" y="2.5" width="6" height="6" rx="1.3"/><rect x="11.5" y="2.5" width="6" height="6" rx="1.3"/><rect x="2.5" y="11.5" width="6" height="6" rx="1.3"/><rect x="11.5" y="11.5" width="6" height="6" rx="1.3"/></>,
@@ -50,6 +50,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
   close: <path d="M5 5l10 10M15 5 5 15"/>,
   edit: <><path d="M13.2 3.6a1.9 1.9 0 0 1 2.7 2.7L7 15.2l-3.6.9.9-3.6 8.9-8.9Z"/></>,
   back: <path d="m11.5 4.5-5 5.5 5 5.5"/>,
+  money: <><rect x="2.2" y="5" width="15.6" height="10" rx="1.6"/><circle cx="10" cy="10" r="2.4"/><path d="M5.4 10h.05M14.55 10h.05"/></>,
 };
 
 export function Icon({

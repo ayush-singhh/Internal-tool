@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireOrg } from "@/lib/auth";
-import { REPORTS, parseReportKey, runReport } from "@/lib/reports";
+import { parseReportKey, runReport, visibleReports } from "@/lib/reports";
+import { formatMoney } from "@/lib/format";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import { BarList, TrendChart } from "@/components/charts";
 import { Icon } from "@/components/icons";
@@ -9,10 +11,17 @@ import { Icon } from "@/components/icons";
 export const metadata: Metadata = { title: "Reports" };
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
-const GROUPS = ["Team", "Portfolio", "Commercial", "Movement"] as const;
+const GROUPS = ["Team", "Portfolio", "Commercial", "Movement", "Dispatch", "Money"] as const;
 
 export default async function ReportsPage(props: PageProps<"/reports">) {
-  const { org } = await requireOrg();
+  const { user, org } = await requireOrg();
+
+  // This page had no permission check at all — it took `org` from the session and served
+  // every figure to anyone who typed the URL, sidebar or no sidebar. Each report now names
+  // the action that reveals it, so a role with none of them gets nowhere near the data.
+  const allowed = visibleReports(user);
+  if (allowed.length === 0) redirect("/");
+
   const sp = await props.searchParams;
   const one = (k: string) => {
     const v = sp[k];
@@ -20,10 +29,14 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
     return s && ISO.test(s) ? s : undefined;
   };
 
-  const key = parseReportKey(Array.isArray(sp.r) ? sp.r[0] : sp.r);
+  const asked = parseReportKey(Array.isArray(sp.r) ? sp.r[0] : sp.r);
+  // A report they may not run falls back to their first, rather than 403-ing on a link
+  // they never followed — the default key is a carrier report, and dispatch has those.
+  const key = allowed.some((r) => r.key === asked) ? asked : allowed[0]!.key;
   const from = one("from");
   const to = one("to");
   const result = runReport(org, key, { from, to });
+  const value = (n: number) => (result.def.money ? formatMoney(n) : n.toLocaleString());
 
   const query = new URLSearchParams({ r: key });
   if (from) query.set("from", from);
@@ -33,13 +46,13 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
     <>
       <PageHeader
         title="Reports"
-        subtitle="Thirteen standard reports. Filter by date where the question is historical, then export."
+        subtitle={`${allowed.length} standard reports. Filter by date where the question is historical, then export.`}
       />
 
       <div className="grid gap-5 lg:grid-cols-[15rem_1fr]">
         <nav aria-label="Reports" className="space-y-4 lg:sticky lg:top-20 lg:self-start">
           {GROUPS.map((group) => {
-            const items = REPORTS.filter((r) => r.group === group);
+            const items = allowed.filter((r) => r.group === group);
             if (items.length === 0) return null;
             return (
               <div key={group}>
@@ -121,7 +134,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
               subtitle={result.def.description}
               action={
                 <span className="tnum shrink-0 text-sm text-ink-500">
-                  {result.def.key === "retention" ? "" : `${result.total.toLocaleString()} total`}
+                  {result.def.key === "retention" ? "" : `${value(result.total)} total`}
                 </span>
               }
             />
@@ -143,7 +156,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
                       {result.def.dimension}
                     </th>
                     <th scope="col" className="px-4 py-2.5 text-right text-xs font-semibold text-ink-600">
-                      Carriers
+                      {result.def.unit}
                     </th>
                     <th scope="col" className="px-4 py-2.5 text-right text-xs font-semibold text-ink-600">
                       Share
@@ -162,7 +175,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
                       <tr key={row.label} className="border-b border-line/70 last:border-0">
                         <td className="px-4 py-2 text-ink-800">{row.label}</td>
                         <td className="tnum px-4 py-2 text-right font-medium text-ink-900">
-                          {row.value.toLocaleString()}
+                          {value(row.value)}
                         </td>
                         <td className="tnum px-4 py-2 text-right text-ink-500">
                           {result.total > 0 && result.def.key !== "retention"

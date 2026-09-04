@@ -2,7 +2,7 @@ import { AUDIT, record } from "@/lib/audit";
 import { requireOrg } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { EXPORT_RULE, checkBurst, recordBurst, retryInWords } from "@/lib/throttle";
-import { parseReportKey, reportToCsvRows, runReport } from "@/lib/reports";
+import { mayRunReport, parseReportKey, reportToCsvRows, runReport } from "@/lib/reports";
 import { csvResponse, stamp } from "@/lib/export";
 import { toCsv } from "@/lib/csv";
 
@@ -14,6 +14,11 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const key = parseReportKey(url.searchParams.get("r"));
+  // `export:run` says this person may take data out; it does not say *which* data. A
+  // viewer holds it, and would otherwise have downloaded the dispatch-fee reports the
+  // page will not show them. The page falls back to a permitted report; a direct CSV
+  // request for one they may not run is refused rather than quietly substituted.
+  if (!mayRunReport(user, key)) return new Response("Not authorized", { status: 403 });
   const clean = (v: string | null) => (v && ISO.test(v) ? v : undefined);
   const from = clean(url.searchParams.get("from"));
   const to = clean(url.searchParams.get("to"));

@@ -6,10 +6,12 @@ working session. For the full picture read, in order: `PRD.md` → `Architecture
 
 **Last updated:** 2026-09-04. The product has a second half now: the **Asterism dispatch
 domain**, built from scratch on this codebase. Phase 15 is fully complete, including
-invoicing; **Phases 16 (role panels) and 17 (leads)** then landed the first two of seven
-sub-projects decomposed from the client's three-panel menu spec. Read `BUGS.md` first —
-the 2026-09-04 entry (the sidebar's deny-list served every page to every role) is the one
-to have in mind before touching any permission or nav code.
+invoicing; **Phases 16–22** then worked through six of the seven sub-projects decomposed
+from the client's three-panel menu spec — **A–F are done, only G (Map, Weather) remains,
+and it is blocked on a client decision rather than on code.** Read `BUGS.md` first: the two
+2026-09-04 entries (the sidebar's deny-list served every page to every role, and `/reports`
+had no permission check at all) are the ones to have in mind before touching any permission
+or nav code. They are the same mistake found twice, in the two places it hides.
 
 ---
 
@@ -32,8 +34,9 @@ sequencing are now stale — see below).
 
 **Working tree:** clean — Phases 15 (loads, drivers/brokers, documents, invoicing), 16
 (role panels), 17 (leads), 18 (tasks/announcements/alerts), 19 (communication), 20
-(brokers DNU) and 21 (planning calendar) are all committed. **Tests:** 462 passing
-(`npm test`) + 29 over HTTP (`npm run test:http`). **Build:** clean.
+(brokers DNU), 21 (planning calendar) and 22 (billing, team performance, working notes)
+are all committed. **Tests:** 493 passing (`npm test`) + 32 over HTTP
+(`npm run test:http`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -41,80 +44,61 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ---
 
-## In flight — pick this up first
+## Nothing in flight
 
-**Phase 22 (sub-project F) is half-started and uncommitted.** Everything through Phase 21
-is committed and green; the working tree has two extra files that compile, pass, and are
-not yet wired to anything:
+Phase 22 shipped, and with it sub-project **F** and the last third of **E**. The working
+tree is clean. What follows is the next-work list, not unfinished work.
 
-- **`src/lib/finance.ts` (new, complete, untested).** Aged receivables (`receivables()`)
-  and the team-performance aggregate (`teamPerformance()`, `performanceTotals()`). Written
-  and typechecking; **no tests yet and no page renders it.**
-- **`src/lib/constants.ts`** gained `INVOICE_TERM_DAYS = 30` (net-30, the only thing
-  ageing needs to call an invoice overdue).
-
-**What was deliberately reverted:** an edit to `src/lib/reports.ts` that added ten dispatch
-and money report keys to `ReportKey` without their `REPORTS` entries or `runReport` cases —
-it would not have compiled. Redo it whole rather than resuming from a half-applied diff.
-
-**The finding that shapes this phase — read before building the AP screen.** The client
-asked for accounts payable *and* receivable. **Only receivable exists.** This product
+**The finding from Phase 22, carried forward because it is a client question.** The spec
+asks for accounts payable *and* receivable. **Only receivable exists.** This product
 invoices carriers for Asterism's dispatch fee, and that is the entirety of the money it
-models; there is no record of the organisation owing anybody. A payables ledger needs the
+models; nothing records the organisation owing anybody. A payables ledger needs the
 **Carrier → Broker freight invoice**, which `invoices.invoice_type` leaves room for and
-which was deliberately deferred (see `docs/superpowers/specs/2026-09-02-invoicing-design.md`
-§1). `finance.ts`'s `payablesGap()` states that plainly on the page rather than faking a
-ledger out of columns that mean something else — **an empty truth beats a populated fiction
-on a finance screen.** Raise it with the client; it is a decision, not a discovery.
+which was deliberately deferred (see
+`docs/superpowers/specs/2026-09-02-invoicing-design.md` §1). `finance.ts`'s `payablesGap()`
+says that plainly on `/billing` rather than faking a ledger out of columns that mean
+something else — **an empty truth beats a populated fiction on a finance screen.** Ask the
+client whether Asterism collects freight and pays carriers onward, or whether carriers bill
+brokers directly; that answer decides whether AP is a feature or a paragraph.
 
-**The rest of Phase 22, as planned:**
+**What Phase 22 added, in one place:** migration 23 (`users.working_notes`,
+`users.working_notes_at`), `src/lib/finance.ts` (aged receivables + the team aggregate),
+`src/lib/working-notes.ts`, `/billing`, `/performance`, `/notes`, eight new reports across
+two new report groups, and **a permission on every report** — see the BUGS.md entry.
 
-1. `/billing` — receivables: the four ageing buckets, outstanding/overdue/disputed totals,
-   paid-this-month, delivered-but-never-invoiced loads, and the oldest dozen unpaid.
-   Gate on `invoice:manage` (already administrators-only — the whole invoicing lifecycle
-   is). Plus the payables panel above.
-2. `/performance` — Team Performance Report: one row per active person, columns for
-   carriers, loads, delivered, dispatch-fee revenue, leads, converted, tasks open/done,
-   with a totals row. Gate on `team:manage`. Spec puts it on the Admin menu only.
-3. **Extend `reports.ts`** with the dispatch and money reports — this is the debt worth
-   paying: the page counts carriers and nothing else in a product that is now half loads
-   and invoicing. `ReportDef` needs a `unit` ("carriers" | "loads" | "money" | "leads")
-   so `reportToCsvRows` stops hardcoding "Carriers" as its second column heading.
-4. **Working Notes** — the last of sub-project E, folded in here. Sales panel only, almost
-   certainly one text column on `users` in the shape of `announcements_seen_at`.
+**Two traps from this phase worth not rediscovering:**
 
-Everything else is complete and committed. Phases 15–21 shipped.
-
-**The client's three-panel spec is seven sub-projects (A–G)** — the table lives in
-`Plan.md` under Phase 16, and it is the roadmap now. **A (role panels), B (leads),
-C (tasks/announcements/alerts) and D (communication) are done; E is part-done** — the
-Brokers DNU list shipped as Phase 20 and the Planning Calendar as Phase 21 (the client
-answered "both" to derive-vs-own, and it does both). What is left of E:
-
-- **Working Notes.** On the Sales panel only, and the last piece of E. A personal
-  scratchpad, so probably one text column per user rather than a table, in the shape of
-  `users.announcements_seen_at`. Small.
-
-Then **F** (accounts payable/receivable + Team Performance report — all of it reporting on
-data that now exists) and **G** (Map, Weather — external APIs and a recurring cost, so it
-needs a client decision about who pays for the key before any code).
+- **A `to` bound compared against a timestamp column silently drops that whole last day.**
+  `'2026-01-31T09:00:00Z' <= '2026-01-31'` is false. Every date-range filter over
+  `created_at` / `completed_at` wraps the column in `substr(…, 1, 10)`. Guarded by "the
+  last day of a range is inside it" in `tests/finance.test.ts`.
+- **The list of pages to audit is the router's, never the navigation's.** `/reports` was
+  ungated for fourteen phases because every permission review had walked the sidebar, and
+  the sidebar had never offered it wrongly.
 
 **Candidates for what's next, roughly ready-now → waiting-on-something:**
 
 1. **Redeploy `carrier-hub.fly.dev`.** The live app is still on migration 16 — invoicing
-   (17), leads (18), tasks/announcements (19), communication (20), the DNU flag (21) and
-   the calendar (22) are not usable there yet. Ready to do now, same process as the last
-   redeploy (migrate through 22, restart the one machine). No code work needed. **Six
-   migrations behind, and none of them has ever run against a database with real data in
-   it — which is exactly the situation `BUGS.md`'s worst entry describes. Back up first.**
+   (17), leads (18), tasks/announcements (19), communication (20), the DNU flag (21), the
+   calendar (22) and working notes (23) are not usable there yet. Ready to do now, same
+   process as the last redeploy (migrate through 23, restart the one machine). No code work
+   needed. **Seven migrations behind, and none of them has ever run against a database with
+   real data in it — which is exactly the situation `BUGS.md`'s worst entry describes. Back
+   up first.** This has been raised after Phases 18, 19, 21 and 22; the user has chosen
+   feature work each time, so it is a standing decision rather than an oversight.
 2. **Carrier → Broker freight invoice.** The natural next phase of the invoicing work —
    schema already leaves room (`invoices.invoice_type`, see
    `docs/superpowers/specs/2026-09-02-invoicing-design.md` §1) — but only worth starting
    once the client actually asks for it. Not requested yet.
-3. **Known coverage gaps** (pre-existing, not urgent, not blocking anything): `/support`'s
-   org summary and the Reports page are still carrier-only — no visibility into loads,
-   drivers, brokers, documents, or invoices. `seed-demo.ts` also only seeds carrier data.
-4. **Merge `multi-tenant` → `main`, or the Postgres move.** Both deliberately deferred
+3. **Sub-project G — Map and Weather.** The last of the seven, and the only one left. It
+   needs external APIs with a recurring cost, so **who pays for the key is a client
+   question, not a coding one** — ask before writing anything.
+4. **Known coverage gaps** (pre-existing, not urgent, not blocking anything): `/support`'s
+   org summary is still carrier-only — no visibility into loads, drivers, brokers,
+   documents or invoices. `seed-demo.ts` also only seeds carrier data, so a demo shows
+   roughly a third of the product. (The Reports page was on this list and is no longer —
+   Phase 22 gave it dispatch and money reports.)
+5. **Merge `multi-tenant` → `main`, or the Postgres move.** Both deliberately deferred
    until the whole multi-tenant SaaS effort is done, not tied to any one feature — see
    "Decisions already made" below.
 
@@ -181,7 +165,7 @@ needs a client decision about who pays for the key before any code).
 
 ---
 
-## Role panels, leads, and the shared workspace — what exists ✅ (Phases 16–19)
+## Role panels, leads, and the shared workspace — what exists ✅ (Phases 16–22)
 
 - **The sidebar is a permission surface, not decoration.** Every item in `NAV_GROUPS`
   (`src/lib/nav.ts`) names the `Action` that reveals it; `visibleNav(user)` filters with
@@ -247,6 +231,25 @@ needs a client decision about who pays for the key before any code).
   path from the calendar into a load. All its date maths is **UTC on `YYYY-MM-DD` strings**
   — local-time `Date` arithmetic silently shifts a day near midnight and would skew the
   whole grid.
+
+- **Billing is receivables only, and says so** (`src/lib/finance.ts`, `/billing`). The
+  four ageing buckets tile the timeline exactly once — a gap or an overlap and they stop
+  summing to the outstanding total, which is the one arithmetic a finance screen must not
+  get wrong. `tests/finance.test.ts` asserts that sum directly, on both sides of every
+  boundary. `payablesGap()` is the honest empty half; see "Nothing in flight" above.
+- **Team performance is five small aggregates assembled in TypeScript**, not one query with
+  five correlated subselects and a date range threaded through each — the parameter order
+  in that version is where the bug would live. A range narrows what *happened* and leaves
+  what simply *is* (carriers held, tasks still open), and the page says so out loud.
+- **Every report names the permission that reveals it** (`ReportDef.action`), and
+  `ReportDef.unit` is the value column's heading. Before Phase 22 the page asked `can()`
+  nothing and every CSV said "Carriers" over whatever it contained. `visibleReports(user)`
+  builds the rail; `mayRunReport(user, key)` guards the CSV route, because `export:run`
+  says a person may take data out and not *which* data.
+- **Working Notes is one column on `users`, on every panel** (migration 23). No permission
+  call: the session names the only person whose notes the page can reach, so there is no
+  other user's record for `can()` to protect. The client's menu shows it on Sales only; it
+  is everywhere because a private scratchpad has nothing to gate.
 
 **Postgres is deferred, not cancelled.** I attempted the async conversion and reverted it:
 ~700 edits across 65 files, automation reaches ~85%, and the remainder has semantic traps

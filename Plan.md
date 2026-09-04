@@ -5,11 +5,11 @@ phase to finish. Status is updated as part of the phase it describes.
 
 Legend: ✅ done · 🔨 in progress · ⬜ not started
 
-**Phases 0–21 complete.** 462 unit + 29 HTTP tests passing, production build clean,
-permission matrix verified over HTTP for every role. Phases 16–21 work through the client's
+**Phases 0–22 complete.** 493 unit + 32 HTTP tests passing, production build clean,
+permission matrix verified over HTTP for every role. Phases 16–22 work through the client's
 three-panel spec, decomposed into seven sub-projects — see the table under Phase 16.
-A–D are done; E is part-done (Brokers DNU shipped as Phase 20, the Planning Calendar as
-Phase 21; Working Notes remains).
+**A–F are done.** Only **G** (Map, Weather) is left, and it is blocked on a client decision
+rather than on code.
 
 ---
 
@@ -497,8 +497,8 @@ The supplied spec is seven sub-projects, not one. Each gets its own spec → pla
 | B | Leads (entity, Submit Lead, lead → carrier conversion) | ✅ Phase 17 |
 | C | Tasks + Announcements + Alerts (one phase — shared "needs my attention" feed; `attention.ts` is half of it already) | ✅ Phase 18 |
 | D | Communication (internal threads, dispatch ↔ sales) | ✅ Phase 19 |
-| E | Planning Calendar, Working Notes, Brokers DNU list | 🔨 DNU (Phase 20) + Calendar (Phase 21) done; Working Notes still open |
-| F | Accounts payable / receivable, Team Performance Report | ⬜ |
+| E | Planning Calendar, Working Notes, Brokers DNU list | ✅ DNU (Phase 20), Calendar (Phase 21), Working Notes (Phase 22) |
+| F | Accounts payable / receivable, Team Performance Report | ✅ Phase 22 — receivable in full; **payable has no data in this schema**, see the phase |
 | G | Map, Weather | ⬜ external APIs, recurring cost — see "Deferred by design" |
 
 Already covered by existing screens, despite appearing in the spec as new: Active Carriers
@@ -775,6 +775,61 @@ and costs a fraction of a week-view with hour rows. Revisit if somebody schedule
 **Not built here:** recurrence (a weekly standing meeting is twelve rows today), attendees
 or invitations, a week or day view, drag-to-move, and iCal export. Recurrence is the one
 most likely to be asked for.
+
+---
+
+## Phase 22 — Billing, Team Performance and Working Notes ✅ (2026-09-04)
+
+Sub-project **F** in full, plus the last third of **E**. Everything here reports on data
+other phases already write — the phase adds one column and no new domain.
+
+- [x] **Migration 23** — `users.working_notes`, `users.working_notes_at`. A column, not a
+      table: one private page of free text per person, no sharing and no history, in the
+      shape `users.announcements_seen_at` set.
+- [x] **`/billing`** — aged receivables. Four buckets that **tile the timeline exactly
+      once** (current, 31–60, 61–90, 90+ against a flat 30-day term), outstanding /
+      overdue / disputed totals, paid-this-month by settlement date, the twelve
+      longest-unpaid, and delivered loads carrying no invoice line. Gated on
+      `invoice:manage`, which is administrators-only — so it lands on the Admin panel
+      without naming a role.
+- [x] **`/performance`** — one row per active person: carriers held, loads booked and
+      delivered, dispatch fee earned, leads and conversions, tasks open and done, with a
+      totals row. Gated on `team:manage`.
+- [x] **`/notes`** — Working Notes. A textarea and a Save button.
+- [x] **Eight new reports** and a per-report permission — Dispatch (loads by status,
+      dispatcher and broker; monthly volume) and Money (dispatch fee by month and by
+      carrier, invoices by status, receivables ageing).
+- [x] Tests: `tests/finance.test.ts` (21), `tests/working-notes.test.ts` (7), new report
+      and nav cases, four HTTP cases — **493 unit + 32 HTTP passing**. tsc and
+      `next build` clean.
+
+**The finding worth carrying: accounts payable has no data in this schema.** The client's
+spec asks for both halves of "Billing Management". This product invoices carriers for
+Asterism's dispatch fee, and that is the whole of the money it models — nothing anywhere
+records the organisation owing anybody. The payable side arrives with the Carrier → Broker
+freight invoice, which `invoices.invoice_type` leaves room for and which was deliberately
+deferred in the 2026-09-02 invoicing design. `/billing` therefore **says so on the page**
+rather than manufacturing a ledger out of columns that mean something else; an empty truth
+beats a populated fiction on a finance screen. It is a decision for the client, not a
+discovery — everything needed to build it is already here.
+
+**Decided against the supplied spec: Working Notes is on every panel, not only Sales.** It
+is a private page on the reader's own user row, so no other person's data is in it and
+there is nothing for a role to gate. It carries `task:view` — the "you have a workspace
+here" test `/alerts` uses, which keeps platform support out — because an item that asks
+`can()` nothing is the exact shape of the Phase 16 bug. Anything narrower would be a
+deny-list.
+
+**Decided: derived, not stored, again.** Both screens are live queries. Team performance in
+particular is five small aggregates assembled in TypeScript rather than one query with five
+correlated subselects — the parameter order in that version is where the bug would live.
+
+**A defect fell out of this:** `/reports` had no permission check whatsoever. See BUGS.md,
+2026-09-04. Every `ReportDef` now names the action that reveals it.
+
+**Not built here:** a printable or emailed statement, per-carrier payment terms, partial
+payments (an invoice is paid or it is not), commission on the performance report, and any
+export of either new screen beyond what `/api/export/report` already covers.
 
 ---
 

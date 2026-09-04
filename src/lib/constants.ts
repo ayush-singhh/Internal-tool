@@ -219,6 +219,16 @@ export const ADJUSTMENT_KIND_TONE: Record<AdjustmentKind, Tone> = {
 export const FEE_BASIS = { PERCENTAGE: "percentage", FLAT: "flat" } as const;
 export type FeeBasis = (typeof FEE_BASIS)[keyof typeof FEE_BASIS];
 
+/**
+ * Payment terms, in days from `issued_on`. Net-30 is the industry default and the only
+ * thing receivables ageing needs to call an invoice overdue.
+ *
+ * ponytail: one number for the whole organisation. Per-carrier terms are a real thing in
+ * freight — add a column on `carriers` and read it here the first time somebody negotiates
+ * net-45 and notices this page disagreeing with them.
+ */
+export const INVOICE_TERM_DAYS = 30;
+
 /** An invoice's own status. Free transitions, not forward-only like loads.status — a
  *  mistaken Paid has to be correctable. See invoice-write.ts's setInvoiceStatus. */
 export const INVOICE_STATUS = { PENDING: "pending", PAID: "paid", DISPUTED: "disputed" } as const;

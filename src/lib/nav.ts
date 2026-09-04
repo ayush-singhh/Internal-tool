@@ -106,6 +106,12 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/announcements", label: "Announcements", icon: "note", count: "announcements", action: "announcement:view" },
       { href: "/communication", label: "Communication", icon: "chat", count: "messages", action: "message:view" },
       { href: "/calendar", label: "Planning Calendar", icon: "calendar", action: "calendar:view" },
+      // The client's menu shows Working Notes on the Sales panel only. It is a private
+      // page of free text on the reader's own user row — no other person's data is in it,
+      // so there is nothing for a role to gate. `task:view` is the same "you have a
+      // workspace in this organisation" test /alerts uses, and it keeps platform support
+      // out; anything narrower would just be a deny-list.
+      { href: "/notes", label: "Working Notes", icon: "edit", action: "task:view" },
     ],
   },
   {
@@ -134,12 +140,17 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/drivers", label: "Drivers", icon: "drivers", action: "load:view" },
       { href: "/brokers", label: "Brokers", icon: "brokers", action: "load:view" },
       { href: "/invoices", label: "Invoices", icon: "note", action: "invoice:view" },
+      // Invoices are the documents; Billing is the money across them. Gated on
+      // `invoice:manage`, which is administrators only — so this is on the Admin panel
+      // and no other, without naming a role.
+      { href: "/billing", label: "Billing", icon: "money", action: "invoice:manage" },
     ],
   },
   {
     heading: "Insights",
     items: [
       { href: "/reports", label: "Reports", icon: "reports", action: "carrier:view" },
+      { href: "/performance", label: "Team Performance", icon: "team", action: "team:manage" },
       { href: "/activity", label: "My Activity", icon: "history" },
     ],
   },

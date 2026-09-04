@@ -881,3 +881,128 @@ test("My Activity is reachable by every role and shows only that user's own entr
     "My Activity is self-scoped — another user's entry must never appear",
   );
 });
+
+/**
+ * Billing, Team Performance and the money reports — the three screens Phase 22 added,
+ * checked at the wire rather than at the function. Each one is administrators-only, and
+ * "administrators-only" has to mean the HTML, not the sidebar.
+ */
+test("billing and team performance are refused to a dispatcher, page and figures both", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg, lookupId } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Money Panel Co", "moneyowner@panel.test");
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Dana Dispatch', 'moneydispatch@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.DISPATCHER, now, now, now],
+  );
+  // A colleague, so the roster assertion tests what the reader may see about *others*.
+  // Dana's own name is in the app shell on every page, redirect included.
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Percy Colleague', 'moneypercy@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.ACCOUNT_MANAGER, now, now, now],
+  );
+  app.db.run(
+    `INSERT INTO carriers (organization_id, legal_name, owner_name, phone, mc_number,
+                           status_id, created_at, updated_at)
+     VALUES (?, 'BILLING CARRIER LLC', 'B Owner', '555777888', '444222', ?, ?, ?)`,
+    [org.id, lookupId(app.db, org.id, "status", "active"), now, now],
+  );
+  const carrierId = app.db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
+  // A distinctive amount: if it reaches a page it should not, the digits give it away.
+  app.db.run(
+    `INSERT INTO invoices (organization_id, invoice_type, carrier_id, status, issued_on,
+                           total_amount, created_at, updated_at)
+     VALUES (?, 'dispatch', ?, 'pending', '2026-01-05', 8641.75, ?, ?)`,
+    [org.id, carrierId, now, now],
+  );
+
+  const owner = await app.get("/billing", app.session("moneyowner@panel.test"));
+  assert.equal(owner.status, 200);
+  assert.ok(owner.body.includes("8,641.75"), "the owner sees the outstanding figure");
+  assert.ok(owner.body.includes("BILLING CARRIER LLC"), "and who owes it");
+
+  const dispatcher = await app.get("/billing", app.session("moneydispatch@panel.test"));
+  assert.ok(
+    dispatcher.status === 307 || dispatcher.status === 302,
+    `expected a redirect, got ${dispatcher.status}`,
+  );
+  assert.ok(!dispatcher.body.includes("8,641.75"), "and no figure came with the redirect");
+
+  const perf = await app.get("/performance", app.session("moneydispatch@panel.test"));
+  assert.ok(perf.status === 307 || perf.status === 302, `expected a redirect, got ${perf.status}`);
+  assert.ok(!perf.body.includes("Percy Colleague"), "no roster leaked with the redirect either");
+
+  const ownerPerf = await app.get("/performance", app.session("moneyowner@panel.test"));
+  assert.equal(ownerPerf.status, 200);
+  assert.ok(ownerPerf.body.includes("Percy Colleague"), "the owner sees the whole team");
+  assert.ok(ownerPerf.body.includes("Dana Dispatch"));
+});
+
+test("the reports page has a gate now, and a role with no reports never reaches it", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg, lookupId } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Report Gate Co", "rgowner@panel.test");
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Sal Sales', 'rgsales@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.SALES, now, now, now],
+  );
+  app.db.run(
+    `INSERT INTO carriers (organization_id, legal_name, owner_name, phone, mc_number,
+                           status_id, created_at, updated_at)
+     VALUES (?, 'REPORTABLE CARRIER LLC', 'R Owner', '555666777', '333111', ?, ?, ?)`,
+    [org.id, lookupId(app.db, org.id, "status", "active"), now, now],
+  );
+
+  // Sales holds no carrier:view, load:view or invoice:view — so no report at all. Before
+  // this the page never asked, and served the whole book's figures to anyone signed in.
+  const sales = await app.get("/reports", app.session("rgsales@panel.test"));
+  assert.ok(sales.status === 307 || sales.status === 302, `expected a redirect, got ${sales.status}`);
+  assert.ok(!sales.body.includes("REPORTABLE CARRIER LLC"));
+
+  // And the CSV route refuses the same report by key, not merely by link.
+  const csv = await app.get("/api/export/report?r=fee_by_carrier", app.session("rgsales@panel.test"));
+  assert.equal(csv.status, 403);
+  assert.ok(!csv.body.includes("REPORTABLE CARRIER LLC"));
+
+  const owner = await app.get("/reports?r=loads_by_status", app.session("rgowner@panel.test"));
+  assert.equal(owner.status, 200);
+  assert.ok(owner.body.includes("Loads by status"));
+});
+
+test("working notes are the reader's own, and reach every role", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Scratchpad Co", "padowner@panel.test");
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at, working_notes)
+     VALUES (?, 'Sal Scratch', 'padsales@panel.test', 'x', ?, 1, ?, ?, ?, 'SALES PRIVATE SCRATCH')`,
+    [org.id, ROLES.SALES, now, now, now],
+  );
+  app.db.run(
+    "UPDATE users SET working_notes = 'OWNER PRIVATE SCRATCH' WHERE organization_id = ? AND id = ?",
+    [org.id, org.ownerId],
+  );
+
+  const sales = await app.get("/notes", app.session("padsales@panel.test"));
+  assert.equal(sales.status, 200, "the client's menu puts this on the Sales panel");
+  assert.ok(sales.body.includes("SALES PRIVATE SCRATCH"), "their own page is there");
+  assert.ok(
+    !sales.body.includes("OWNER PRIVATE SCRATCH"),
+    "the page is keyed on the session, not on anything the browser sends",
+  );
+
+  const owner = await app.get("/notes", app.session("padowner@panel.test"));
+  assert.equal(owner.status, 200);
+  assert.ok(owner.body.includes("OWNER PRIVATE SCRATCH"));
+  assert.ok(!owner.body.includes("SALES PRIVATE SCRATCH"));
+});

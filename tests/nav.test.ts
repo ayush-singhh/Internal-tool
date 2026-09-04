@@ -42,10 +42,26 @@ const hrefs = (role: string, active = 1) =>
 test("an administrator sees every section, Administration included", () => {
   const seen = hrefs(ROLES.ADMIN);
   for (const href of ["/", "/alerts", "/tasks", "/announcements", "/communication", "/calendar",
-                      "/leads", "/carriers", "/loads", "/invoices", "/reports", "/team",
-                      "/settings", "/import", "/audit"]) {
+                      "/leads", "/carriers", "/loads", "/invoices", "/billing", "/reports",
+                      "/performance", "/team", "/settings", "/import", "/audit"]) {
     assert.ok(seen.includes(href), `admin should see ${href}`);
   }
+});
+
+/**
+ * The money view and the people view. A dispatcher may open a single invoice — they hold
+ * `invoice:view` — but the ledger across all of them, and one colleague's output measured
+ * against another's, are both management. Gating them on `invoice:manage` and
+ * `team:manage` is what keeps them off the Dispatcher panel without naming the role.
+ */
+test("billing and team performance are administrators-only", () => {
+  for (const role of [ROLES.DISPATCHER, ROLES.ACCOUNT_MANAGER, ROLES.SALES, ROLES.VIEWER]) {
+    const seen = hrefs(role);
+    assert.ok(!seen.includes("/billing"), `${role} must not see /billing`);
+    assert.ok(!seen.includes("/performance"), `${role} must not see /performance`);
+  }
+  // And the dispatcher still reaches the invoices themselves — this narrowed nothing else.
+  assert.ok(hrefs(ROLES.DISPATCHER).includes("/invoices"));
 });
 
 /**
@@ -89,7 +105,8 @@ test("a dispatcher gets carriers and dispatch but no Administration and no pipel
 
 test("sales sees leads and its own activity — no carrier, load or invoice", () => {
   assert.deepEqual(hrefs(ROLES.SALES), [
-    "/", "/alerts", "/tasks", "/announcements", "/communication", "/leads", "/activity",
+    "/", "/alerts", "/tasks", "/announcements", "/communication", "/notes", "/leads",
+    "/activity",
   ]);
 });
 
@@ -136,7 +153,8 @@ test("regression: the old admin-href deny-list served sales the carrier and load
   }
   assert.notDeepEqual(underOldRule, hrefs(ROLES.SALES));
   assert.deepEqual(hrefs(ROLES.SALES), [
-    "/", "/alerts", "/tasks", "/announcements", "/communication", "/leads", "/activity",
+    "/", "/alerts", "/tasks", "/announcements", "/communication", "/notes", "/leads",
+    "/activity",
   ]);
 });
 

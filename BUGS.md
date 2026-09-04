@@ -18,6 +18,55 @@ conversation it was noticed in.
 
 ---
 
+## 2026-09-04 — `/reports` had no permission check at all
+
+**Severity:** medium · **Status:** fixed · **Reached users:** unknown — the page has been
+in the product since Phase 8; nothing recorded who opened it
+
+`src/app/(app)/reports/page.tsx` began:
+
+```ts
+const { org } = await requireOrg();
+```
+
+`user` was never destructured, so `can()` was never asked. Any signed-in person who typed
+`/reports` — or followed a link from anywhere — got thirteen breakdowns of the whole
+carrier book: every dispatcher's workload, the plan and pricing distribution, the
+onboarding and offboarding history. `sales` in particular is defined by seeing **no
+carrier at all**, and this served them the shape of the entire book.
+
+**Not the same bug as the sidebar one below, and that is the point.** Phase 16 fixed the
+*navigation* so a role is only offered what it may open. This page was never offered to
+sales — and was reachable anyway, because hiding the link is presentation and the page
+itself asked nothing. Every other page in the product had already learned this; Reports had
+simply never been revisited after the roles arrived.
+
+**Found by:** adding money reports to it. Writing `fee_by_carrier` meant asking who may see
+dispatch-fee revenue, which meant reading the page's gate, which turned out not to exist.
+
+**Fixed:** every `ReportDef` now names the `Action` that reveals it — carrier reports
+`carrier:view`, dispatch reports `load:view`, money reports `invoice:view`, receivables
+ageing `invoice:manage` (the same gate as `/billing`). `visibleReports(user)` builds the
+rail, a report the reader may not run falls back to their first rather than 403-ing on a
+link they never followed, and `mayRunReport` refuses the CSV route by key. `export:run` was
+already checked there and was never enough: it says this person may take data out, not
+*which* data.
+
+**Why it was missed:** the permission model arrived in Phase 2 and the roles that make it
+bite arrived in Phase 16, but the audit that followed each of them walked the *sidebar*.
+A page nobody had linked wrongly looked correct from the sidebar's point of view. **The
+list of pages to audit is the router's, never the navigation's** — anything reachable by
+URL is reachable, and a filtered menu is evidence about menus only.
+
+**Guarded by:** `tests/reports.test.ts` — "each role sees only the reports its permissions
+allow" (sales gets an empty list; a dispatcher may run `fee_by_carrier` but not
+`receivables_ageing`), and `tests/http/app.test.ts` — "the reports page has a gate now, and
+a role with no reports never reaches it", which checks the redirect *and* the absence of a
+carrier name from the body, plus a 403 from the CSV route for a report the caller may not
+run.
+
+---
+
 ## 2026-09-04 — `transaction()` could not be nested, so reusing a write function broke it
 
 **Severity:** low · **Status:** fixed · **Reached users:** no — caught while building

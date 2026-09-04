@@ -1011,6 +1011,21 @@ export const MIGRATIONS: Migration[] = [
       db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_calendar_org_id ON calendar_events (organization_id, id)");
     },
   },
+  {
+    version: 23,
+    name: "working notes: one private scratchpad per person",
+    up: (db) => {
+      // A column, not a table. Working Notes is one private page of free text per person,
+      // with no sharing, no history and no second row to relate it to — every reason to
+      // make a table of it is a feature nobody asked for. `users.announcements_seen_at`
+      // set the precedent: personal state that belongs to exactly one user row lives on it.
+      //
+      // ponytail: no versions and no autosave. Add them when somebody loses a page of
+      // typing and says so.
+      addColumn(db, "users", "working_notes", "TEXT");
+      addColumn(db, "users", "working_notes_at", "TEXT");
+    },
+  },
 ];
 
 export function addColumn(

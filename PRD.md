@@ -144,6 +144,45 @@ manage the task board.
 Administrators and dispatchers only. A dispatcher edits the events they raised; an
 administrator edits all of them.
 
+### 4.1g Working Notes
+A private page of free text per person. Nobody else in the organisation can read it — not
+an administrator, not the owner — and nothing in the product derives anything from it.
+
+The client's menu shows this on the Sales panel. It is on every panel instead: the page is
+a column on the reader's own user row, so there is no other person's data in it for a role
+to protect, and a dispatcher who wants to jot a phone number should not have to reach for a
+sticky note.
+
+No history, no versions, no autosave. Save is a button.
+
+### 4.1h Billing
+Aged accounts receivable over the dispatch invoices. Four buckets against a flat 30-day
+term — current, 31–60, 61–90, 90+ — which tile the timeline exactly once, so they always
+sum to the outstanding total. Beside them: outstanding, overdue and disputed totals, what
+was settled this month, the twelve longest-unpaid invoices, and a count of **delivered
+loads carrying no invoice line** — money earned and not yet asked for, which is a different
+problem from money asked for and not given.
+
+Administrators only, the same as the rest of the invoicing lifecycle.
+
+**Accounts payable is not modelled.** The spec asks for both halves. This product invoices
+carriers for the dispatch fee and tracks no money owed *by* the organisation, so the
+payable side would need the Carrier → Broker freight invoice — provided for in the schema
+and deliberately not built. The page says this in place of a payables panel rather than
+deriving a figure out of columns that mean something else.
+
+### 4.1i Team Performance
+One row per active person: carriers held as dispatcher or account manager, loads booked and
+delivered, dispatch fee invoiced on their loads, leads submitted and converted, tasks open
+and completed. A totals row underneath, so one person's share of the whole is readable.
+
+A date range narrows **what happened** — loads, leads, fees, completed tasks. It leaves
+alone **what simply is** — carriers held, tasks still open. The page says so, because a
+range that silently applied to some columns and not others is how a performance report gets
+misread.
+
+Administrators only.
+
 ### 4.2 Carrier Database
 Sortable, filterable, searchable table with user-selectable visible columns.
 
