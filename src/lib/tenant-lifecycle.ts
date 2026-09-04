@@ -27,7 +27,8 @@ const REDACTED = ["password_hash", "mfa_secret"] as const;
 
 /** Tenant-owned tables, in the order a reader would want them. */
 export const OWNED = [
-  "users", "lookups", "app_settings", "leads", "carriers", "carrier_notes",
+  "users", "lookups", "app_settings", "announcements", "tasks", "leads",
+  "carriers", "carrier_notes",
   "carrier_activity", "offboarding_records", "saved_filters", "audit_log",
   "drivers", "brokers", "load_documents", "load_adjustments", "invoices",
   "invoice_lines", "loads", "load_stops",
@@ -158,7 +159,9 @@ export function deleteOrganization(orgId: number, opts: { exported: boolean }): 
 
       // Before carriers, users and lookups: a lead points at all three (its owner, the
       // carrier it was converted into, its source and trailer type) and none of those
-      // references cascades.
+      // references cascades. Tasks point at users and carriers, announcements at users.
+      del("tasks", "DELETE FROM tasks WHERE organization_id = ?", [orgId]);
+      del("announcements", "DELETE FROM announcements WHERE organization_id = ?", [orgId]);
       del("leads", "DELETE FROM leads WHERE organization_id = ?", [orgId]);
 
       // Cascades to carrier_notes, carrier_activity and offboarding_records.

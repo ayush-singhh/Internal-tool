@@ -802,6 +802,72 @@ export const MIGRATIONS: Migration[] = [
       db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_org_id ON leads (organization_id, id)");
     },
   },
+  {
+    version: 19,
+    name: "tasks and announcements (alerts stay derived)",
+    up: (db) => {
+      // Assigned work with a due date. `carrier_id` is the only link, deliberately: a task
+      // about a load or a lead can name it in the title, and three nullable foreign keys
+      // for links nobody has asked for is scaffolding.
+      // ponytail: no recurrence and no sub-tasks. Add either when somebody asks twice.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS tasks (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          title           TEXT NOT NULL,
+          details         TEXT,
+          assigned_to     INTEGER,
+          carrier_id      INTEGER,
+          due_on          TEXT,
+          priority        TEXT NOT NULL DEFAULT 'normal',
+          status          TEXT NOT NULL DEFAULT 'open',
+          completed_at    TEXT,
+          completed_by    INTEGER,
+          created_at      TEXT NOT NULL,
+          created_by      INTEGER,
+          updated_at      TEXT NOT NULL,
+          updated_by      INTEGER,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, assigned_to)  REFERENCES users    (organization_id, id),
+          FOREIGN KEY (organization_id, carrier_id)   REFERENCES carriers (organization_id, id),
+          FOREIGN KEY (organization_id, completed_by) REFERENCES users    (organization_id, id),
+          FOREIGN KEY (organization_id, created_by)   REFERENCES users    (organization_id, id),
+          FOREIGN KEY (organization_id, updated_by)   REFERENCES users    (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_org ON tasks (organization_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_org_assignee ON tasks (organization_id, assigned_to, status)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_org_due ON tasks (organization_id, status, due_on)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_org_id ON tasks (organization_id, id)");
+
+      // The noticeboard. Everyone in the organisation reads every announcement — no
+      // audience column, because targeting a message at one team is Communication's job
+      // (sub-project D), not a broadcast's.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS announcements (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          title           TEXT NOT NULL,
+          body            TEXT NOT NULL,
+          published_at    TEXT NOT NULL,
+          created_at      TEXT NOT NULL,
+          created_by      INTEGER,
+          updated_at      TEXT NOT NULL,
+          updated_by      INTEGER,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, created_by) REFERENCES users (organization_id, id),
+          FOREIGN KEY (organization_id, updated_by) REFERENCES users (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_announcements_org ON announcements (organization_id, published_at)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_announcements_org_id ON announcements (organization_id, id)");
+
+      // One timestamp per person instead of a read-receipt table: unread means "published
+      // since you last opened the page". That answers the only question anything asks —
+      // the sidebar badge and the alerts feed — in one column and no per-row writes.
+      // ponytail: per-announcement receipts ("who has read this?") need the table. Add it
+      // if somebody actually wants to chase individuals.
+      addColumn(db, "users", "announcements_seen_at", "TEXT");
+    },
+  },
 ];
 
 export function addColumn(

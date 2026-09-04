@@ -299,7 +299,7 @@ suite, rather than trusting each query site to remember a `WHERE` clause.
 | Class | Tables | Rule |
 |---|---|---|
 | **Global / system** | `organizations`, `schema_migrations`, `login_attempts`, `sessions`, `password_resets` | No `organization_id`. Reached only through `systemQuery()`, whose call sites are enumerated and few. Sessions/resets derive their tenant from the user they point at; login throttling must work *before* a tenant is known. |
-| **Tenant-owned** | `carriers`, `carrier_notes`, `carrier_activity`, `offboarding_records`, `lookups`, `app_settings`, `users` | Carry `organization_id`. Every read and write is scoped. `lookups` and `app_settings` are per-tenant so one company retiring a plan or changing a threshold never touches another. |
+| **Tenant-owned** | `carriers`, `carrier_notes`, `carrier_activity`, `offboarding_records`, `lookups`, `app_settings`, `users`, `audit_log`, `drivers`, `brokers`, `loads`, `load_stops`, `load_documents`, `load_adjustments`, `invoices`, `invoice_lines`, `leads`, `tasks`, `announcements` | Carry `organization_id`. Every read and write is scoped. `lookups` and `app_settings` are per-tenant so one company retiring a plan or changing a threshold never touches another. The authoritative list is `TENANT_TABLES` in `src/lib/tenant-db.ts` — the guard and the tests both read it, so this row is documentation and that constant is the rule. |
 | **User-owned within a tenant** | `saved_filters` | Scoped by `organization_id` *and* `user_id`. |
 
 ### Three isolation layers

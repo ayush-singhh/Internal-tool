@@ -3,13 +3,22 @@ import { get } from "./db.ts";
 import type { Org } from "./tenant-db.ts";
 import { idsOf } from "./lookups.ts";
 import { can, type Action, type SessionUser } from "./permissions.ts";
+import { taskCounts } from "./tasks.ts";
+import { unreadCount } from "./announcements.ts";
 import type { IconName } from "../components/icons.tsx";
 import {
   STATUS, OFFBOARDING_STATUSES, LOAD_STATUS, LOAD_STATUS_ORDER, LEAD_STATUS_OPEN,
 } from "./constants.ts";
 
-/** Counts shown as badges in the sidebar, so the rail doubles as a workload summary. */
-export function navCounts(org: Org) {
+/**
+ * Counts shown as badges in the sidebar, so the rail doubles as a workload summary.
+ *
+ * `user` is here because two of these are personal rather than organisational — your open
+ * tasks, your unread announcements. Both are deliberately cheap single-row queries: this
+ * runs on every page render, so the full alert picture (which re-runs every carrier
+ * attention rule) belongs on `/alerts` and not in the rail.
+ */
+export function navCounts(org: Org, user: SessionUser) {
   const active = idsOf(org, "status", [STATUS.ACTIVE]);
   const upcoming = idsOf(org, "status", [STATUS.ABOUT_TO_BE_ACTIVE]);
   const investigating = idsOf(org, "status", [STATUS.PENDING_INVESTIGATION]);
@@ -27,7 +36,13 @@ export function navCounts(org: Org) {
   // figure, so a delivered load has stopped being work.
   const open = LOAD_STATUS_ORDER.slice(0, LOAD_STATUS_ORDER.indexOf(LOAD_STATUS.DELIVERED));
 
+  // Whoever may assign work is watching the whole board; everyone else watches their own.
+  // The same test `/tasks` and `alerts.ts` use, so the badge cannot disagree with the page.
+  const taskScope = can(user, "task:assign") ? undefined : user.id;
+
   return {
+    tasks: taskCounts(org, taskScope).open,
+    announcements: unreadCount(org, user.id),
     // Open leads only — the badge is a workload figure, and a won or lost lead has
     // stopped being work. Same rule as the loads badge below.
     leads: get<{ n: number }>(
@@ -69,7 +84,26 @@ export type NavGroup = { heading?: string; items: NavItem[] };
  * every role — including `sales`, which is meant to see no carrier at all.
  */
 const NAV_GROUPS: NavGroup[] = [
-  { items: [{ href: "/", label: "Dashboard", icon: "dashboard" }] },
+  {
+    // The personal cluster, at the top of all three panels because it is on all three
+    // panels in the client's spec.
+    //
+    // Alerts composes only things the reader may already see, so it cannot leak — but it
+    // still names an action rather than naming none. An item that never asks `can()` is
+    // precisely the shape of the Phase 16 bug, and without one it appeared in platform
+    // support's sidebar, offering a page that composes nothing for them. `task:view` is
+    // the honest gate: alerts are for people who have a workspace in this organisation.
+    //
+    // No badge on it: Tasks and Announcements already show theirs, and a third number
+    // that adds up the other two is noise. Computing it would also mean re-running every
+    // carrier attention rule on every page render, which is why /alerts owns that work.
+    items: [
+      { href: "/", label: "Dashboard", icon: "dashboard" },
+      { href: "/alerts", label: "Alerts", icon: "warning", action: "task:view" },
+      { href: "/tasks", label: "Tasks", icon: "check", count: "tasks", action: "task:view" },
+      { href: "/announcements", label: "Announcements", icon: "note", count: "announcements", action: "announcement:view" },
+    ],
+  },
   {
     // The sales rep's whole panel, and the front of the admin's. It sits above Carriers
     // because that is the order the work happens in: a lead becomes a carrier.

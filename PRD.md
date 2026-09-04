@@ -32,6 +32,8 @@ Authentication is required for every page. There are no public routes except `/l
 - **Carrier Note** — timestamped, attributed internal note. Append-only.
 - **Carrier Activity** — automatic audit entry for significant changes.
 - **Offboarding Record** — the structured exit record for a departed carrier.
+- **Task** — a piece of work with an owner and, usually, a due date. May be about a carrier.
+- **Announcement** — a notice to everyone in the organisation.
 - **Lookups** — controlled vocabularies (status, plan, pricing type, lead source, …).
 
 ## 4. Functional Requirements
@@ -65,6 +67,25 @@ that customer arrived, and rewriting it would make that history say something un
 **Who sees what:** a sales rep sees and edits their own leads. Administrators and owners
 see the whole pipeline and are the only roles that may convert, because conversion writes
 a carrier record. Dispatchers, account managers and viewers have no lead access at all.
+
+### 4.1c Tasks, Announcements and Alerts
+The three screens every role has, whatever else their panel carries.
+
+**Tasks** are work with a name and, usually, a date. A task is yours if it is assigned to
+you *or* you raised it. Everyone keeps a list; only an administrator may put work on
+somebody else's. Open or done, nothing in between — done clears it from every view, and
+reopening restores it rather than spawning a second task saying the same thing.
+
+**Announcements** go to everyone in the organisation. Administrators post, everyone reads.
+Unread means "published since you last opened the page". Editing a notice does not
+re-publish it.
+
+**Alerts** are the summary: overdue and due-today tasks, unread announcements, and the
+carrier work queue. **Nothing is stored.** Every alert is a live query against the thing it
+describes, so it disappears the moment that thing is resolved — there is no notification to
+mark read, expire, or find disagreeing with reality later. Each person sees only the parts
+they already have access to: no carrier queue without carrier access, and only their own
+tasks unless they manage the board.
 
 ### 4.2 Carrier Database
 Sortable, filterable, searchable table with user-selectable visible columns.

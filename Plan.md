@@ -5,8 +5,8 @@ phase to finish. Status is updated as part of the phase it describes.
 
 Legend: ✅ done · 🔨 in progress · ⬜ not started
 
-**Phases 0–17 complete.** 386 unit + 20 HTTP tests passing, production build clean,
-permission matrix verified over HTTP for every role. Phases 16–17 are the first two of
+**Phases 0–18 complete.** 413 unit + 23 HTTP tests passing, production build clean,
+permission matrix verified over HTTP for every role. Phases 16–18 are the first three of
 seven sub-projects decomposed from the client's three-panel spec — see the decomposition
 table under Phase 16.
 
@@ -494,8 +494,8 @@ The supplied spec is seven sub-projects, not one. Each gets its own spec → pla
 |---|---|---|
 | A | Role-scoped panels + nav | ✅ Phase 16 |
 | B | Leads (entity, Submit Lead, lead → carrier conversion) | ✅ Phase 17 |
-| C | Tasks + Announcements + Alerts (one phase — shared "needs my attention" feed; `attention.ts` is half of it already) | ⬜ next |
-| D | Communication (internal threads, dispatch ↔ sales) | ⬜ |
+| C | Tasks + Announcements + Alerts (one phase — shared "needs my attention" feed; `attention.ts` is half of it already) | ✅ Phase 18 |
+| D | Communication (internal threads, dispatch ↔ sales) | ⬜ next |
 | E | Planning Calendar, Working Notes, Brokers DNU list | ⬜ |
 | F | Accounts payable / receivable, Team Performance Report | ⬜ |
 | G | Map, Weather | ⬜ external APIs, recurring cost — see "Deferred by design" |
@@ -559,6 +559,63 @@ Phase 16 deny-list bug was written in the first place.
 timeline belongs with sub-project C's task feed), duplicate detection against existing
 carriers by MC number, and any commission tracking — `sales` still has no commission
 action because there is no commission feature.
+
+---
+
+## Phase 18 — Tasks, Announcements, Alerts ✅ (2026-09-04)
+
+Sub-project **C**, and the only one that appears on all three panels at once. Built as one
+phase because "Task reminders", "Notifications & Alerts Summary" and "Announcement" are
+three views of the same question — what wants my attention — and splitting them would have
+meant three mechanisms that each had to agree with the other two.
+
+- [x] **Migration 19 — `tasks` and `announcements`.** Both tenant-owned with composite
+      foreign keys, registered in `TENANT_TABLES` and in `tenant-lifecycle.ts`'s ordered
+      deletion (before carriers and users, neither of which cascades to them).
+- [x] **Alerts are deliberately not a table.** Every alert is a live query against the
+      thing it is about, so it clears the moment that thing is resolved. A stored
+      notification would need marking read, expiring and collecting, and could still
+      disagree with reality — an "insurance has lapsed" row outliving the renewal is worse
+      than no alert. `attention.ts` already worked this way; `alerts.ts` composes it with
+      tasks and the noticeboard rather than inventing a second mechanism beside it.
+- [x] **Unread is one column, not a read-receipt table.** `users.announcements_seen_at`
+      answers the only question anything asks — the sidebar badge and the alerts feed —
+      with no per-row writes. Someone who has never opened the page has everything unread,
+      which is the right welcome for a new joiner.
+- [x] Editing an announcement leaves `published_at` alone, so fixing a typo does not shove
+      the notice back to the top of everybody's unread list.
+- [x] **A task is yours if you are doing it or you raised it.** One rule, used by the list
+      query and by `can(user, "task:manage", task)`, so a page and a permission cannot
+      disagree about whose task it is. `Scope` gained `created_by` for the second half.
+- [x] Four actions: `task:view` and `announcement:view` are universal (support excepted),
+      because keeping a to-do list and reading the noticeboard are not privileges. What is
+      gated is `task:assign` — putting work on somebody else's list — and
+      `announcement:manage`. Both administrators only.
+- [x] `/tasks`, `/announcements`, `/alerts`. Whoever may assign sees the whole board;
+      everyone else sees their own, decided by the identical `can(user, "task:assign")`
+      test in the page, the sidebar badge and `alerts.ts` — three places that would
+      otherwise drift.
+- [x] `navCounts` now takes the user, because two of its badges are personal. Both are
+      cheap single-row queries: the full alert picture re-runs every carrier attention
+      rule, so it belongs on `/alerts` and not in a rail rendered on every page.
+- [x] **Caught by the new nav tests:** `/alerts` was first written with no `action` at all,
+      on the reasoning that it composes only what the reader may already see. It cannot
+      leak — but it appeared in platform support's sidebar, offering a page that composes
+      nothing for them, and *an item that never asks `can()` is exactly the shape of the
+      Phase 16 bug*. It now names `task:view`.
+- [x] Tests: `tests/tasks.test.ts` (25 cases) and three new HTTP cases —
+      **413 unit + 23 HTTP passing**. tsc and `next build` clean.
+
+**Decided:** no "cancelled" task state. Marking something done clears it from every view,
+and a third state only raises the question of which two mean "not my problem". No audience
+column on announcements either — targeting a message at one team is Communication's job
+(sub-project D), not a broadcast's.
+
+**Not built here:** recurring tasks, sub-tasks, per-announcement read receipts ("who has
+read this?"), and any push/email delivery. Each is noted at its call site with what would
+justify adding it. Tasks link to a carrier and nothing else: a task about a load or a lead
+can name it in the title, and three nullable foreign keys for links nobody has asked for is
+scaffolding.
 
 ---
 

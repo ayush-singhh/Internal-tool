@@ -16,7 +16,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <AppShell
       user={{ name: user.name, email: user.email, role: user.role as Role }}
-      counts={navCounts(org)}
+      counts={navCounts(org, user)}
       groups={visibleNav(user)}
       canSearchCarriers={can(user, "carrier:view")}
       canAddCarrier={can(user, "carrier:create")}

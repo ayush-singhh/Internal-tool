@@ -41,8 +41,31 @@ const hrefs = (role: string, active = 1) =>
 
 test("an administrator sees every section, Administration included", () => {
   const seen = hrefs(ROLES.ADMIN);
-  for (const href of ["/", "/leads", "/carriers", "/loads", "/invoices", "/reports", "/team", "/settings", "/import", "/audit"]) {
+  for (const href of ["/", "/alerts", "/tasks", "/announcements", "/leads", "/carriers",
+                      "/loads", "/invoices", "/reports", "/team", "/settings", "/import", "/audit"]) {
     assert.ok(seen.includes(href), `admin should see ${href}`);
+  }
+});
+
+/**
+ * Alerts, Tasks and Announcements are on all three of the client's panels, so they are
+ * the one part of the sidebar that must survive every filter. Alerts in particular has no
+ * `action` at all — it composes only what the reader may already see.
+ */
+test("the personal cluster reaches every role, including one that can see nothing else", () => {
+  for (const role of [ROLES.OWNER, ROLES.ADMIN, ROLES.DISPATCHER, ROLES.ACCOUNT_MANAGER,
+                      ROLES.SALES, ROLES.VIEWER]) {
+    const seen = hrefs(role);
+    for (const href of ["/", "/alerts", "/tasks", "/announcements"]) {
+      assert.ok(seen.includes(href), `${role} should see ${href}`);
+    }
+  }
+});
+
+test("platform support gets no task list and no noticeboard either", () => {
+  const seen = hrefs(ROLES.SUPPORT);
+  for (const href of ["/tasks", "/announcements"]) {
+    assert.ok(!seen.includes(href), `support must not see ${href}`);
   }
 });
 
@@ -63,7 +86,9 @@ test("a dispatcher gets carriers and dispatch but no Administration and no pipel
 });
 
 test("sales sees leads and its own activity — no carrier, load or invoice", () => {
-  assert.deepEqual(hrefs(ROLES.SALES), ["/", "/leads", "/activity"]);
+  assert.deepEqual(hrefs(ROLES.SALES), [
+    "/", "/alerts", "/tasks", "/announcements", "/leads", "/activity",
+  ]);
 });
 
 test("a viewer reads the book but reaches neither the pipeline nor an administration page", () => {
@@ -97,7 +122,9 @@ test("regression: the old admin-href deny-list served sales the carrier and load
     assert.ok(underOldRule.includes(leaked), `the old rule showed sales ${leaked}`);
   }
   assert.notDeepEqual(underOldRule, hrefs(ROLES.SALES));
-  assert.deepEqual(hrefs(ROLES.SALES), ["/", "/leads", "/activity"]);
+  assert.deepEqual(hrefs(ROLES.SALES), [
+    "/", "/alerts", "/tasks", "/announcements", "/leads", "/activity",
+  ]);
 });
 
 test("a group with no visible items is dropped rather than rendered empty", () => {

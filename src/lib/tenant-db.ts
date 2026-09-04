@@ -7,6 +7,8 @@ import "server-only";
  * The list is the single source of truth shared by the guard and by tests.
  */
 export const TENANT_TABLES = [
+  "tasks",
+  "announcements",
   "leads",
   "carriers",
   "carrier_notes",

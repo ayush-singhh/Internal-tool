@@ -17,14 +17,27 @@ export type SessionUser = {
 export type Scope = {
   dispatcher_id?: number | null;
   account_manager_id?: number | null;
-  /** Leads: the person who submitted it and works it. */
+  /** Leads: the person who submitted it and works it. Tasks: who it is assigned to. */
   owner_id?: number | null;
+  /** Tasks: who raised it. A task is yours if you are doing it *or* you asked for it. */
+  created_by?: number | null;
 };
 
 /** The carrier call sites' name for it. Same shape. */
 export type CarrierScope = Scope;
 
 export type Action =
+  // Tasks and announcements — on all three panels, so almost everyone holds these
+  /** See tasks. Scoped: yours are the ones assigned to you or raised by you. */
+  | "task:view"
+  /** Raise, edit and complete a task. Same scope as `task:view`. */
+  | "task:manage"
+  /** Put a task on somebody else's list. Assigning work is a management act, so this is
+   *  the one part of tasks that is not universal. */
+  | "task:assign"
+  | "announcement:view"
+  /** Write, edit and withdraw an announcement. */
+  | "announcement:manage"
   // Leads — the stage before a carrier record exists
   /** See the pipeline. Sales see only their own; the scope argument is what decides. */
   | "lead:view"
@@ -72,8 +85,10 @@ export type Action =
  * Single source of truth for authorization. Server Actions call this directly —
  * hiding a button in the UI is presentation, never the security boundary.
  *
- * `carrier` scopes edit rights: dispatchers and account managers may edit the
- * carriers assigned to them, and no others.
+ * `scope` narrows an action to the records that belong to this person: the carriers
+ * assigned to them, the leads they submitted, the tasks they are doing or raised.
+ * Passing no scope asks the weaker question — "could this role ever do this?" — which is
+ * what decides whether an affordance renders at all.
  */
 export function can(
   user: SessionUser | null | undefined,
@@ -93,7 +108,24 @@ export function can(
     !!scope &&
     (scope.dispatcher_id === user.id ||
       scope.account_manager_id === user.id ||
-      scope.owner_id === user.id);
+      scope.owner_id === user.id ||
+      scope.created_by === user.id);
+
+  // Tasks and announcements are on all three panels, so they are decided before the
+  // per-role branches rather than repeated inside each of them. Reading the noticeboard
+  // and keeping a to-do list are not privileges — what is gated is putting work on
+  // somebody else's list, and writing to the whole organisation.
+  switch (action) {
+    case "task:view":
+    case "announcement:view":
+      return true;
+    case "task:manage":
+      // Without a scope this answers "could this role ever manage a task?", which is what
+      // decides whether the New Task button renders at all.
+      return scope === undefined ? true : assigned;
+    default:
+      break;
+  }
 
   // Sales submits leads and works them. They see no rate, no invoice and no load, and
   // their sidebar carries neither Carrier nor Load Management — so rather than listing
@@ -151,6 +183,11 @@ export function can(
     case "lead:create":
     case "lead:edit":
     case "lead:convert":
+    // Handing work to another person, and writing to the whole organisation. Both are
+    // management acts; a dispatcher who wants something from sales asks for it rather
+    // than putting it on their list.
+    case "task:assign":
+    case "announcement:manage":
     case "carrier:delete":
     case "import:run":
     case "load:close":

@@ -488,6 +488,135 @@ test("a dispatcher is turned away from the pipeline entirely", async () => {
   );
 });
 
+// ── Tasks, announcements, alerts (Phase 18) ──────────────────────────────────
+
+/**
+ * The three screens on all three panels, over the wire.
+ *
+ * The rule that needs proving here is the one a unit test cannot see: a task belonging to
+ * somebody else must not reach the page at all, and neither must the "Assign to" picker
+ * for a role that may not assign — hiding either in the component is presentation, and
+ * presentation was exactly what Phase 16 got wrong.
+ */
+test("a dispatcher's task list carries their own work and no one else's", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Task Panel Co", "taskowner@panel.test");
+
+  const addUser = (name: string, email: string, role: string) => {
+    app.db.run(
+      `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                          email_verified_at, created_at, updated_at)
+       VALUES (?, ?, ?, 'x', ?, 1, ?, ?, ?)`,
+      [org.id, name, email, role, now, now, now],
+    );
+    return app.db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
+  };
+  const dispatcher = addUser("Tess Dispatch", "tasksdisp@panel.test", ROLES.DISPATCHER);
+  const someoneElse = addUser("Not Tess", "tasksother@panel.test", ROLES.DISPATCHER);
+
+  for (const [title, assignee] of [
+    ["MY OWN TASK MARKER", dispatcher],
+    ["SOMEBODY ELSES TASK MARKER", someoneElse],
+  ] as const) {
+    app.db.run(
+      `INSERT INTO tasks (organization_id, title, assigned_to, status, priority,
+                          created_at, created_by, updated_at, updated_by)
+       VALUES (?, ?, ?, 'open', 'normal', ?, ?, ?, ?)`,
+      [org.id, title, assignee, now, assignee, now, assignee],
+    );
+  }
+
+  const res = await app.get("/tasks", app.session("tasksdisp@panel.test"));
+  assert.equal(res.status, 200);
+  assert.ok(res.body.includes("MY OWN TASK MARKER"), "a person sees their own task");
+  assert.ok(
+    !res.body.includes("SOMEBODY ELSES TASK MARKER"),
+    "another person's task must not reach the page at all",
+  );
+  assert.ok(
+    !res.body.includes('name="assigned_to"'),
+    "a role without task:assign is not served the assignment picker",
+  );
+
+  // The owner may assign, so the same page is the whole board and does carry the picker.
+  const asOwner = await app.get("/tasks", app.session("taskowner@panel.test"));
+  assert.equal(asOwner.status, 200);
+  assert.ok(asOwner.body.includes("MY OWN TASK MARKER"));
+  assert.ok(asOwner.body.includes("SOMEBODY ELSES TASK MARKER"));
+  assert.ok(asOwner.body.includes('name="assigned_to"'), "an administrator can hand work out");
+});
+
+test("the noticeboard is readable by everyone and writable by administrators only", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Notice Panel Co", "noticeowner@panel.test");
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Sal Notice', 'noticesales@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.SALES, now, now, now],
+  );
+  app.db.run(
+    `INSERT INTO announcements (organization_id, title, body, published_at, created_at, updated_at)
+     VALUES (?, 'DEPOT MOVE NOTICE', 'We are moving on Monday.', ?, ?, ?)`,
+    [org.id, now, now, now],
+  );
+
+  const asSales = await app.get("/announcements", app.session("noticesales@panel.test"));
+  assert.equal(asSales.status, 200);
+  assert.ok(asSales.body.includes("DEPOT MOVE NOTICE"), "everybody reads the noticeboard");
+  assert.ok(
+    !asSales.body.includes("Post announcement"),
+    "a role without announcement:manage is offered no way to post",
+  );
+
+  const asOwner = await app.get("/announcements", app.session("noticeowner@panel.test"));
+  assert.ok(asOwner.body.includes("Post announcement"), "an administrator can post");
+});
+
+test("alerts compose only what the reader may already see", async () => {
+  const now = new Date().toISOString();
+  const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
+  const { seedOrg, lookupId } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Alert Panel Co", "alertowner@panel.test");
+  app.db.run(
+    `INSERT INTO carriers (organization_id, legal_name, status_id, created_at, updated_at)
+     VALUES (?, 'ALERT SECRET CARRIER LLC', ?, ?, ?)`,
+    [org.id, lookupId(app.db, org.id, "status", "active"), now, now],
+  );
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Sal Alert', 'alertsales@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.SALES, now, now, now],
+  );
+  const salesId = app.db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
+  app.db.run(
+    `INSERT INTO tasks (organization_id, title, assigned_to, due_on, status, priority,
+                        created_at, created_by, updated_at, updated_by)
+     VALUES (?, 'SALES OVERDUE MARKER', ?, ?, 'open', 'high', ?, ?, ?, ?)`,
+    [org.id, salesId, yesterday, now, salesId, now, salesId],
+  );
+
+  const asSales = await app.get("/alerts", app.session("alertsales@panel.test"));
+  assert.equal(asSales.status, 200);
+  assert.ok(asSales.body.includes("SALES OVERDUE MARKER"), "their own overdue task is an alert");
+  assert.ok(
+    !asSales.body.includes("ALERT SECRET CARRIER LLC"),
+    "the carrier queue is not run at all for a role without carrier:view",
+  );
+
+  // The owner sees both halves — the carrier queue and the team's overdue work.
+  const asOwner = await app.get("/alerts", app.session("alertowner@panel.test"));
+  assert.equal(asOwner.status, 200);
+  assert.ok(asOwner.body.includes("ALERT SECRET CARRIER LLC"));
+  assert.ok(asOwner.body.includes("SALES OVERDUE MARKER"));
+});
+
 test("My Activity is reachable by every role and shows only that user's own entries", async () => {
   const now = new Date().toISOString();
   const { seedOrg, lookupId } = await import("../helpers.ts");

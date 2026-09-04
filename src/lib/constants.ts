@@ -51,6 +51,33 @@ export const OFFBOARDING_STATUSES: string[] = [
 ];
 
 /**
+ * A task is open or done. There is no "cancelled": marking something done clears it from
+ * every view, and a third state only creates the question of which two mean "not my
+ * problem any more".
+ */
+export const TASK_STATUS = { OPEN: "open", DONE: "done" } as const;
+export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
+
+/** Ordered most urgent first — the index is what sorts the list, so the order is the rule. */
+export const TASK_PRIORITY = { HIGH: "high", NORMAL: "normal", LOW: "low" } as const;
+export type TaskPriority = (typeof TASK_PRIORITY)[keyof typeof TASK_PRIORITY];
+export const TASK_PRIORITY_ORDER: TaskPriority[] = [
+  TASK_PRIORITY.HIGH,
+  TASK_PRIORITY.NORMAL,
+  TASK_PRIORITY.LOW,
+];
+export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
+  high: "High",
+  normal: "Normal",
+  low: "Low",
+};
+export const TASK_PRIORITY_TONE: Record<TaskPriority, Tone> = {
+  high: "red",
+  normal: "blue",
+  low: "slate",
+};
+
+/**
  * A lead's position in the sales pipeline — the stage before a carrier record exists.
  *
  * Kept out of `lookups` for the same reason LOAD_STATUS is: these drive behaviour rather

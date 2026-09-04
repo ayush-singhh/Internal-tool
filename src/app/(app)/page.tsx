@@ -8,6 +8,7 @@ import {
 import { needsAttention, attentionTotal } from "@/lib/attention";
 import { recentActivity } from "@/lib/activity";
 import { leadMetrics, type LeadMetrics } from "@/lib/leads";
+import { taskCounts, type TaskCounts } from "@/lib/tasks";
 import { can } from "@/lib/permissions";
 import { idOf } from "@/lib/lookups";
 import { STATUS } from "@/lib/constants";
@@ -37,6 +38,29 @@ function LeadTiles({ leads, scope }: { leads: LeadMetrics; scope: "all" | "mine"
   );
 }
 
+/** One line, not four tiles. A to-do count is only interesting when something is late. */
+function TaskStrip({ counts }: { counts: TaskCounts }) {
+  if (counts.open === 0) return null;
+  const pressing = counts.overdue + counts.dueToday;
+  return (
+    <Link
+      href="/tasks"
+      className={`flex items-center gap-2 rounded-lg border px-3.5 py-3 text-sm font-medium transition ${
+        counts.overdue > 0
+          ? "border-red-200 bg-red-50 text-red-800 hover:bg-red-100"
+          : pressing > 0
+            ? "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+            : "border-line bg-surface text-ink-700 hover:bg-ink-50"
+      }`}
+    >
+      <Icon name="check" className="h-4 w-4" />
+      {counts.open} open task{counts.open === 1 ? "" : "s"}
+      {counts.overdue > 0 && ` · ${counts.overdue} overdue`}
+      {counts.dueToday > 0 && ` · ${counts.dueToday} due today`}
+    </Link>
+  );
+}
+
 export default async function DashboardPage() {
   const { user, org } = await requireOrg();
 
@@ -48,6 +72,7 @@ export default async function DashboardPage() {
   const leads = can(user, "lead:view")
     ? leadMetrics(org, can(user, "lead:convert") ? undefined : user.id)
     : null;
+  const tasks = taskCounts(org, can(user, "task:assign") ? undefined : user.id);
 
   // Every figure below this line counts carriers, so a role without `carrier:view` —
   // sales today — must not reach it. Branching on the permission rather than on the
@@ -61,6 +86,7 @@ export default async function DashboardPage() {
         />
         <div className="space-y-5">
           {leads && <LeadTiles leads={leads} scope="mine" />}
+          <TaskStrip counts={tasks} />
           <Card>
             <CardHeader title="Your activity" subtitle="Everything you have recorded, newest first." />
             <ActivityTimeline entries={recentActivity(org, 20, user.id)} />
@@ -130,6 +156,7 @@ export default async function DashboardPage() {
       />
 
       <div className="space-y-5">
+        <TaskStrip counts={tasks} />
         {leads && <LeadTiles leads={leads} scope="all" />}
 
         <section aria-label="Headline metrics" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

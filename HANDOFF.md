@@ -31,8 +31,8 @@ sequencing are now stale — see below).
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
 **Working tree:** clean — Phases 15 (loads, drivers/brokers, documents, invoicing), 16
-(role panels) and 17 (leads) are all committed. **Tests:** 386 passing (`npm test`) + 20
-over HTTP (`npm run test:http`). **Build:** clean.
+(role panels), 17 (leads) and 18 (tasks/announcements/alerts) are all committed.
+**Tests:** 413 passing (`npm test`) + 23 over HTTP (`npm run test:http`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -42,20 +42,22 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ## In flight — pick this up first
 
-Nothing is in flight. Phases 15, 16 and 17 are complete and committed.
+Nothing is in flight. Phases 15, 16, 17 and 18 are complete and committed.
 
 **The client's three-panel spec is seven sub-projects (A–G)** — the table lives in
-`Plan.md` under Phase 16, and it is the roadmap now. **A (role panels) and B (leads) are
-done. C — Tasks + Announcements + Alerts — is next**, and is the largest remaining chunk:
-it appears on all three panels, and `attention.ts` is already half of the "needs my
-attention" feed it needs.
+`Plan.md` under Phase 16, and it is the roadmap now. **A (role panels), B (leads) and
+C (tasks/announcements/alerts) are done. D — Communication — is next**: internal threads
+between the dispatch and sales teams. Note that Phase 18 deliberately left announcements
+without an audience column, on the reasoning that targeting a message at one team is D's
+job, not a broadcast's — so D owns that.
 
 **Candidates for what's next, roughly ready-now → waiting-on-something:**
 
 1. **Redeploy `carrier-hub.fly.dev`.** The live app is still on migration 16 — invoicing
-   (17) and leads (18) are not usable there yet. Ready to do now, same process as the last
-   redeploy (migrate through 18, restart the one machine). No code work needed. **This has
-   now slipped two phases behind; it is the one item that gets worse by waiting.**
+   (17), leads (18) and tasks/announcements (19) are not usable there yet. Ready to do
+   now, same process as the last redeploy (migrate through 19, restart the one machine).
+   No code work needed. **This has now slipped three phases behind; it is the one item
+   that gets worse by waiting.**
 2. **Carrier → Broker freight invoice.** The natural next phase of the invoicing work —
    schema already leaves room (`invoices.invoice_type`, see
    `docs/superpowers/specs/2026-09-02-invoicing-design.md` §1) — but only worth starting
@@ -130,7 +132,7 @@ attention" feed it needs.
 
 ---
 
-## Role panels and leads — what exists ✅ (Phases 16–17)
+## Role panels, leads, and the shared workspace — what exists ✅ (Phases 16–18)
 
 - **The sidebar is a permission surface, not decoration.** Every item in `NAV_GROUPS`
   (`src/lib/nav.ts`) names the `Action` that reveals it; `visibleNav(user)` filters with
@@ -156,8 +158,21 @@ attention" feed it needs.
 - **One page serves both panels.** `/leads` narrows by *query* (`listLeads(org, ownerId?)`)
   rather than filtering rendered rows, so another rep's prospect never reaches the HTML.
   The dashboard picks its scope with the identical `can(user, "lead:convert")` test.
-- **`Scope` replaced `CarrierScope`** (old name kept as an alias) and gained `owner_id`, so
-  one ownership check serves "carriers assigned to me" and "leads I submitted" both.
+- **`Scope` replaced `CarrierScope`** (old name kept as an alias) and gained `owner_id` and
+  `created_by`, so one ownership check serves "carriers assigned to me", "leads I
+  submitted" and "tasks I am doing or raised".
+- **Alerts are not a table** (`src/lib/alerts.ts`, Phase 18). Every alert is a live query
+  against the thing it describes, so it clears the moment that thing is resolved — there is
+  nothing to mark read, expire, or find disagreeing with reality. Do not "improve" this
+  into a notifications table without a reason that survives that argument.
+- **Announcement unread is one column**, `users.announcements_seen_at`, not a read-receipt
+  table: unread means "published since you last opened the page". Per-announcement receipts
+  need the table; nobody has asked.
+- **The three-places rule.** Whoever may assign work sees the whole task board; everyone
+  else sees their own. That decision is `can(user, "task:assign")` and it is made in
+  `/tasks`, in `navCounts`, and in `alerts.ts` — change one and you must change all three,
+  or the badge, the page and the alert feed start disagreeing. Same shape as the
+  `can(user, "lead:convert")` test that scopes the pipeline.
 
 **Postgres is deferred, not cancelled.** I attempted the async conversion and reverted it:
 ~700 edits across 65 files, automation reaches ~85%, and the remainder has semantic traps
