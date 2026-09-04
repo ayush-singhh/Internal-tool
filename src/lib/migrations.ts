@@ -972,6 +972,45 @@ export const MIGRATIONS: Migration[] = [
       db.exec("CREATE INDEX IF NOT EXISTS idx_brokers_org_dnu ON brokers (organization_id, dnu)");
     },
   },
+  {
+    version: 22,
+    name: "planning calendar: events people type in",
+    up: (db) => {
+      // The calendar is both halves. Most of what it shows is **derived** — pickup and
+      // delivery dates from `load_stops`, task due dates, insurance expiries — and those
+      // stay read-only windows onto their own record, so the calendar never becomes a
+      // second write path into a load. This table is the other half: the things that
+      // exist nowhere else because somebody just needs them on a date.
+      //
+      // ponytail: no recurrence and no attendees. A weekly standing meeting is currently
+      // twelve rows; add an RRULE when somebody has typed it out twelve times and said so.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS calendar_events (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          title           TEXT NOT NULL,
+          details         TEXT,
+          starts_on       TEXT NOT NULL,
+          -- Set only for something spanning days. The event then appears on each day it
+          -- covers, which is what a calendar means by a three-day event.
+          ends_on         TEXT,
+          -- Optional HH:MM. Everything derived is a date, so the grid is a month of days,
+          -- not an hour column — a time here is a label that sorts within its day.
+          starts_at       TEXT,
+          carrier_id      INTEGER,
+          created_at      TEXT NOT NULL,
+          created_by      INTEGER,
+          updated_at      TEXT NOT NULL,
+          updated_by      INTEGER,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, carrier_id) REFERENCES carriers (organization_id, id),
+          FOREIGN KEY (organization_id, created_by) REFERENCES users    (organization_id, id),
+          FOREIGN KEY (organization_id, updated_by) REFERENCES users    (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_calendar_org ON calendar_events (organization_id, starts_on)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_calendar_org_id ON calendar_events (organization_id, id)");
+    },
+  },
 ];
 
 export function addColumn(

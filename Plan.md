@@ -5,10 +5,11 @@ phase to finish. Status is updated as part of the phase it describes.
 
 Legend: ✅ done · 🔨 in progress · ⬜ not started
 
-**Phases 0–20 complete.** 443 unit + 27 HTTP tests passing, production build clean,
-permission matrix verified over HTTP for every role. Phases 16–20 work through the client's
+**Phases 0–21 complete.** 462 unit + 29 HTTP tests passing, production build clean,
+permission matrix verified over HTTP for every role. Phases 16–21 work through the client's
 three-panel spec, decomposed into seven sub-projects — see the table under Phase 16.
-A–D are done; E is part-done (the Brokers DNU list shipped as Phase 20).
+A–D are done; E is part-done (Brokers DNU shipped as Phase 20, the Planning Calendar as
+Phase 21; Working Notes remains).
 
 ---
 
@@ -496,7 +497,7 @@ The supplied spec is seven sub-projects, not one. Each gets its own spec → pla
 | B | Leads (entity, Submit Lead, lead → carrier conversion) | ✅ Phase 17 |
 | C | Tasks + Announcements + Alerts (one phase — shared "needs my attention" feed; `attention.ts` is half of it already) | ✅ Phase 18 |
 | D | Communication (internal threads, dispatch ↔ sales) | ✅ Phase 19 |
-| E | Planning Calendar, Working Notes, Brokers DNU list | 🔨 DNU done (Phase 20); Calendar + Working Notes still open |
+| E | Planning Calendar, Working Notes, Brokers DNU list | 🔨 DNU (Phase 20) + Calendar (Phase 21) done; Working Notes still open |
 | F | Accounts payable / receivable, Team Performance Report | ⬜ |
 | G | Map, Weather | ⬜ external APIs, recurring cost — see "Deferred by design" |
 
@@ -724,6 +725,56 @@ administrator to confirm — a different audience, and nobody has asked.
 it), any warning on the existing loads of a broker flagged afterwards, and an audit-log
 entry for the flag itself — `dnu_by`/`dnu_at` record the current state but not the history
 of it being turned on and off.
+
+---
+
+## Phase 21 — Planning Calendar ✅ (2026-09-04)
+
+The second part of sub-project **E**. The open question was whether the calendar *derives*
+from records that already exist or *owns* events people type in. **The client answered
+"both"**, which is what this builds — and the interesting design work is the seam between
+the two halves rather than either half on its own.
+
+- [x] **Migration 22 — `calendar_events`.** The typed-in half only: meetings, yard
+      closures, a driver's holiday — things that exist nowhere else in the schema.
+- [x] **Derived entries are read-only windows.** Pickup and delivery dates from
+      `load_stops`, open task due dates, insurance expiries. You do not move a pickup by
+      dragging it on the calendar; you open the load. One source of truth, and the calendar
+      never becomes a second write path into dispatch. Only events carry an `eventId`, and
+      only entries with one are editable — the chip component renders that difference
+      rather than hiding it behind one click target that does two different things.
+- [x] **A derived entry disappears when its record changes**, with nothing to clean up —
+      completing a task removes its due date from the month on the next read. Same
+      reasoning as `alerts.ts`: derived beats stored whenever the source is already here.
+- [x] **Each derived source is gated on the permission that already guards it** —
+      `load:view` for stops, `carrier:view` for insurance, and the same
+      `can(user, "task:assign")` scope `/tasks`, `navCounts` and `alerts.ts` use. So the
+      calendar cannot show a date for a record the reader would be refused. This is now the
+      **fourth** place that task-scope rule lives; a fifth should make it a function.
+- [x] **All date arithmetic is UTC on `YYYY-MM-DD` strings.** Local-time `Date` maths
+      shifts a day either side of midnight depending on the server's zone, which would put
+      the whole grid out by one for half the world. Tested against leap years, month
+      lengths, and the Monday-first weekday offset.
+- [x] Multi-day events appear on every day they cover, **clipped to the month rendered** —
+      the expansion loop is bounded by the grid, so a year-long event cannot spin it.
+- [x] `calendar:view` / `calendar:manage`, both administrators and dispatch. Managing is
+      scoped by `created_by`, so a dispatcher edits the events they raised and an
+      administrator edits all of them — the `carrier:edit` pattern exactly.
+- [x] Tests: `tests/calendar.test.ts` (18 cases), two HTTP cases, one new nav case —
+      **462 unit + 29 HTTP passing**. tsc and `next build` clean.
+
+**Decided, per the supplied spec:** the calendar is on the Admin and Dispatcher menus and
+no other, so account managers, viewers and sales are refused rather than quietly included.
+Sales keeping task *reminders* without a calendar is coherent — their panel asks for the
+list, not the month.
+
+**Decided:** dates, not an hour grid. Every derived source is a date or a timestamp whose
+time is incidental, so a month of day cells with an optional `HH:MM` label sorts correctly
+and costs a fraction of a week-view with hour rows. Revisit if somebody schedules by hour.
+
+**Not built here:** recurrence (a weekly standing meeting is twelve rows today), attendees
+or invitations, a week or day view, drag-to-move, and iCal export. Recurrence is the one
+most likely to be asked for.
 
 ---
 

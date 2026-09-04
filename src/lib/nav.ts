@@ -105,6 +105,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/tasks", label: "Tasks", icon: "check", count: "tasks", action: "task:view" },
       { href: "/announcements", label: "Announcements", icon: "note", count: "announcements", action: "announcement:view" },
       { href: "/communication", label: "Communication", icon: "chat", count: "messages", action: "message:view" },
+      { href: "/calendar", label: "Planning Calendar", icon: "calendar", action: "calendar:view" },
     ],
   },
   {

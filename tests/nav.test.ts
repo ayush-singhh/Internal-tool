@@ -41,9 +41,9 @@ const hrefs = (role: string, active = 1) =>
 
 test("an administrator sees every section, Administration included", () => {
   const seen = hrefs(ROLES.ADMIN);
-  for (const href of ["/", "/alerts", "/tasks", "/announcements", "/communication", "/leads",
-                      "/carriers", "/loads", "/invoices", "/reports", "/team", "/settings",
-                      "/import", "/audit"]) {
+  for (const href of ["/", "/alerts", "/tasks", "/announcements", "/communication", "/calendar",
+                      "/leads", "/carriers", "/loads", "/invoices", "/reports", "/team",
+                      "/settings", "/import", "/audit"]) {
     assert.ok(seen.includes(href), `admin should see ${href}`);
   }
 });
@@ -76,7 +76,8 @@ test("an owner sees the same sidebar as an administrator", () => {
 
 test("a dispatcher gets carriers and dispatch but no Administration and no pipeline", () => {
   const seen = hrefs(ROLES.DISPATCHER);
-  for (const href of ["/", "/carriers", "/loads", "/drivers", "/brokers", "/invoices", "/reports", "/activity"]) {
+  for (const href of ["/", "/carriers", "/loads", "/drivers", "/brokers", "/invoices",
+                      "/reports", "/activity", "/calendar"]) {
     assert.ok(seen.includes(href), `dispatcher should see ${href}`);
   }
   // The supplied Dispatcher menu has no Lead Management on it, and leads are refused
@@ -96,8 +97,19 @@ test("a viewer reads the book but reaches neither the pipeline nor an administra
   const seen = hrefs(ROLES.VIEWER);
   assert.ok(seen.includes("/carriers"));
   assert.ok(seen.includes("/reports"));
-  for (const href of ["/leads", "/team", "/settings", "/import", "/audit"]) {
+  // `/calendar` too: the supplied spec puts the Planning Calendar on the Admin and
+  // Dispatcher menus only, so a viewer is refused rather than quietly included.
+  for (const href of ["/leads", "/calendar", "/team", "/settings", "/import", "/audit"]) {
     assert.ok(!seen.includes(href), `viewer must not see ${href}`);
+  }
+});
+
+test("the calendar follows the spec's menus — administrators and dispatch, nobody else", () => {
+  for (const role of [ROLES.OWNER, ROLES.ADMIN, ROLES.DISPATCHER]) {
+    assert.ok(hrefs(role).includes("/calendar"), `${role} should see /calendar`);
+  }
+  for (const role of [ROLES.ACCOUNT_MANAGER, ROLES.SALES, ROLES.VIEWER, ROLES.SUPPORT]) {
+    assert.ok(!hrefs(role).includes("/calendar"), `${role} must not see /calendar`);
   }
 });
 

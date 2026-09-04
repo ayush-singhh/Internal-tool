@@ -50,6 +50,7 @@ beforeEach(() => {
     db.run("DELETE FROM messages WHERE organization_id > 1");
     db.run("DELETE FROM channel_reads WHERE organization_id > 1");
     db.run("DELETE FROM channels WHERE organization_id > 1");
+    db.run("DELETE FROM calendar_events WHERE organization_id > 1");
     db.run("DELETE FROM lookups WHERE organization_id > 1");
     db.run("DELETE FROM app_settings WHERE organization_id > 1");
     db.run("DELETE FROM organizations WHERE id > 1");

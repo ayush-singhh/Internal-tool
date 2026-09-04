@@ -31,9 +31,9 @@ sequencing are now stale — see below).
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
 **Working tree:** clean — Phases 15 (loads, drivers/brokers, documents, invoicing), 16
-(role panels), 17 (leads), 18 (tasks/announcements/alerts), 19 (communication) and 20
-(brokers DNU) are all committed. **Tests:** 443 passing (`npm test`) + 27 over HTTP
-(`npm run test:http`). **Build:** clean.
+(role panels), 17 (leads), 18 (tasks/announcements/alerts), 19 (communication), 20
+(brokers DNU) and 21 (planning calendar) are all committed. **Tests:** 462 passing
+(`npm test`) + 29 over HTTP (`npm run test:http`). **Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -43,29 +43,30 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ## In flight — pick this up first
 
-Nothing is in flight. Phases 15–20 are complete and committed.
+Nothing is in flight. Phases 15–21 are complete and committed.
 
 **The client's three-panel spec is seven sub-projects (A–G)** — the table lives in
 `Plan.md` under Phase 16, and it is the roadmap now. **A (role panels), B (leads),
 C (tasks/announcements/alerts) and D (communication) are done; E is part-done** — the
-Brokers DNU list shipped as Phase 20. What is left of E:
+Brokers DNU list shipped as Phase 20 and the Planning Calendar as Phase 21 (the client
+answered "both" to derive-vs-own, and it does both). What is left of E:
 
-- **Planning Calendar.** The largest unspecified thing remaining, and it needs a decision
-  before code: does it *derive* (load pickup/delivery dates, task due dates, insurance
-  expiries — everything already in the database) or does it own an `events` table people
-  type into? Deriving is far less code and cannot go stale; owning is what "planning"
-  usually means. Ask the client rather than guessing — this one is genuinely ambiguous.
-- **Working Notes.** On the Sales panel only. A personal scratchpad, so probably one text
-  column per user rather than a table, in the shape of `users.announcements_seen_at`.
+- **Working Notes.** On the Sales panel only, and the last piece of E. A personal
+  scratchpad, so probably one text column per user rather than a table, in the shape of
+  `users.announcements_seen_at`. Small.
+
+Then **F** (accounts payable/receivable + Team Performance report — all of it reporting on
+data that now exists) and **G** (Map, Weather — external APIs and a recurring cost, so it
+needs a client decision about who pays for the key before any code).
 
 **Candidates for what's next, roughly ready-now → waiting-on-something:**
 
 1. **Redeploy `carrier-hub.fly.dev`.** The live app is still on migration 16 — invoicing
-   (17), leads (18), tasks/announcements (19), communication (20) and the DNU flag (21)
-   are not usable there yet. Ready to do now, same process as the last redeploy (migrate
-   through 21, restart the one machine). No code work needed. **Five migrations behind,
-   and none of them has ever run against a database with real data in it — which is
-   exactly the situation `BUGS.md`'s worst entry describes. Back up first.**
+   (17), leads (18), tasks/announcements (19), communication (20), the DNU flag (21) and
+   the calendar (22) are not usable there yet. Ready to do now, same process as the last
+   redeploy (migrate through 22, restart the one machine). No code work needed. **Six
+   migrations behind, and none of them has ever run against a database with real data in
+   it — which is exactly the situation `BUGS.md`'s worst entry describes. Back up first.**
 2. **Carrier → Broker freight invoice.** The natural next phase of the invoicing work —
    schema already leaves room (`invoices.invoice_type`, see
    `docs/superpowers/specs/2026-09-02-invoicing-design.md` §1) — but only worth starting
@@ -194,11 +195,18 @@ Brokers DNU list shipped as Phase 20. What is left of E:
   hand-written teardown**, which deletes tenant rows one by one before the organisation.
   Phase 19 forgot the last one and six unrelated tests failed with a bare
   `FOREIGN KEY constraint failed`.
-- **The three-places rule.** Whoever may assign work sees the whole task board; everyone
+- **The four-places rule.** Whoever may assign work sees the whole task board; everyone
   else sees their own. That decision is `can(user, "task:assign")` and it is made in
-  `/tasks`, in `navCounts`, and in `alerts.ts` — change one and you must change all three,
-  or the badge, the page and the alert feed start disagreeing. Same shape as the
-  `can(user, "lead:convert")` test that scopes the pipeline.
+  `/tasks`, in `navCounts`, in `alerts.ts` and now in `calendar.ts` — change one and you
+  must change all four, or the badge, the page, the alert feed and the month start
+  disagreeing. Same shape as the `can(user, "lead:convert")` test that scopes the pipeline.
+  **A fifth copy should become a function**; four is already one too many.
+- **The calendar is derived plus typed-in** (Phase 21), and the seam matters: entries from
+  loads, tasks and carriers are read-only windows that link to their record, and only
+  `calendar_events` rows carry an `eventId` and can be edited there. Do not add a write
+  path from the calendar into a load. All its date maths is **UTC on `YYYY-MM-DD` strings**
+  — local-time `Date` arithmetic silently shifts a day near midnight and would skew the
+  whole grid.
 
 **Postgres is deferred, not cancelled.** I attempted the async conversion and reverted it:
 ~700 edits across 65 files, automation reaches ~85%, and the remainder has semantic traps

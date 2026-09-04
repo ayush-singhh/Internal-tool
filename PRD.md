@@ -36,6 +36,8 @@ Authentication is required for every page. There are no public routes except `/l
 - **Announcement** — a notice to everyone in the organisation.
 - **Channel / Message** — an internal room, open to everyone or to one team, and the
   append-only messages in it.
+- **Calendar Event** — something on a date that exists nowhere else. Most of what the
+  calendar shows is derived from loads, tasks and carriers instead.
 - **Lookups** — controlled vocabularies (status, plan, pricing type, lead source, …).
 
 ## 4. Functional Requirements
@@ -120,6 +122,27 @@ already booked with them are untouched** — a decision made today does not rewr
 already run.
 
 Clearing the flag removes the reason with it. Only an administrator may flag or clear.
+
+### 4.1f Planning Calendar
+A month view that is **both** a window onto what already exists and a place to put things
+that do not exist anywhere else.
+
+**Derived, read-only:** pickup and delivery dates (from a load's stops), open task due
+dates, and insurance expiries for live carriers. These appear because the record says so
+and vanish when it changes — completing a task clears its date from the month. A derived
+entry links to its record; you change the date *there*, not here, so there is one source of
+truth and the calendar never becomes a second way to edit a load.
+
+**Typed in:** events — a meeting, a yard closure, a driver's holiday. These are the only
+entries the calendar itself owns, and the only ones that can be edited or removed on it.
+An event may span days, and may carry a time.
+
+Everyone sees only what they already have access to: no pickups without load access, no
+insurance expiries without carrier access, and only your own task due dates unless you
+manage the task board.
+
+Administrators and dispatchers only. A dispatcher edits the events they raised; an
+administrator edits all of them.
 
 ### 4.2 Carrier Database
 Sortable, filterable, searchable table with user-selectable visible columns.

@@ -28,7 +28,7 @@ const REDACTED = ["password_hash", "mfa_secret"] as const;
 /** Tenant-owned tables, in the order a reader would want them. */
 export const OWNED = [
   "users", "lookups", "app_settings", "announcements", "tasks",
-  "channels", "messages", "channel_reads", "leads",
+  "channels", "messages", "channel_reads", "calendar_events", "leads",
   "carriers", "carrier_notes",
   "carrier_activity", "offboarding_records", "saved_filters", "audit_log",
   "drivers", "brokers", "load_documents", "load_adjustments", "invoices",
@@ -167,6 +167,7 @@ export function deleteOrganization(orgId: number, opts: { exported: boolean }): 
       del("messages", "DELETE FROM messages WHERE organization_id = ?", [orgId]);
       del("channel_reads", "DELETE FROM channel_reads WHERE organization_id = ?", [orgId]);
       del("channels", "DELETE FROM channels WHERE organization_id = ?", [orgId]);
+      del("calendar_events", "DELETE FROM calendar_events WHERE organization_id = ?", [orgId]);
       del("leads", "DELETE FROM leads WHERE organization_id = ?", [orgId]);
 
       // Cascades to carrier_notes, carrier_activity and offboarding_records.

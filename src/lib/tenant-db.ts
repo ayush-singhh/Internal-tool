@@ -12,6 +12,7 @@ export const TENANT_TABLES = [
   "channels",
   "messages",
   "channel_reads",
+  "calendar_events",
   "leads",
   "carriers",
   "carrier_notes",

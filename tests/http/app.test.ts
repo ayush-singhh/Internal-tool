@@ -766,6 +766,81 @@ test("the Do Not Use list is on the brokers page, with its reason", async () => 
   assert.ok(res.body.includes("REASON MARKER"), "carrying the reason, which is the point");
 });
 
+// ── Planning calendar (Phase 21) ─────────────────────────────────────────────
+
+/**
+ * Both halves of the calendar, rendered.
+ *
+ * The derived half is the part worth asserting over the wire: a pickup only appears
+ * because a load says so, and it must carry a link to that load rather than an edit
+ * control. A unit test sees the entry list; only this sees what the page did with it.
+ */
+test("the calendar renders typed-in events beside dates derived from records", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg, lookupId } = await import("../helpers.ts");
+  const org = seedOrg(app.db, "Calendar Panel Co", "calowner@panel.test");
+
+  // A fixed month, so the assertions do not depend on the day the suite is run.
+  const month = "2026-04";
+  app.db.run(
+    `INSERT INTO carriers (organization_id, legal_name, status_id, insurance_expires_on, created_at, updated_at)
+     VALUES (?, 'CAL CARRIER MARKER', ?, ?, ?, ?)`,
+    [org.id, lookupId(app.db, org.id, "status", "active"), `${month}-20`, now, now],
+  );
+  const carrierId = app.db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
+
+  app.db.run(
+    `INSERT INTO loads (organization_id, carrier_id, status, status_changed_at, created_at, updated_at)
+     VALUES (?, ?, 'created', ?, ?, ?)`,
+    [org.id, carrierId, now, now, now],
+  );
+  const loadId = app.db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
+  app.db.run(
+    `INSERT INTO load_stops (organization_id, load_id, kind, sequence, city, state, scheduled_at)
+     VALUES (?, ?, 'pickup', 1, 'PICKUPCITY', 'TX', ?)`,
+    [org.id, loadId, `${month}-07T08:00:00Z`],
+  );
+
+  app.db.run(
+    `INSERT INTO calendar_events (organization_id, title, starts_on, created_at, created_by, updated_at, updated_by)
+     VALUES (?, 'TYPED EVENT MARKER', ?, ?, ?, ?, ?)`,
+    [org.id, `${month}-07`, now, org.ownerId, now, org.ownerId],
+  );
+
+  const res = await app.get(`/calendar?month=${month}`, app.session("calowner@panel.test"));
+  assert.equal(res.status, 200);
+  assert.ok(res.body.includes("TYPED EVENT MARKER"), "the typed-in half");
+  assert.ok(res.body.includes("PICKUPCITY"), "the derived half — a pickup from a load");
+  assert.ok(res.body.includes("CAL CARRIER MARKER"), "and an insurance expiry");
+  assert.ok(
+    res.body.includes(`href="/loads/${loadId}"`),
+    "a derived entry links to the record it came from rather than offering an editor",
+  );
+  assert.ok(res.body.includes("April 2026"), "and the month is labelled");
+});
+
+test("a role the spec leaves off the calendar is turned away from it", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "No Calendar Co", "nocalowner@panel.test");
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Val Viewer', 'nocalviewer@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.VIEWER, now, now, now],
+  );
+  app.db.run(
+    `INSERT INTO calendar_events (organization_id, title, starts_on, created_at, updated_at)
+     VALUES (?, 'VIEWER MUST NOT SEE THIS', '2026-04-07', ?, ?)`,
+    [org.id, now, now],
+  );
+
+  const res = await app.get("/calendar?month=2026-04", app.session("nocalviewer@panel.test"));
+  assert.ok(res.status === 307 || res.status === 302, `expected a redirect, got ${res.status}`);
+  assert.ok(!res.body.includes("VIEWER MUST NOT SEE THIS"));
+});
+
 test("My Activity is reachable by every role and shows only that user's own entries", async () => {
   const now = new Date().toISOString();
   const { seedOrg, lookupId } = await import("../helpers.ts");

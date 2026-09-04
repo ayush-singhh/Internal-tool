@@ -50,6 +50,13 @@ export type Action =
   | "message:post"
   /** Open or archive a channel. */
   | "channel:manage"
+  // Planning calendar
+  /** See the month. Most of what is on it is derived from records the reader can already
+   *  reach; this gates the view itself. */
+  | "calendar:view"
+  /** Add, change or remove a calendar event — the typed-in half. Scoped by who raised it,
+   *  so a dispatcher manages their own and an administrator manages all of them. */
+  | "calendar:manage"
   // Leads — the stage before a carrier record exists
   /** See the pipeline. Sales see only their own; the scope argument is what decides. */
   | "lead:view"
@@ -189,6 +196,18 @@ export function can(
       // Without a specific carrier this answers "could this role ever edit?" —
       // used to decide whether to render an action at all.
       if (user.role !== ROLES.DISPATCHER && user.role !== ROLES.ACCOUNT_MANAGER) return false;
+      return scope === undefined ? true : assigned;
+
+    // The client's spec puts the Planning Calendar on the Admin and Dispatcher menus and
+    // on no other, so account managers and viewers are refused rather than quietly
+    // included — the same call as Lead Management, and for the same reason.
+    case "calendar:view":
+      return user.role === ROLES.DISPATCHER;
+
+    case "calendar:manage":
+      if (user.role !== ROLES.DISPATCHER) return false;
+      // Their own events. Without a scope this answers "could this role ever add one?",
+      // which is what decides whether the New Event button renders.
       return scope === undefined ? true : assigned;
 
     // Dispatch is the dispatcher's job, and nobody else's below administrator.
