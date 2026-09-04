@@ -5,6 +5,7 @@ import { idsOf } from "./lookups.ts";
 import { can, type Action, type SessionUser } from "./permissions.ts";
 import { taskCounts } from "./tasks.ts";
 import { unreadCount } from "./announcements.ts";
+import { unreadMessages } from "./communication.ts";
 import type { IconName } from "../components/icons.tsx";
 import {
   STATUS, OFFBOARDING_STATUSES, LOAD_STATUS, LOAD_STATUS_ORDER, LEAD_STATUS_OPEN,
@@ -43,6 +44,7 @@ export function navCounts(org: Org, user: SessionUser) {
   return {
     tasks: taskCounts(org, taskScope).open,
     announcements: unreadCount(org, user.id),
+    messages: unreadMessages(org, user),
     // Open leads only — the badge is a workload figure, and a won or lost lead has
     // stopped being work. Same rule as the loads badge below.
     leads: get<{ n: number }>(
@@ -102,6 +104,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/alerts", label: "Alerts", icon: "warning", action: "task:view" },
       { href: "/tasks", label: "Tasks", icon: "check", count: "tasks", action: "task:view" },
       { href: "/announcements", label: "Announcements", icon: "note", count: "announcements", action: "announcement:view" },
+      { href: "/communication", label: "Communication", icon: "chat", count: "messages", action: "message:view" },
     ],
   },
   {

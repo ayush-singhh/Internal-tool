@@ -41,8 +41,9 @@ const hrefs = (role: string, active = 1) =>
 
 test("an administrator sees every section, Administration included", () => {
   const seen = hrefs(ROLES.ADMIN);
-  for (const href of ["/", "/alerts", "/tasks", "/announcements", "/leads", "/carriers",
-                      "/loads", "/invoices", "/reports", "/team", "/settings", "/import", "/audit"]) {
+  for (const href of ["/", "/alerts", "/tasks", "/announcements", "/communication", "/leads",
+                      "/carriers", "/loads", "/invoices", "/reports", "/team", "/settings",
+                      "/import", "/audit"]) {
     assert.ok(seen.includes(href), `admin should see ${href}`);
   }
 });
@@ -56,15 +57,15 @@ test("the personal cluster reaches every role, including one that can see nothin
   for (const role of [ROLES.OWNER, ROLES.ADMIN, ROLES.DISPATCHER, ROLES.ACCOUNT_MANAGER,
                       ROLES.SALES, ROLES.VIEWER]) {
     const seen = hrefs(role);
-    for (const href of ["/", "/alerts", "/tasks", "/announcements"]) {
+    for (const href of ["/", "/alerts", "/tasks", "/announcements", "/communication"]) {
       assert.ok(seen.includes(href), `${role} should see ${href}`);
     }
   }
 });
 
-test("platform support gets no task list and no noticeboard either", () => {
+test("platform support gets no task list, noticeboard or channels either", () => {
   const seen = hrefs(ROLES.SUPPORT);
-  for (const href of ["/tasks", "/announcements"]) {
+  for (const href of ["/tasks", "/announcements", "/communication"]) {
     assert.ok(!seen.includes(href), `support must not see ${href}`);
   }
 });
@@ -87,7 +88,7 @@ test("a dispatcher gets carriers and dispatch but no Administration and no pipel
 
 test("sales sees leads and its own activity — no carrier, load or invoice", () => {
   assert.deepEqual(hrefs(ROLES.SALES), [
-    "/", "/alerts", "/tasks", "/announcements", "/leads", "/activity",
+    "/", "/alerts", "/tasks", "/announcements", "/communication", "/leads", "/activity",
   ]);
 });
 
@@ -123,7 +124,7 @@ test("regression: the old admin-href deny-list served sales the carrier and load
   }
   assert.notDeepEqual(underOldRule, hrefs(ROLES.SALES));
   assert.deepEqual(hrefs(ROLES.SALES), [
-    "/", "/alerts", "/tasks", "/announcements", "/leads", "/activity",
+    "/", "/alerts", "/tasks", "/announcements", "/communication", "/leads", "/activity",
   ]);
 });
 

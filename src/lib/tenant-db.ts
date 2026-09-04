@@ -9,6 +9,9 @@ import "server-only";
 export const TENANT_TABLES = [
   "tasks",
   "announcements",
+  "channels",
+  "messages",
+  "channel_reads",
   "leads",
   "carriers",
   "carrier_notes",

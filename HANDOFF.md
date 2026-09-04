@@ -31,8 +31,9 @@ sequencing are now stale — see below).
 "Phase 11 — sellable" state. Do not merge to `main` until the SaaS features below are done.
 
 **Working tree:** clean — Phases 15 (loads, drivers/brokers, documents, invoicing), 16
-(role panels), 17 (leads) and 18 (tasks/announcements/alerts) are all committed.
-**Tests:** 413 passing (`npm test`) + 23 over HTTP (`npm run test:http`). **Build:** clean.
+(role panels), 17 (leads), 18 (tasks/announcements/alerts) and 19 (communication) are all
+committed. **Tests:** 436 passing (`npm test`) + 25 over HTTP (`npm run test:http`).
+**Build:** clean.
 
 **Stack:** Next.js 16 (App Router, RSC + Server Actions), React 19, TypeScript, Tailwind v4,
 SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-only`,
@@ -42,22 +43,22 @@ SQLite via `node:sqlite`. Runtime deps: `next`, `react`, `react-dom`, `server-on
 
 ## In flight — pick this up first
 
-Nothing is in flight. Phases 15, 16, 17 and 18 are complete and committed.
+Nothing is in flight. Phases 15, 16, 17, 18 and 19 are complete and committed.
 
 **The client's three-panel spec is seven sub-projects (A–G)** — the table lives in
-`Plan.md` under Phase 16, and it is the roadmap now. **A (role panels), B (leads) and
-C (tasks/announcements/alerts) are done. D — Communication — is next**: internal threads
-between the dispatch and sales teams. Note that Phase 18 deliberately left announcements
-without an audience column, on the reasoning that targeting a message at one team is D's
-job, not a broadcast's — so D owns that.
+`Plan.md` under Phase 16, and it is the roadmap now. **A (role panels), B (leads),
+C (tasks/announcements/alerts) and D (communication) are done. E is next**: Planning
+Calendar, Working Notes, Brokers DNU list. Of those the DNU list is the smallest and most
+obviously useful — `brokers` already exists, so it is a status on a row plus a guard where
+a load picks one.
 
 **Candidates for what's next, roughly ready-now → waiting-on-something:**
 
 1. **Redeploy `carrier-hub.fly.dev`.** The live app is still on migration 16 — invoicing
-   (17), leads (18) and tasks/announcements (19) are not usable there yet. Ready to do
-   now, same process as the last redeploy (migrate through 19, restart the one machine).
-   No code work needed. **This has now slipped three phases behind; it is the one item
-   that gets worse by waiting.**
+   (17), leads (18), tasks/announcements (19) and communication (20) are not usable there
+   yet. Ready to do now, same process as the last redeploy (migrate through 20, restart
+   the one machine). No code work needed. **This has now slipped four phases behind; it is
+   the one item that gets worse by waiting.**
 2. **Carrier → Broker freight invoice.** The natural next phase of the invoicing work —
    schema already leaves room (`invoices.invoice_type`, see
    `docs/superpowers/specs/2026-09-02-invoicing-design.md` §1) — but only worth starting
@@ -132,7 +133,7 @@ job, not a broadcast's — so D owns that.
 
 ---
 
-## Role panels, leads, and the shared workspace — what exists ✅ (Phases 16–18)
+## Role panels, leads, and the shared workspace — what exists ✅ (Phases 16–19)
 
 - **The sidebar is a permission surface, not decoration.** Every item in `NAV_GROUPS`
   (`src/lib/nav.ts`) names the `Action` that reveals it; `visibleNav(user)` filters with
@@ -168,6 +169,19 @@ job, not a broadcast's — so D owns that.
 - **Announcement unread is one column**, `users.announcements_seen_at`, not a read-receipt
   table: unread means "published since you last opened the page". Per-announcement receipts
   need the table; nobody has asked.
+- **Channels are gated by `audience`** — `all` or one role — and `Scope.audience` is the
+  only scope field that matches on *role* rather than on the person. Administrators read
+  every channel without the column naming them, which is deliberate: this is an internal
+  tool. `audienceFilter()` in `communication.ts` builds the SQL predicate so the list, the
+  badge and `can()` cannot drift. **Messages are append-only** (no edit, no delete —
+  `carrier_notes`' rule), and unread is **per channel** (`channel_reads`), not a second
+  watermark column; a test fails if somebody collapses it into one.
+- **Adding a tenant-owned table means editing four places**, and the compiler catches none
+  of them: `TENANT_TABLES` (the query guard), `OWNED` + the ordered deletion in
+  `tenant-lifecycle.ts`, `seedOrganizationData` if it seeds rows, and **`tests/signup.test.ts`'s
+  hand-written teardown**, which deletes tenant rows one by one before the organisation.
+  Phase 19 forgot the last one and six unrelated tests failed with a bare
+  `FOREIGN KEY constraint failed`.
 - **The three-places rule.** Whoever may assign work sees the whole task board; everyone
   else sees their own. That decision is `can(user, "task:assign")` and it is made in
   `/tasks`, in `navCounts`, and in `alerts.ts` — change one and you must change all three,

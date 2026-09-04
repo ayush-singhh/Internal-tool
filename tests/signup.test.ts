@@ -45,6 +45,11 @@ beforeEach(() => {
     db.run("DELETE FROM email_verifications");
     db.run("DELETE FROM users WHERE email LIKE '%.test'");
     db.run("DELETE FROM brokers WHERE organization_id > 1");
+    // Seeded by provisioning like brokers are, and pointing at the organisation, so they
+    // have to go before it does or the delete below trips the foreign key.
+    db.run("DELETE FROM messages WHERE organization_id > 1");
+    db.run("DELETE FROM channel_reads WHERE organization_id > 1");
+    db.run("DELETE FROM channels WHERE organization_id > 1");
     db.run("DELETE FROM lookups WHERE organization_id > 1");
     db.run("DELETE FROM app_settings WHERE organization_id > 1");
     db.run("DELETE FROM organizations WHERE id > 1");

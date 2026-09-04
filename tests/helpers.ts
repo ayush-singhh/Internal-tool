@@ -8,7 +8,7 @@
  */
 import { tmpdir } from "node:os";
 import { realpathSync } from "node:fs";
-import { LOOKUPS, DEFAULT_SETTINGS, ROLES, SEED_BROKERS } from "../src/lib/constants.ts";
+import { LOOKUPS, DEFAULT_SETTINGS, ROLES, SEED_BROKERS, SEED_CHANNELS } from "../src/lib/constants.ts";
 
 /**
  * Refuses to seed anything into a database that is not a throwaway.
@@ -75,6 +75,13 @@ export function seedOrg(
     db.run(
       "INSERT INTO brokers (organization_id, name, seeded, active, created_at) VALUES (?, ?, 1, 1, ?)",
       [id, broker, now],
+    );
+  }
+  for (const channel of SEED_CHANNELS) {
+    db.run(
+      `INSERT INTO channels (organization_id, name, description, audience, seeded, archived, created_at)
+       VALUES (?, ?, ?, ?, 1, 0, ?)`,
+      [id, channel.name, channel.description, channel.audience, now],
     );
   }
   db.run(

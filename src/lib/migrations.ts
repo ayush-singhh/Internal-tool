@@ -1,4 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
+// `constants.ts` imports nothing, so this cannot cycle back through the migration ledger.
+import { SEED_CHANNELS } from "./constants.ts";
 
 /**
  * Versioned, ordered, run-once migrations.
@@ -866,6 +868,83 @@ export const MIGRATIONS: Migration[] = [
       // ponytail: per-announcement receipts ("who has read this?") need the table. Add it
       // if somebody actually wants to chase individuals.
       addColumn(db, "users", "announcements_seen_at", "TEXT");
+    },
+  },
+  {
+    version: 20,
+    name: "communication: team channels and messages",
+    up: (db) => {
+      // `audience` is 'all' or a role name. Administrators hold every action, so they read
+      // every channel without the audience column having to enumerate them — the same way
+      // nothing else in the schema lists who the admin is.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS channels (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          name            TEXT NOT NULL,
+          description     TEXT,
+          audience        TEXT NOT NULL DEFAULT 'all',
+          seeded          INTEGER NOT NULL DEFAULT 0,
+          archived        INTEGER NOT NULL DEFAULT 0,
+          created_at      TEXT NOT NULL,
+          created_by      INTEGER,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, created_by) REFERENCES users (organization_id, id),
+          UNIQUE (organization_id, name)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_channels_org ON channels (organization_id, archived)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_org_id ON channels (organization_id, id)");
+
+      // Append-only, like carrier_notes and load_documents and for the same reason: a
+      // message somebody has already acted on must not be quietly rewritten afterwards.
+      // A correction is a second message, which is also how people actually work.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS messages (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          channel_id      INTEGER NOT NULL,
+          body            TEXT NOT NULL,
+          author_id       INTEGER,
+          created_at      TEXT NOT NULL,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, channel_id) REFERENCES channels (organization_id, id),
+          FOREIGN KEY (organization_id, author_id)  REFERENCES users    (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_messages_org ON messages (organization_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages (organization_id, channel_id, created_at)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_org_id ON messages (organization_id, id)");
+
+      // Per channel, not one watermark per person: with several channels you have to know
+      // *which* one has something new, and a single timestamp would mark them all read the
+      // moment you opened any of them. This is the case the announcements shortcut
+      // (users.announcements_seen_at, migration 19) does not stretch to.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS channel_reads (
+          organization_id INTEGER NOT NULL,
+          channel_id      INTEGER NOT NULL,
+          user_id         INTEGER NOT NULL,
+          last_read_at    TEXT NOT NULL,
+          PRIMARY KEY (organization_id, channel_id, user_id),
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, channel_id) REFERENCES channels (organization_id, id),
+          FOREIGN KEY (organization_id, user_id)    REFERENCES users    (organization_id, id)
+        )`);
+
+      // Existing organisations never re-run provision.ts's seed, so a channel added to the
+      // constant today only reaches a tenant created after this ships unless it is
+      // inserted here too — the same reasoning as migration 17's lookup backfill.
+      const orgs = db.prepare("SELECT id FROM organizations").all() as { id: number }[];
+      const insertChannel = db.prepare(
+        `INSERT INTO channels (organization_id, name, description, audience, seeded, archived, created_at)
+         VALUES (?, ?, ?, ?, 1, 0, ?)
+         ON CONFLICT (organization_id, name) DO NOTHING`,
+      );
+      const now = new Date().toISOString();
+      for (const o of orgs) {
+        for (const channel of SEED_CHANNELS) {
+          insertChannel.run(o.id, channel.name, channel.description, channel.audience, now);
+        }
+      }
     },
   },
 ];

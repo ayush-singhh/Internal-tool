@@ -5,8 +5,8 @@ phase to finish. Status is updated as part of the phase it describes.
 
 Legend: ✅ done · 🔨 in progress · ⬜ not started
 
-**Phases 0–18 complete.** 413 unit + 23 HTTP tests passing, production build clean,
-permission matrix verified over HTTP for every role. Phases 16–18 are the first three of
+**Phases 0–19 complete.** 436 unit + 25 HTTP tests passing, production build clean,
+permission matrix verified over HTTP for every role. Phases 16–19 are the first four of
 seven sub-projects decomposed from the client's three-panel spec — see the decomposition
 table under Phase 16.
 
@@ -495,8 +495,8 @@ The supplied spec is seven sub-projects, not one. Each gets its own spec → pla
 | A | Role-scoped panels + nav | ✅ Phase 16 |
 | B | Leads (entity, Submit Lead, lead → carrier conversion) | ✅ Phase 17 |
 | C | Tasks + Announcements + Alerts (one phase — shared "needs my attention" feed; `attention.ts` is half of it already) | ✅ Phase 18 |
-| D | Communication (internal threads, dispatch ↔ sales) | ⬜ next |
-| E | Planning Calendar, Working Notes, Brokers DNU list | ⬜ |
+| D | Communication (internal threads, dispatch ↔ sales) | ✅ Phase 19 |
+| E | Planning Calendar, Working Notes, Brokers DNU list | ⬜ next |
 | F | Accounts payable / receivable, Team Performance Report | ⬜ |
 | G | Map, Weather | ⬜ external APIs, recurring cost — see "Deferred by design" |
 
@@ -616,6 +616,64 @@ read this?"), and any push/email delivery. Each is noted at its call site with w
 justify adding it. Tasks link to a carrier and nothing else: a task about a load or a lead
 can name it in the title, and three nullable foreign keys for links nobody has asked for is
 scaffolding.
+
+---
+
+## Phase 19 — Communication ✅ (2026-09-04)
+
+Sub-project **D**. The client's spec names it "Communication (Internal use Dispatch Team,
+Sales Team)" — team rooms, not customer-facing mail. Nothing here reaches a carrier, a
+broker or a driver, and the page says so.
+
+- [x] **Migration 20 — `channels`, `messages`, `channel_reads`.** Three channels seeded per
+      organisation (General, Dispatch Team, Sales Team) the way `lookups` and `SEED_BROKERS`
+      already are, plus a backfill for organisations that already exist — the same trap
+      migration 17 hit: provisioning never re-runs for them.
+- [x] **`audience` is `all` or one role name.** Administrators hold every action, so they
+      read every channel without the column having to enumerate them — nothing else in the
+      schema lists who the admin is either. The rule lives in `can(user, "message:view",
+      channel)`, and `audienceFilter()` builds the same predicate for SQL so the list, the
+      badge and the guard cannot drift.
+- [x] **The audience narrows the query, not the render.** Another team's room is not in the
+      HTML at all — not hidden, absent. Asking for it by id answers the same way as asking
+      for one that does not exist, so the URL cannot be used to learn what channels a
+      company has.
+- [x] `Scope` gained `audience` — the only scope field that matches on **role** rather than
+      on the person, which is why it cannot reuse the `assigned` check next to it.
+- [x] **Reading and posting are the same permission.** A read-only member of a channel is a
+      concept nobody asked for, and two permissions that must always agree eventually will
+      not. A test asserts they answer identically for every role.
+- [x] **Messages are append-only** — the rule `carrier_notes` and `load_documents` already
+      follow. A message somebody has acted on must not be quietly rewritten; a correction is
+      a second message, which is how people work anyway. The composer says so out loud.
+      Archiving a channel keeps every message and refuses new ones.
+- [x] **Unread is per channel** (`channel_reads`), not one watermark per person. With
+      several channels you have to know *which* one has something new, and a single
+      timestamp would mark them all read the moment you opened any of them. This is exactly
+      where the announcements shortcut from Phase 18 stops stretching, and there is a test
+      that fails if somebody replaces it with one.
+- [x] Your own messages are never unread to you; an archived channel stops contributing.
+      Unread feeds the sidebar badge and one alert group, both narrowed by the same filter.
+- [x] Tests: `tests/communication.test.ts` (23 cases) and two new HTTP cases —
+      **436 unit + 25 HTTP passing**. tsc and `next build` clean.
+
+**Decided:** no direct messages between two people, and no per-message reactions, threads
+or attachments. The spec asks for team channels; a DM system is a different product with
+its own retention and privacy questions, and this is an internal tool where an
+administrator reading every room is the intended behaviour rather than a leak. A channel
+cannot be addressed to `support` either — that would be a room nobody in the company
+could enter.
+
+**Not built here:** editing or deleting a message (deliberate, above), typing indicators,
+read receipts per person, notification delivery outside the app, and message search. Search
+is the one most likely to be asked for; `messages` is indexed by `(organization_id,
+channel_id, created_at)` and would need an FTS table rather than a LIKE scan.
+
+**Fixed on the way:** `tests/signup.test.ts` tears its fixtures down table by table and did
+not know about channels, so seeded rows held a foreign key on the organisation it was
+deleting. Six tests failed with a bare `FOREIGN KEY constraint failed` — worth remembering
+that this teardown is a hand-maintained list, and every new tenant-owned table has to be
+added to it.
 
 ---
 

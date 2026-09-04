@@ -34,6 +34,8 @@ Authentication is required for every page. There are no public routes except `/l
 - **Offboarding Record** — the structured exit record for a departed carrier.
 - **Task** — a piece of work with an owner and, usually, a due date. May be about a carrier.
 - **Announcement** — a notice to everyone in the organisation.
+- **Channel / Message** — an internal room, open to everyone or to one team, and the
+  append-only messages in it.
 - **Lookups** — controlled vocabularies (status, plan, pricing type, lead source, …).
 
 ## 4. Functional Requirements
@@ -86,6 +88,23 @@ describes, so it disappears the moment that thing is resolved — there is no no
 mark read, expire, or find disagreeing with reality later. Each person sees only the parts
 they already have access to: no carrier queue without carrier access, and only their own
 tasks unless they manage the board.
+
+### 4.1d Communication
+Internal channels. **Nothing here reaches a carrier, a broker or a driver.**
+
+Every organisation starts with three: **General** (everyone), **Dispatch Team** and
+**Sales Team**. An administrator may open more, each addressed to everyone or to one role.
+Administrators read every channel — this is an internal tool, and ops leadership seeing the
+team rooms is the intended behaviour, not a leak.
+
+Reading a channel and posting to it are the same permission: a channel you can read is one
+you are part of. A channel you are not part of does not appear, and asking for it by URL
+tells you nothing about whether it exists.
+
+**Messages cannot be edited or deleted.** Correct one by sending another. Archiving a
+channel keeps everything said in it and accepts nothing new.
+
+Unread is tracked per channel, so opening one does not clear the others.
 
 ### 4.2 Carrier Database
 Sortable, filterable, searchable table with user-selectable visible columns.

@@ -427,6 +427,39 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
 };
 
 /**
+ * A channel is open to everyone, or to one team. `audience` holds either this value or a
+ * role name — administrators hold every action, so they read every channel without the
+ * audience needing to say so.
+ */
+export const CHANNEL_AUDIENCE_ALL = "all";
+
+export type SeedChannel = { name: string; description: string; audience: string };
+
+/**
+ * The channels every organisation starts with — the client's spec names two of them
+ * outright ("Internal use Dispatch Team, Sales Team"). Seeded per tenant like `lookups`
+ * and `SEED_BROKERS`, for the same reason: one company renaming or retiring a channel
+ * must not touch another's.
+ */
+export const SEED_CHANNELS: SeedChannel[] = [
+  {
+    name: "General",
+    description: "Everyone in the company.",
+    audience: CHANNEL_AUDIENCE_ALL,
+  },
+  {
+    name: "Dispatch Team",
+    description: "Loads, drivers, brokers — dispatch and administrators.",
+    audience: ROLES.DISPATCHER,
+  },
+  {
+    name: "Sales Team",
+    description: "Leads and onboarding — sales and administrators.",
+    audience: ROLES.SALES,
+  },
+];
+
+/**
  * The brokers a dispatcher picks from, seeded into every organisation.
  *
  * Per-tenant rather than global, for the same reason `lookups` is: one company correcting

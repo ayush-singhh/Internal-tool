@@ -1,4 +1,4 @@
-import { ROLES, type Role } from "./constants.ts";
+import { CHANNEL_AUDIENCE_ALL, ROLES, type Role } from "./constants.ts";
 
 export type SessionUser = {
   id: number;
@@ -21,6 +21,9 @@ export type Scope = {
   owner_id?: number | null;
   /** Tasks: who raised it. A task is yours if you are doing it *or* you asked for it. */
   created_by?: number | null;
+  /** Channels: `all`, or the one role the channel belongs to. Not an id — this is the
+   *  only scope field that matches on role rather than on the person. */
+  audience?: string | null;
 };
 
 /** The carrier call sites' name for it. Same shape. */
@@ -38,6 +41,15 @@ export type Action =
   | "announcement:view"
   /** Write, edit and withdraw an announcement. */
   | "announcement:manage"
+  // Communication — the internal channels
+  /** Read a channel. Scoped by the channel's audience, not by a person's id. */
+  | "message:view"
+  /** Post to a channel. Deliberately the same scope as reading it: a channel you can
+   *  read is a channel you are part of, and a read-only member is a concept nobody
+   *  asked for. */
+  | "message:post"
+  /** Open or archive a channel. */
+  | "channel:manage"
   // Leads — the stage before a carrier record exists
   /** See the pipeline. Sales see only their own; the scope argument is what decides. */
   | "lead:view"
@@ -123,6 +135,15 @@ export function can(
       // Without a scope this answers "could this role ever manage a task?", which is what
       // decides whether the New Task button renders at all.
       return scope === undefined ? true : assigned;
+
+    // A channel is open to everyone or to one team. Administrators returned true above,
+    // so they read every channel without the audience having to name them — and this
+    // matches on the role rather than the person, which is why it cannot reuse `assigned`.
+    case "message:view":
+    case "message:post":
+      if (scope === undefined) return true;
+      // An explicit `null` scope is fail-closed, the same as everywhere else here.
+      return scope?.audience === CHANNEL_AUDIENCE_ALL || scope?.audience === user.role;
     default:
       break;
   }
@@ -188,6 +209,7 @@ export function can(
     // than putting it on their list.
     case "task:assign":
     case "announcement:manage":
+    case "channel:manage":
     case "carrier:delete":
     case "import:run":
     case "load:close":

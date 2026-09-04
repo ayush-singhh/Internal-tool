@@ -1,6 +1,6 @@
 import "server-only";
 import { get, run, transaction } from "./db.ts";
-import { LOOKUPS, DEFAULT_SETTINGS, ROLES, SEED_BROKERS } from "./constants.ts";
+import { LOOKUPS, DEFAULT_SETTINGS, ROLES, SEED_BROKERS, SEED_CHANNELS } from "./constants.ts";
 import { slugify } from "./migrations.ts";
 
 /**
@@ -41,6 +41,18 @@ export function seedOrganizationData(orgId: number): void {
        VALUES (?, ?, 1, 1, ?)
        ON CONFLICT (organization_id, name) DO NOTHING`,
       [orgId, name, now],
+    );
+  }
+
+  // An empty Communication page teaches nobody what it is for. The three shipped channels
+  // are the client's own spec — general, dispatch, sales — and `seeded = 1` marks them the
+  // way it does for brokers, so an administrator can tell ours from one somebody opened.
+  for (const channel of SEED_CHANNELS) {
+    run(
+      `INSERT INTO channels (organization_id, name, description, audience, seeded, archived, created_at)
+       VALUES (?, ?, ?, ?, 1, 0, ?)
+       ON CONFLICT (organization_id, name) DO NOTHING`,
+      [orgId, channel.name, channel.description, channel.audience, now],
     );
   }
 }

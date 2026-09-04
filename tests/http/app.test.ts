@@ -617,6 +617,93 @@ test("alerts compose only what the reader may already see", async () => {
   assert.ok(asOwner.body.includes("SALES OVERDUE MARKER"));
 });
 
+// ── Communication (Phase 19) ─────────────────────────────────────────────────
+
+/**
+ * The audience boundary over the wire.
+ *
+ * The list is narrowed in SQL, so another team's messages must not be in the HTML at all
+ * — not hidden, not collapsed, absent. And asking for that channel by id has to answer
+ * the same way as asking for one that does not exist, or the URL becomes a way to learn
+ * what channels a company has.
+ */
+test("a sales rep's channels exclude the dispatch room, by id as well as by list", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Comms Panel Co", "commsowner@panel.test");
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Sal Comms', 'commssales@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.SALES, now, now, now],
+  );
+
+  const channelId = (name: string) =>
+    app.db.get<{ id: number }>(
+      "SELECT id FROM channels WHERE organization_id = ? AND name = ?",
+      [org.id, name],
+    )!.id;
+  const dispatch = channelId("Dispatch Team");
+  const general = channelId("General");
+
+  app.db.run(
+    `INSERT INTO messages (organization_id, channel_id, body, author_id, created_at)
+     VALUES (?, ?, 'DISPATCH ONLY MARKER', ?, ?)`,
+    [org.id, dispatch, org.ownerId, now],
+  );
+  app.db.run(
+    `INSERT INTO messages (organization_id, channel_id, body, author_id, created_at)
+     VALUES (?, ?, 'EVERYONE MARKER', ?, ?)`,
+    [org.id, general, org.ownerId, now],
+  );
+
+  const sales = app.session("commssales@panel.test");
+
+  const listed = await app.get("/communication", sales);
+  assert.equal(listed.status, 200);
+  assert.ok(listed.body.includes("Sales Team"), "their own team room is listed");
+  assert.ok(!listed.body.includes("Dispatch Team"), "another team's room is not even named");
+  assert.ok(!listed.body.includes("DISPATCH ONLY MARKER"));
+
+  // Asking for it by id: the redirect must not carry the content it is redirecting from.
+  const byId = await app.get(`/communication?channel=${dispatch}`, sales);
+  assert.ok(
+    byId.status === 200 || byId.status === 307 || byId.status === 302,
+    `unexpected status ${byId.status}`,
+  );
+  assert.ok(
+    !byId.body.includes("DISPATCH ONLY MARKER"),
+    "requesting another team's channel by id must serve none of it",
+  );
+
+  // The owner is in every room, which is what makes the audience column enough.
+  const asOwner = await app.get(`/communication?channel=${dispatch}`, app.session("commsowner@panel.test"));
+  assert.equal(asOwner.status, 200);
+  assert.ok(asOwner.body.includes("DISPATCH ONLY MARKER"));
+});
+
+test("only an administrator is offered a way to open a channel", async () => {
+  const now = new Date().toISOString();
+  const { seedOrg } = await import("../helpers.ts");
+  const { ROLES } = await import("../../src/lib/constants.ts");
+  const org = seedOrg(app.db, "Channel Admin Co", "chanowner@panel.test");
+  app.db.run(
+    `INSERT INTO users (organization_id, name, email, password_hash, role, active,
+                        email_verified_at, created_at, updated_at)
+     VALUES (?, 'Dee Chan', 'chandisp@panel.test', 'x', ?, 1, ?, ?, ?)`,
+    [org.id, ROLES.DISPATCHER, now, now, now],
+  );
+
+  const asDispatcher = await app.get("/communication", app.session("chandisp@panel.test"));
+  assert.equal(asDispatcher.status, 200);
+  assert.ok(!asDispatcher.body.includes("New channel"), "no channel:manage, no button");
+  assert.ok(!asDispatcher.body.includes('name="audience"'), "and no audience picker either");
+
+  const asOwner = await app.get("/communication", app.session("chanowner@panel.test"));
+  assert.ok(asOwner.body.includes("New channel"));
+});
+
 test("My Activity is reachable by every role and shows only that user's own entries", async () => {
   const now = new Date().toISOString();
   const { seedOrg, lookupId } = await import("../helpers.ts");

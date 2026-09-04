@@ -5,6 +5,7 @@ import { can } from "./permissions.ts";
 import { needsAttention, attentionTotal, type AttentionRule } from "./attention.ts";
 import { pressingTasks, taskCounts, type TaskRow } from "./tasks.ts";
 import { unreadCount } from "./announcements.ts";
+import { unreadMessages } from "./communication.ts";
 import type { Tone } from "./constants.ts";
 
 /**
@@ -37,6 +38,7 @@ export type Alerts = {
   overdueTasks: TaskRow[];
   tasks: { open: number; overdue: number; dueToday: number };
   unreadAnnouncements: number;
+  unreadMessages: number;
   /** The headline strip: one row per kind of thing wanting attention. */
   groups: AlertGroup[];
 };
@@ -50,6 +52,8 @@ export function alertsFor(org: Org, user: SessionUser): Alerts {
   const tasks = taskCounts(org, scope);
   const overdueTasks = pressingTasks(org, scope);
   const unreadAnnouncements = can(user, "announcement:view") ? unreadCount(org, user.id) : 0;
+  // Already narrowed to the channels this person may read — see communication.ts.
+  const messages = can(user, "message:view") ? unreadMessages(org, user) : 0;
 
   const groups: AlertGroup[] = [];
   if (tasks.overdue > 0) {
@@ -70,6 +74,16 @@ export function alertsFor(org: Org, user: SessionUser): Alerts {
       tone: "amber",
       count: tasks.dueToday,
       href: "/tasks",
+    });
+  }
+  if (messages > 0) {
+    groups.push({
+      key: "messages",
+      label: "Unread messages",
+      description: "In the channels you are part of",
+      tone: "purple",
+      count: messages,
+      href: "/communication",
     });
   }
   if (unreadAnnouncements > 0) {
@@ -94,11 +108,13 @@ export function alertsFor(org: Org, user: SessionUser): Alerts {
   }
 
   return {
-    total: tasks.overdue + tasks.dueToday + unreadAnnouncements + attentionTotal(attention),
+    total:
+      tasks.overdue + tasks.dueToday + unreadAnnouncements + messages + attentionTotal(attention),
     attention,
     overdueTasks,
     tasks,
     unreadAnnouncements,
+    unreadMessages: messages,
     groups,
   };
 }
