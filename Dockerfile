@@ -70,7 +70,13 @@ EXPOSE 3000
 
 # Migrations run before the server accepts traffic, so a half-upgraded schema is never
 # served. They are idempotent, so restarts are free.
-CMD ["sh", "-c", "node scripts/migrate.ts && node server.js"]
+#
+# The snapshot ahead of them is the only pre-migration copy anyone gets: a release machine
+# has no volume, and `fly ssh console` is not always available to take one by hand. It is
+# `;` and not `&&` on purpose — on the very first boot there is no database to copy yet,
+# and a missing file must not keep the server from starting. Pruning is BACKUP_KEEP (14),
+# so a restart loop cannot fill the disk.
+CMD ["sh", "-c", "node --conditions=react-server scripts/backup.ts; node scripts/migrate.ts && node server.js"]
 
 # $PORT, not 3000: a host like Railway or Fly injects its own port, and a healthcheck
 # pointed at the wrong one reports a healthy server as dead.

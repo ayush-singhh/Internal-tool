@@ -18,6 +18,57 @@ conversation it was noticed in.
 
 ---
 
+## 2026-09-05 — `npm run backup` had never worked, and nothing took a copy before a migration
+
+**Severity:** high · **Status:** fixed · **Reached users:** no — no data was lost, but for
+seven deploys the safety net everyone believed in was not there
+
+`package.json` ran the backup script as `node scripts/backup.ts`, with no
+`--conditions=react-server`. `scripts/backup.ts` imports `src/lib/backup.ts`, which reaches
+`db.ts` → `tenant-db.ts` → `server-only`, so the command died on **"This module cannot be
+imported from a Client Component module"** before copying a single byte. It exited
+non-zero and printed a stack trace, and DEPLOY.md names it twice — *"Back up before you
+change anything"* — as the thing to run before touching production.
+
+**Why it stayed hidden.** `tests/backup.test.ts` is thorough: it covers SigV4 against AWS's
+published vector, retention, offsite upload, and a failed backup being recorded rather than
+vanishing. All of it imports `runBackup()` **as a module, inside a test runner already
+started with `--conditions=react-server`**. The library was never broken. The *entry point*
+was, and no test ran an entry point. The Dockerfile even had a comment saying the flag is
+what makes `server-only` resolve to a no-op — the knowledge was in the repo, one file away
+from the script that needed it.
+
+**The second half.** Nothing took a copy before migrations ran, either. `fly.toml` documents
+why there is no `release_command` — a release machine has no volume — and `fly ssh console`
+is not always available to run one by hand, so in practice there was no moment at which a
+pre-migration snapshot got taken. This deploy applied **seven** migrations (17–23) to a
+database with real customer data (21 carriers, 3 users) that had never seen any of them.
+
+**Found by:** deploying. Reaching for the documented backup before migrating, and finding
+that the documented backup does not run.
+
+**Fixed:** the flag is in the npm script, and the container's `CMD` now takes a snapshot
+before it migrates. `;` and not `&&`, deliberately: `takeBackup` opens the source with
+`{ readOnly: true }`, a read-only open cannot create a file that is not there, and on a
+first boot there is no database yet — with `&&` that throw would stop the server from ever
+starting. `migrate.ts` still runs behind `&&`, so a migration that fails still keeps a
+half-upgraded schema from being served. Confirmed in production: the boot wrote a **v16**
+snapshot and *then* reported `applied 7 migration(s)`.
+
+**Why it was missed:** the tests import the library; the operator runs the command. Those
+are two different programs, and only one of them was ever executed. A script is not covered
+by tests of what it imports — **the thing to test is the line someone actually types**,
+taken from `package.json` rather than retyped in the test, or the assertion drifts from the
+command the moment the command changes.
+
+**Guarded by:** `tests/backup.test.ts` — "the documented `npm run backup` command actually
+runs", which reads `scripts.backup` out of `package.json` and executes it in a subprocess
+against a temp database, and "the container snapshots before it migrates, and cannot be
+stopped by a missing one", which pins the ordering and the `;` in the Dockerfile `CMD`.
+Both fail without the fix (497 tests: 495 pass, 2 fail).
+
+---
+
 ## 2026-09-04 — `/reports` had no permission check at all
 
 **Severity:** medium · **Status:** fixed · **Reached users:** unknown — the page has been

@@ -1,7 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { destination, putObject, signRequest } from "../src/lib/s3.ts";
@@ -255,4 +256,38 @@ test("a backup that throws is recorded as failed rather than vanishing", async (
     process.env.BACKUP_DIR = dir;
   }
   assert.equal(log.recentBackups(1)[0]!.status, "failed");
+});
+
+// ── the entry points, not just the library ───────────────────────────────────
+
+test("the documented `npm run backup` command actually runs", () => {
+  // Everything above exercises `runBackup()` directly, which is why this stayed hidden:
+  // what was broken was the *entry point*. `scripts/backup.ts` reaches `db.ts`, which
+  // imports `server-only`, so without `--conditions=react-server` it throws "cannot be
+  // imported from a Client Component module" before copying a byte — and that is the one
+  // command DEPLOY.md tells an operator to run before touching production. Run whatever
+  // package.json actually says, so dropping the flag again fails here rather than at 3am.
+  const dir = path.join(ROOT, "cli-backups");
+  const { scripts } = JSON.parse(readFileSync("package.json", "utf8"));
+  const run = spawnSync("sh", ["-c", scripts.backup], {
+    env: { ...process.env, CARRIER_DB_PATH: DB, BACKUP_DIR: dir },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.ok(readdirSync(dir).some((f) => f.endsWith(".db")), "a snapshot was written");
+});
+
+test("the container snapshots before it migrates, and cannot be stopped by a missing one", () => {
+  // A release machine runs without the volume and `fly ssh console` is not always
+  // available, so the boot command is the only place a pre-migration copy is ever taken.
+  // The separator is load-bearing: on a first boot there is no database yet, `takeBackup`
+  // opens the source read-only, and a read-only open cannot create a missing file — so it
+  // throws. With `&&` that would keep the server from ever starting.
+  const cmd = readFileSync("Dockerfile", "utf8").match(/^CMD .*$/m)![0];
+  assert.ok(
+    cmd.indexOf("backup.ts") < cmd.indexOf("migrate.ts"),
+    "the snapshot has to be taken before the migrations it protects against",
+  );
+  assert.match(cmd, /backup\.ts; *node/, "`;` not `&&` — a first boot has nothing to copy");
+  assert.match(cmd, /migrate\.ts && node server\.js/, "a failed migration still blocks the server");
 });
