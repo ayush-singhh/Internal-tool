@@ -75,3 +75,115 @@ export function verifySignature(
 
   return matched ? { ok: true } : { ok: false, reason: "Signature does not match." };
 }
+
+const API = "https://api.stripe.com";
+
+/** Injected so tests never reach the network, the way `startSignup` takes its `Mailer`. */
+export type Fetcher = typeof fetch;
+
+function secretKey(): string {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    throw new Error("STRIPE_SECRET_KEY is not set — this deployment cannot talk to Stripe.");
+  }
+  return key;
+}
+
+export async function request<T>(
+  method: "GET" | "POST",
+  path: string,
+  body?: Record<string, unknown>,
+  fetcher: Fetcher = fetch,
+): Promise<T> {
+  const init: RequestInit = {
+    method,
+    headers: {
+      Authorization: `Bearer ${secretKey()}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+  };
+  if (body) init.body = new URLSearchParams(form(body) as [string, string][]).toString();
+
+  const response = await fetcher(`${API}${path}`, init);
+  const text = await response.text();
+  if (!response.ok) {
+    // Stripe answers { error: { message } }. A proxy in front of it may answer HTML.
+    let detail = text.slice(0, 300);
+    try {
+      const parsed = JSON.parse(text) as { error?: { message?: string } };
+      if (parsed.error?.message) detail = parsed.error.message;
+    } catch {
+      /* not JSON — the raw text is the best thing we have */
+    }
+    throw new Error(`Stripe ${method} ${path} failed (${response.status}): ${detail}`);
+  }
+  return JSON.parse(text) as T;
+}
+
+export type StripeSubscription = {
+  id: string;
+  status: string;
+  customer: string | null;
+  trial_end: number | null;
+  /** Present on older API versions. Newer ones carry it per item — read both. */
+  current_period_end?: number | null;
+  items: { data: { price: { id: string }; current_period_end?: number | null }[] };
+};
+
+export type StripePrice = {
+  id: string;
+  unit_amount: number | null;
+  currency: string;
+  recurring: { interval: string } | null;
+};
+
+export function getSubscription(id: string, fetcher?: Fetcher): Promise<StripeSubscription> {
+  return request("GET", `/v1/subscriptions/${encodeURIComponent(id)}`, undefined, fetcher);
+}
+
+export function getPrice(id: string, fetcher?: Fetcher): Promise<StripePrice> {
+  return request("GET", `/v1/prices/${encodeURIComponent(id)}`, undefined, fetcher);
+}
+
+export function createCheckoutSession(
+  input: {
+    priceId: string;
+    orgId: number;
+    customerId: string | null;
+    customerEmail: string | null;
+    trialDays: number;
+    successUrl: string;
+    cancelUrl: string;
+  },
+  fetcher?: Fetcher,
+): Promise<{ id: string; url: string }> {
+  return request("POST", "/v1/checkout/sessions", {
+    mode: "subscription",
+    line_items: [{ price: input.priceId, quantity: 1 }],
+    // How the webhook finds the organisation on the very first event, before any
+    // customer id has been stored against it.
+    client_reference_id: String(input.orgId),
+    // A known customer is reused; a new one is created by Stripe from the address. Never
+    // both, or the same person ends up as two customers with two payment histories.
+    customer: input.customerId,
+    customer_email: input.customerId ? null : input.customerEmail,
+    subscription_data: { trial_period_days: input.trialDays },
+    // The card is collected now and charged on day 15. Without this Stripe may skip
+    // collection on a trialling subscription, which is not the product we sold.
+    payment_method_collection: "always",
+    allow_promotion_codes: true,
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+  }, fetcher);
+}
+
+export function createPortalSession(
+  customerId: string,
+  returnUrl: string,
+  fetcher?: Fetcher,
+): Promise<{ url: string }> {
+  return request("POST", "/v1/billing_portal/sessions", {
+    customer: customerId,
+    return_url: returnUrl,
+  }, fetcher);
+}
