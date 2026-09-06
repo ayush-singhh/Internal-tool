@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createHmac } from "node:crypto";
 
 // A throwaway database per run — tests never touch data/carrier-hub.db. Set before the
 // first import of anything, because db.ts binds CARRIER_DB_PATH when it is first loaded.
@@ -136,4 +137,65 @@ test("a comped organisation stays comped even after it subscribes", async () => 
   assert.equal(sub.orgBilling(orgId).billing_mode, "comped");
   db.systemQuery(() =>
     db.run("UPDATE organizations SET billing_mode = 'stripe' WHERE id = ?", [orgId]));
+});
+
+const WHSEC = "whsec_test_endpoint_secret";
+const signed = (body: string, now = new Date()) => {
+  const t = Math.floor(now.getTime() / 1000);
+  return `t=${t},v1=${createHmac("sha256", WHSEC).update(`${t}.${body}`, "utf8").digest("hex")}`;
+};
+const post = (body: string, signature: string | null) =>
+  new Request("https://app.example.com/api/stripe/webhook", {
+    method: "POST",
+    body,
+    headers: signature ? { "stripe-signature": signature } : {},
+  });
+
+test("an unconfigured deployment says so rather than pretending to accept events", async () => {
+  const saved = process.env.STRIPE_WEBHOOK_SECRET;
+  delete process.env.STRIPE_WEBHOOK_SECRET;
+  const response = await sub.handleWebhookRequest(post("{}", "t=1,v1=x"));
+  assert.equal(response.status, 503);
+  if (saved) process.env.STRIPE_WEBHOOK_SECRET = saved;
+});
+
+test("an unsigned or wrongly signed request is refused and writes nothing", async () => {
+  process.env.STRIPE_WEBHOOK_SECRET = WHSEC;
+  const before = sub.orgBilling(orgId).status;
+  const body = JSON.stringify(
+    event("customer.subscription.updated", { id: "sub_1", customer: "cus_9" }, "evt_forged"));
+
+  assert.equal((await sub.handleWebhookRequest(post(body, null))).status, 400);
+  assert.equal((await sub.handleWebhookRequest(post(body, "t=1,v1=deadbeef"))).status, 400);
+  assert.equal(sub.orgBilling(orgId).status, before, "a refused request changed nothing");
+  assert.equal(sub.alreadySeen("evt_forged"), false, "and was not recorded as handled");
+});
+
+test("a properly signed event is applied", async () => {
+  process.env.STRIPE_WEBHOOK_SECRET = WHSEC;
+  const { fetcher } = stub(stripeSub({ status: "active" }));
+  const body = JSON.stringify(
+    event("customer.subscription.updated", { id: "sub_1", customer: "cus_9" }, "evt_signed"));
+
+  const response = await sub.handleWebhookRequest(post(body, signed(body)), fetcher);
+  assert.equal(response.status, 200);
+  assert.equal(sub.orgBilling(orgId).status, "active");
+});
+
+test("a signed body that is not JSON is refused, not crashed on", async () => {
+  process.env.STRIPE_WEBHOOK_SECRET = WHSEC;
+  const body = "not json at all";
+  const response = await sub.handleWebhookRequest(post(body, signed(body)));
+  assert.equal(response.status, 400);
+});
+
+test("a handler failure asks Stripe to retry", async () => {
+  process.env.STRIPE_WEBHOOK_SECRET = WHSEC;
+  const failing = (async () => { throw new Error("Stripe timed out"); }) as unknown as typeof fetch;
+  const body = JSON.stringify(
+    event("customer.subscription.updated", { id: "sub_1", customer: "cus_9" }, "evt_boom"));
+
+  const response = await sub.handleWebhookRequest(post(body, signed(body)), failing);
+  assert.equal(response.status, 500, "a 500 is what makes Stripe deliver it again");
+  assert.equal(sub.alreadySeen("evt_boom"), false, "and it is not marked handled");
 });

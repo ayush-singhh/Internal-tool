@@ -3,7 +3,7 @@ import { get, run, systemQuery } from "./db.ts";
 import { ORG_STATUS, type OrgStatus } from "./constants.ts";
 import type { OrgBilling } from "./entitlement.ts";
 import {
-  getSubscription,
+  getSubscription, verifySignature,
   type Fetcher, type StripeSubscription,
 } from "./stripe.ts";
 
@@ -162,4 +162,44 @@ export async function handleEvent(event: StripeEvent, fetcher?: Fetcher): Promis
   applySubscription(orgId, subscription);
   recordEvent(event.id, event.type);
   return `${event.type}: organisation ${orgId} -> ${statusFor(subscription.status)}`;
+}
+
+/**
+ * One verified Stripe delivery, from raw request to response.
+ *
+ * Lives here rather than in the route file so it is a plain function a test can call with
+ * a `Request`, no HTTP server and no build step.
+ */
+export async function handleWebhookRequest(
+  request: Request,
+  fetcher?: Fetcher,
+): Promise<Response> {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) return new Response("Billing is not configured here.", { status: 503 });
+
+  // Read the body as text before anything parses it: JSON that has been parsed and
+  // re-serialised is different bytes, and therefore a different HMAC.
+  const raw = await request.text();
+  const verdict = verifySignature(raw, request.headers.get("stripe-signature"), secret);
+  if (!verdict.ok) return new Response(verdict.reason, { status: 400 });
+
+  let event: StripeEvent;
+  try {
+    event = JSON.parse(raw) as StripeEvent;
+  } catch {
+    return new Response("Body is not JSON.", { status: 400 });
+  }
+  if (!event?.id || !event?.type || !event?.data?.object) {
+    return new Response("Not a Stripe event.", { status: 400 });
+  }
+
+  try {
+    console.log(`[stripe] ${await handleEvent(event, fetcher)}`);
+  } catch (error) {
+    // A 500 is the request to deliver it again, which is right for a transient failure.
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[stripe] ${event.id} (${event.type}) failed: ${message}`);
+    return new Response("Handler failed.", { status: 500 });
+  }
+  return new Response("ok");
 }
