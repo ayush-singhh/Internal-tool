@@ -1026,6 +1026,39 @@ export const MIGRATIONS: Migration[] = [
       addColumn(db, "users", "working_notes_at", "TEXT");
     },
   },
+  {
+    version: 24,
+    name: "billing: Stripe columns on organizations, and the event ledger",
+    up: (db) => {
+      addColumn(db, "organizations", "stripe_customer_id", "TEXT");
+      addColumn(db, "organizations", "stripe_subscription_id", "TEXT");
+      addColumn(db, "organizations", "plan", "TEXT");
+      addColumn(db, "organizations", "trial_ends_at", "TEXT");
+      addColumn(db, "organizations", "current_period_end", "TEXT");
+
+      // The default and the backfill below point in opposite directions on purpose.
+      // 'stripe' is the DEFAULT so that an organisation created by some future path that
+      // forgets to say fails *into* the paying lane rather than becoming free forever.
+      // The one-time UPDATE then grandfathers everything that exists at this instant —
+      // the live tenant, the bootstrap admin org, every test fixture — because none of
+      // them was ever sold to anybody. A comped organisation never talks to Stripe.
+      const had = (db.prepare("PRAGMA table_info(organizations)").all() as { name: string }[])
+        .some((c) => c.name === "billing_mode");
+      addColumn(db, "organizations", "billing_mode", "TEXT NOT NULL DEFAULT 'stripe'");
+      // Guarded on the column having just appeared. Unguarded, a second application of
+      // this migration would silently hand free service to every paying customer.
+      if (!had) db.exec("UPDATE organizations SET billing_mode = 'comped'");
+
+      // Stripe delivers at least once and in no guaranteed order. The primary key here
+      // is the entire deduplication mechanism.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS stripe_events (
+          id          TEXT PRIMARY KEY,
+          type        TEXT NOT NULL,
+          received_at TEXT NOT NULL
+        )`);
+    },
+  },
 ];
 
 export function addColumn(

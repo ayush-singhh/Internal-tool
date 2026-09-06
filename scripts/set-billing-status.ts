@@ -3,6 +3,7 @@
  *
  *   node --conditions=react-server scripts/set-billing-status.ts <org-slug-or-id> <status>
  *   status is one of: trial, active, past_due, suspended
+ *   or a billing mode: comped (never charged) | stripe (billed through Stripe)
  *
  * Out of band on purpose, same as scripts/support-user.ts: nothing in this application
  * charges anybody, invoicing is manual, and no code path a customer or a support account
@@ -26,16 +27,23 @@ const { get, run, systemQuery } = await import("../src/lib/db.ts");
 const { ORG_STATUS } = await import("../src/lib/constants.ts");
 
 const allowed = new Set<string>(Object.values(ORG_STATUS));
-if (!allowed.has(newStatus)) {
-  console.error(`Unknown status "${newStatus}". Use one of: ${[...allowed].join(", ")}`);
+// `comped` and `stripe` are not statuses — they are the billing *mode*, the column that
+// decides whether an organisation is billed at all. Both are billing standing, which is
+// this script's stated job, so they live here rather than in a second script.
+const MODES = new Set(["comped", "stripe"]);
+if (!allowed.has(newStatus) && !MODES.has(newStatus)) {
+  console.error(
+    `Unknown value "${newStatus}". Use a status (${[...allowed].join(", ")}) ` +
+      `or a billing mode (${[...MODES].join(", ")}).`,
+  );
   process.exit(1);
 }
 
 const org = systemQuery(() =>
-  get<{ id: number; name: string; status: string }>(
+  get<{ id: number; name: string; status: string; billing_mode: string }>(
     /^\d+$/.test(orgRef)
-      ? "SELECT id, name, status FROM organizations WHERE id = ?"
-      : "SELECT id, name, status FROM organizations WHERE slug = ?",
+      ? "SELECT id, name, status, billing_mode FROM organizations WHERE id = ?"
+      : "SELECT id, name, status, billing_mode FROM organizations WHERE slug = ?",
     [/^\d+$/.test(orgRef) ? Number(orgRef) : orgRef],
   ),
 );
@@ -44,5 +52,11 @@ if (!org) {
   process.exit(1);
 }
 
-systemQuery(() => run("UPDATE organizations SET status = ? WHERE id = ?", [newStatus, org.id]));
-console.log(`${org.name}: ${org.status} -> ${newStatus}`);
+if (MODES.has(newStatus)) {
+  systemQuery(() =>
+    run("UPDATE organizations SET billing_mode = ? WHERE id = ?", [newStatus, org.id]));
+  console.log(`${org.name}: billing mode ${org.billing_mode} -> ${newStatus}`);
+} else {
+  systemQuery(() => run("UPDATE organizations SET status = ? WHERE id = ?", [newStatus, org.id]));
+  console.log(`${org.name}: ${org.status} -> ${newStatus}`);
+}

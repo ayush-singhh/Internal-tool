@@ -41,8 +41,10 @@ function seed(database: DatabaseSync) {
   const orgName = process.env.ADMIN_ORG ?? process.env.MIGRATION_ORG_NAME ?? "My Organization";
   const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "org";
 
+  // 'comped': whoever self-hosts this and bootstraps their own organisation is not a
+  // Stripe customer of ours, and neither is the admin org of our own deployment.
   database.prepare(
-    "INSERT INTO organizations (name, slug, status, created_at) VALUES (?, ?, 'active', ?)",
+    "INSERT INTO organizations (name, slug, status, billing_mode, created_at) VALUES (?, ?, 'active', 'comped', ?)",
   ).run(orgName, slug, now);
   const orgId = (database.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
 
