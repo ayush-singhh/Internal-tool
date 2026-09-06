@@ -65,6 +65,10 @@ For anything your client uses unattended, use a real host instead:
    | `SIGNUP_OPEN` | `1` | lets your client create their own organisation |
    | `SMTP_URL` | see below | without it nobody can confirm an address |
    | `MAIL_FROM` | `Carrier Hub <you@gmail.com>` | the visible sender |
+   | `STRIPE_SECRET_KEY` | `sk_live_…` | only needed once you are selling |
+   | `STRIPE_WEBHOOK_SECRET` | `whsec_…` | from the webhook endpoint's own page |
+   | `STRIPE_PRICE_MONTHLY` | `price_…` | created in the Stripe dashboard |
+   | `STRIPE_PRICE_YEARLY` | `price_…` | created in the Stripe dashboard |
 
    `CARRIER_DB_PATH` and `BACKUP_DIR` are already set by the Dockerfile and point at
    `/data`. Leave them alone.
@@ -92,6 +96,32 @@ or `:` in a username or password must be percent-encoded (`@` → `%40`).
 
 Nothing sends 465 for you in development: with no `SMTP_URL` the message is printed to the
 terminal, link included, which is how to test the flow locally.
+
+## Stripe
+
+Nothing in the application is gated on billing yet, so a deployment with none of these set
+runs exactly as it did before — `/subscription` is the only page that needs them, and it
+says so rather than failing.
+
+1. In the Stripe dashboard create **one product** with **two recurring prices**, monthly
+   and yearly. The amounts live there and in no file.
+2. Add a webhook endpoint at `https://<your-host>/api/stripe/webhook`, subscribed to
+   `checkout.session.completed`, `customer.subscription.updated` and
+   `customer.subscription.deleted`.
+3. `fly secrets set STRIPE_SECRET_KEY=… STRIPE_WEBHOOK_SECRET=… STRIPE_PRICE_MONTHLY=… STRIPE_PRICE_YEARLY=…`
+
+Secrets never go in `fly.toml` — it is in git.
+
+Every organisation that existed before migration 24 is `comped`: never charged, never
+paywalled. To move one onto billing, or to comp a new one:
+
+```
+npm run set-billing-status -- <org-slug> stripe
+npm run set-billing-status -- <org-slug> comped
+```
+
+Test with `sk_test_…` keys and `stripe listen --forward-to localhost:3000/api/stripe/webhook`
+before switching to live keys.
 
 ## Give them something to look at
 

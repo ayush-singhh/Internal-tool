@@ -861,6 +861,32 @@ where isolation is physical, and wrong for a shared multi-tenant app, where ever
 kind of wrong: it complicates every query for a model that may never be chosen. It is one
 focused change when the decision is made — see `Architecture.md`.
 
+## Phase 23 — Stripe billing, built and not yet attached ✅ (2026-09-06)
+
+Spec: `docs/superpowers/specs/2026-09-06-stripe-billing-design.md`
+Plan: `docs/superpowers/plans/2026-09-06-stripe-billing.md`
+
+- [x] Migration 24: six billing columns on `organizations`, plus `stripe_events`. Every
+      organisation that predates it is `comped`; the column defaults to `stripe` so a
+      future path that forgets fails into the paying lane
+- [x] `src/lib/stripe.ts` — REST over `fetch`, HMAC signature verification from
+      `node:crypto`. No dependency added
+- [x] `entitlement()` — one pure function, the whole truth table under test
+- [x] `/subscription` — two plans priced from Stripe, Checkout with a 14-day trial and the
+      card taken up front, Customer Portal for everything after that
+- [x] Webhook at `/api/stripe/webhook`: signature verified, replay window enforced,
+      deduplicated on event id, and the subscription re-read from Stripe so delivery order
+      cannot matter
+- [x] Tests: 49 new cases — **546/546 passing overall**
+
+### Deliberately not attached
+**Nothing enforces any of this.** No gate in `requireOrg()`, no read-only write block, no
+trial started at signup, no sidebar entry, no boot check. The application behaves exactly
+as it did before this phase. Enforcement is Phase B — section 9 of the spec — and is a
+separate, small, reviewable change. Billing's two halves have very different risk: the
+half that talks to Stripe is fiddly and harmless, and the half that locks people out is
+tiny and catastrophic. This phase shipped the first with the second absent.
+
 ## Deferred by design
 
 Recorded so "later" is a decision rather than an oversight.
