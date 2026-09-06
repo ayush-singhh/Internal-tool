@@ -199,3 +199,28 @@ test("a handler failure asks Stripe to retry", async () => {
   assert.equal(response.status, 500, "a 500 is what makes Stripe deliver it again");
   assert.equal(sub.alreadySeen("evt_boom"), false, "and it is not marked handled");
 });
+
+test("the page degrades rather than 500s when Stripe cannot be reached", async () => {
+  const failing = (async () => { throw new Error("getaddrinfo ENOTFOUND api.stripe.com"); }) as
+    unknown as typeof fetch;
+  const prices = await sub.planPrices(failing);
+  assert.equal(prices.monthly, null);
+  assert.equal(prices.yearly, null);
+  assert.match(prices.error!, /ENOTFOUND/);
+});
+
+test("checkout refuses to guess when a price is not configured", async () => {
+  const saved = process.env.STRIPE_PRICE_YEARLY;
+  delete process.env.STRIPE_PRICE_YEARLY;
+  await assert.rejects(
+    () => sub.startCheckout(orgId, "yearly", "owner@acme.com"),
+    /STRIPE_PRICE_YEARLY/,
+  );
+  process.env.STRIPE_PRICE_YEARLY = saved;
+});
+
+test("the portal cannot be opened for an organisation Stripe has never met", async () => {
+  db.systemQuery(() =>
+    db.run("UPDATE organizations SET stripe_customer_id = NULL WHERE id = ?", [orgId]));
+  await assert.rejects(() => sub.openPortal(orgId), /no Stripe customer/i);
+});

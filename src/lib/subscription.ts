@@ -3,9 +3,10 @@ import { get, run, systemQuery } from "./db.ts";
 import { ORG_STATUS, type OrgStatus } from "./constants.ts";
 import type { OrgBilling } from "./entitlement.ts";
 import {
-  getSubscription, verifySignature,
-  type Fetcher, type StripeSubscription,
+  createCheckoutSession, createPortalSession, getPrice, getSubscription, verifySignature,
+  type Fetcher, type StripePrice, type StripeSubscription,
 } from "./stripe.ts";
+import { appUrl } from "./mailer.ts";
 
 /** The trial we sell. Stripe holds the card from day one and charges on day 15. */
 export const TRIAL_DAYS = 14;
@@ -202,4 +203,82 @@ export async function handleWebhookRequest(
     return new Response("Handler failed.", { status: 500 });
   }
   return new Response("ok");
+}
+
+/**
+ * The two prices, as Stripe currently states them.
+ *
+ * Fetched rather than configured, so the number on the button and the number on the card
+ * statement cannot drift apart — no amount appears anywhere in this codebase. Memoised
+ * for ten minutes because the page renders on every request and a price changes about
+ * once a year.
+ */
+const priceCache = new Map<string, { at: number; price: StripePrice }>();
+const PRICE_TTL_MS = 10 * 60_000;
+
+async function cachedPrice(id: string | undefined, fetcher?: Fetcher): Promise<StripePrice | null> {
+  if (!id) return null;
+  const hit = priceCache.get(id);
+  if (hit && Date.now() - hit.at < PRICE_TTL_MS) return hit.price;
+  const price = await getPrice(id, fetcher);
+  priceCache.set(id, { at: Date.now(), price });
+  return price;
+}
+
+export async function planPrices(fetcher?: Fetcher): Promise<{
+  monthly: StripePrice | null;
+  yearly: StripePrice | null;
+  error: string | null;
+}> {
+  try {
+    const [monthly, yearly] = await Promise.all([
+      cachedPrice(process.env.STRIPE_PRICE_MONTHLY, fetcher),
+      cachedPrice(process.env.STRIPE_PRICE_YEARLY, fetcher),
+    ]);
+    return { monthly, yearly, error: null };
+  } catch (error) {
+    // A Stripe outage must not take the page down with it — somebody arriving here to
+    // fix their card still needs the "Manage billing" button to render.
+    return {
+      monthly: null, yearly: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** Returns the Stripe-hosted URL to send the customer to. */
+export async function startCheckout(
+  orgId: number,
+  plan: "monthly" | "yearly",
+  email: string,
+  fetcher?: Fetcher,
+): Promise<string> {
+  const variable = plan === "yearly" ? "STRIPE_PRICE_YEARLY" : "STRIPE_PRICE_MONTHLY";
+  const priceId = process.env[variable];
+  if (!priceId) throw new Error(`${variable} is not set — no price to subscribe to.`);
+
+  const org = orgBilling(orgId);
+  const session = await createCheckoutSession({
+    priceId,
+    orgId,
+    customerId: org.stripe_customer_id,
+    customerEmail: org.stripe_customer_id ? null : email,
+    trialDays: TRIAL_DAYS,
+    // A hint for the page's copy only. Payment is never believed from a query string —
+    // only the webhook writes billing state.
+    successUrl: `${appUrl()}/subscription?checkout=success`,
+    cancelUrl: `${appUrl()}/subscription?checkout=cancelled`,
+  }, fetcher);
+  return session.url;
+}
+
+/** Card changes, plan changes, invoices and cancellation are all Stripe's screens. */
+export async function openPortal(orgId: number, fetcher?: Fetcher): Promise<string> {
+  const org = orgBilling(orgId);
+  if (!org.stripe_customer_id) {
+    throw new Error("This organisation has no Stripe customer yet — start a subscription first.");
+  }
+  const session = await createPortalSession(
+    org.stripe_customer_id, `${appUrl()}/subscription`, fetcher);
+  return session.url;
 }
