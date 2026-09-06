@@ -123,9 +123,10 @@ organisation is never paywalled and never talks to Stripe.
 fresh install — inserts `billing_mode = 'comped'` explicitly. Whoever self-hosts this and
 bootstraps their own org is not a Stripe customer of ours.
 
-Phase A touches exactly three existing files, and no others: `migrations.ts` (append
-migration 24), `db.ts` (that one `seed()` insert), and `scripts/set-billing-status.ts`
-(below). Everything else it adds is a new file.
+Phase A touches exactly three existing *source* files, and no others: `migrations.ts`
+(append migration 24), `db.ts` (that one `seed()` insert), and
+`scripts/set-billing-status.ts` (below). Everything else it adds is a new file, and the
+only other edits are to `Plan.md` and `DEPLOY.md`.
 
 `organizations` is not in `TENANT_TABLES`, so the isolation guard does not fire on it;
 reads and writes still go through `systemQuery()` for the same reason
@@ -389,6 +390,10 @@ refused a write and permitted a read — belong to Phase B and are written with 
 - **No self-serve plan switching UI.** The Portal does it.
 - **No Stripe Tax.** It is a flag on the Checkout Session and costs nothing to add, but
   turning it on before we are registered anywhere would collect tax we cannot remit.
+- **No audit-log entry for starting or changing a subscription.** It would mean a new
+  `AUDIT` constant and a fourth modified file, to record something Stripe already records
+  better — its dashboard knows who paid, when, with which card, and what changed. Add one
+  if a customer ever asks who on their team started the subscription.
 - **No hard delete of a lapsed tenant's data.** `none` means the account is dormant and
   the data is retained. `tenant-lifecycle.ts` already owns deletion, and it stays a
   deliberate act by a person.
