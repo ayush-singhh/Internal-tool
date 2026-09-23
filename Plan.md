@@ -887,6 +887,40 @@ separate, small, reviewable change. Billing's two halves have very different ris
 half that talks to Stripe is fiddly and harmless, and the half that locks people out is
 tiny and catastrophic. This phase shipped the first with the second absent.
 
+## Phase 24 — the carrier onboarding portal (G1: the spine) ✅ (2026-09-23)
+
+Spec: `docs/superpowers/specs/2026-09-23-carrier-onboarding-portal-design.md`
+Plan: `docs/superpowers/plans/2026-09-23-onboarding-portal-g1.md`
+
+- [x] Migration 25: `carrier_applications`, `applicant_sessions`, `applicant_otps`. The
+      unique index on `(organization_id, usdot)` is **partial** — one *open* application
+      per carrier, while converted and rejected ones accumulate as history
+- [x] `src/lib/sms.ts` — Twilio over `fetch`, no SDK. Throws in production without
+      credentials, logs in development so the flow can be walked offline
+- [x] `src/lib/fmcsa.ts` — USDOT lookup. **Every failure degrades to manual entry**; none
+      of them throws, so onboarding does not stop when a government API does
+- [x] `src/lib/applicant-otp.ts` — six digits, SHA-256 at rest, `timingSafeEqual`, ten
+      minutes, five attempts then the *code* is burnt
+- [x] `src/lib/applications.ts` — the staging table and `convertApplication()`, mirroring
+      `convertLead()`
+- [x] `/apply/<slug>` — four steps, closed by default, a closed portal indistinguishable
+      from one that does not exist
+- [x] `/applications` — the staff review queue, `application:view` / `application:convert`
+- [x] PRD §1 and §2 and AI Rules §4 rewritten: this product now has a public surface and a
+      second authentication realm, and both documents said otherwise
+- [x] Tests: 40 new cases — **586/586 passing overall**
+
+### What a carrier can and cannot do yet
+The portal takes a carrier as far as a verified phone number and an open application that
+staff can see and convert. **Fleet details, document uploads, the selfie, pricing tiers,
+the W-9, the service agreement and payment authorisation are specified and not built** —
+sub-projects G2 to G6 in the spec, each with its own boundary fixed so G1 did not build
+something they must undo.
+
+> **G4 carries an unresolved risk.** The W-9 is an IRS form certified under penalty of
+> perjury, and the e-signature design has had no legal review. It must not go live without
+> one.
+
 ## Deferred by design
 
 Recorded so "later" is a decision rather than an oversight.

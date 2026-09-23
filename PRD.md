@@ -7,8 +7,13 @@ Operations Dashboard**. One authenticated, database-backed system where dispatch
 account management staff maintain the full lifecycle of every carrier: lead → onboarding
 → active → offboarding, with an auditable history of who changed what.
 
-**Non-goal:** this is not a spreadsheet clone and not a public-facing product. It is an
-internal tool for a known set of named employees.
+**One public surface, added deliberately (2026-09-23).** The carrier onboarding portal at
+`/apply/<org-slug>` lets a carrier apply to a dispatcher with no login — see §4.1j. It is
+closed until an organisation opens it, and it writes to a staging table rather than to
+`carriers`, so a staff member still decides what becomes a carrier record.
+
+**Non-goal:** this is not a spreadsheet clone. Outside that portal it remains an internal
+tool for a known set of named employees, and nothing in it is customer-facing.
 
 ## 2. Users & Roles
 
@@ -19,7 +24,9 @@ internal tool for a known set of named employees.
 | **Account Manager** | Owns the commercial relationship | View all carriers; edit carriers they manage incl. commercial fields; add notes; cannot delete, cannot manage team/settings |
 | **Management / Viewer** | Read-only oversight | View carriers, dashboards, reports, export. No writes. |
 
-Authentication is required for every page. There are no public routes except `/login`.
+Authentication is required for every page. The public routes are `/login`, `/signup`,
+password reset, and the onboarding portal under `/apply/` — which authenticates
+*applicants*, who are not users and hold no role (§4.1j).
 
 ## 3. Core Objects
 
@@ -182,6 +189,29 @@ range that silently applied to some columns and not others is how a performance 
 misread.
 
 Administrators only.
+
+### 4.1j Carrier Onboarding Portal
+A carrier signs itself up, at `/apply/<org-slug>`. **Closed until an organisation opens
+it**, and a closed portal is indistinguishable from a URL that does not exist — so the
+address cannot be used to find out who is a customer.
+
+Four steps: USDOT number, confirm which company that is, prove the phone number by
+six-digit code, application open. The company name comes from the FMCSA register where it
+can be reached, and is always shown for confirmation rather than accepted silently — the
+register goes stale, and a carrier's legal name is not normalised on its behalf.
+
+**An applicant is not a user.** No role, no assignment, no team listing; it may reach
+exactly one application, and its session lives in its own table.
+
+**Nothing here creates a carrier.** Submissions land in `carrier_applications` and a staff
+member converts one, exactly as a lead is converted — the carrier starts at *About to Be
+Active* carrying only what the portal collected, and the application survives as the
+record of how that carrier arrived. Two things are surfaced to the reviewer and neither
+blocks: an FMCSA record saying the carrier may not operate, and an existing carrier
+already on that USDOT.
+
+Fleet details, documents, pricing, the W-9 and the service agreement are **specified and
+not built** — sub-projects G2 to G6 of the design.
 
 ### 4.2 Carrier Database
 Sortable, filterable, searchable table with user-selectable visible columns.

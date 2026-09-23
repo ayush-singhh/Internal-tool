@@ -69,6 +69,10 @@ For anything your client uses unattended, use a real host instead:
    | `STRIPE_WEBHOOK_SECRET` | `whsec_…` | from the webhook endpoint's own page |
    | `STRIPE_PRICE_MONTHLY` | `price_…` | created in the Stripe dashboard |
    | `STRIPE_PRICE_YEARLY` | `price_…` | created in the Stripe dashboard |
+   | `TWILIO_ACCOUNT_SID` | `AC…` | onboarding portal only — without it the portal cannot verify a phone |
+   | `TWILIO_AUTH_TOKEN` | the token | from the same Twilio console page |
+   | `TWILIO_FROM` | `+1…` | a number you own on that account |
+   | `FMCSA_WEB_KEY` | see below | optional; without it the portal asks carriers to type their company name |
 
    `CARRIER_DB_PATH` and `BACKUP_DIR` are already set by the Dockerfile and point at
    `/data`. Leave them alone.
@@ -81,6 +85,26 @@ confirm. If the deploy comes up unhealthy, that error is in the logs.
 
 The mailer speaks implicit TLS on **465** only. That is the whole compatibility list to
 check — a provider without 465 will not work no matter what else you configure.
+
+## The onboarding portal
+
+Off until you turn it on. Open it per organisation in **Settings → Carrier onboarding
+portal**, then send carriers to `https://<your-host>/apply/<org-slug>`. While it is closed
+that URL returns a 404 identical to a URL that does not exist.
+
+**Twilio is required for it.** The portal verifies a phone by SMS, and without credentials
+the server refuses to send in production rather than dropping the code silently. Create an
+account, buy a number, and take the SID and auth token from the console. Budget roughly
+$0.0079 per message plus about $1.15/month for the number.
+
+**FMCSA is optional and free.** `FMCSA_WEB_KEY` comes from registering at
+<https://mobile.fmcsa.dot.gov/developer/home.page>. With it, a carrier types its USDOT
+number and confirms the name the federal register holds. Without it — or when the service
+is down — the portal asks them to type the company name instead. Nothing breaks either
+way.
+
+Applications land in **/applications** inside the app. Nothing a carrier submits becomes a
+carrier record until somebody converts it there.
 
 | Provider | Works | `SMTP_URL` |
 |---|---|---|

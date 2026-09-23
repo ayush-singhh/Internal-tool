@@ -45,7 +45,11 @@ onboarding types, trailer types, invoice modes and offboarding reasons come from
 ## 4. Security
 
 - Every page under `src/app/(app)/` is authenticated by the layout's `requireUser()`.
-  Do not create authenticated routes outside that group.
+  Do not create authenticated routes outside that group. **One exception, and it is the
+  only one:** the onboarding portal under `src/app/apply/` is a second authentication
+  realm for *applicants*, who are not users — separate cookie, separate session table,
+  reach limited to one application. Its pages each gate themselves; a layout cannot,
+  because Next runs the page whether or not the layout rejects the request.
 - **Re-check permission inside every Server Action.** Hiding a button in the UI is
   presentation, never the security boundary.
 - All SQL uses bound parameters. No string interpolation into SQL, ever — including
