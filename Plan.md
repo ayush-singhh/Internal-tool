@@ -908,7 +908,10 @@ Plan: `docs/superpowers/plans/2026-09-23-onboarding-portal-g1.md`
 - [x] `/applications` — the staff review queue, `application:view` / `application:convert`
 - [x] PRD §1 and §2 and AI Rules §4 rewritten: this product now has a public surface and a
       second authentication realm, and both documents said otherwise
-- [x] Tests: 40 new cases — **586/586 passing overall**
+- [x] `portalFor()` fails closed under test: no setting, an explicit `0`, anything that
+      is not exactly `1`, an unknown slug and a suspended tenant all produce the same
+      nothing — so the URL cannot reveal which companies exist here
+- [x] Tests: 46 new cases — **592/592 passing overall**, 32/32 HTTP
 
 ### What a carrier can and cannot do yet
 The portal takes a carrier as far as a verified phone number and an open application that
