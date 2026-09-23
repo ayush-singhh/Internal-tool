@@ -1059,6 +1059,95 @@ export const MIGRATIONS: Migration[] = [
         )`);
     },
   },
+  {
+    version: 25,
+    name: "onboarding portal: carrier applications, applicant sessions and phone OTPs",
+    up: (db) => {
+      // Portal input never becomes a carrier on its own. It lands here and a staff member
+      // converts it — the same staging-then-convert shape `leads` already uses, which is
+      // what keeps AI Rules §2 ("never invent carrier records") true while still letting
+      // the carrier type its own details.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS carrier_applications (
+          id                   INTEGER PRIMARY KEY,
+          organization_id      INTEGER NOT NULL,
+          usdot                TEXT NOT NULL,
+          legal_name           TEXT NOT NULL,
+          dba_name             TEXT,
+          operating_state      TEXT,
+          -- Whether FMCSA says this carrier may operate. Recorded, never enforced:
+          -- onboarding one that may not is a commercial decision, not this code's.
+          allowed_to_operate   INTEGER,
+          -- 'fmcsa' or 'manual'. A looked-up name and a hand-typed one carry different
+          -- weight at review, so the reviewer is told which this is.
+          name_source          TEXT NOT NULL DEFAULT 'manual',
+          phone                TEXT NOT NULL,
+          phone_digits         TEXT NOT NULL,
+          email                TEXT NOT NULL,
+          status               TEXT NOT NULL DEFAULT 'draft',
+          -- Furthest step reached, so a carrier resumes where it stopped — and so the
+          -- later sub-projects can insert steps without disturbing applications already
+          -- open.
+          step                 TEXT NOT NULL DEFAULT 'account',
+          review_notes         TEXT,
+          rejected_reason      TEXT,
+          converted_carrier_id INTEGER,
+          converted_at         TEXT,
+          converted_by         INTEGER,
+          created_at           TEXT NOT NULL,
+          updated_at           TEXT NOT NULL,
+          submitted_at         TEXT,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, converted_carrier_id)
+            REFERENCES carriers (organization_id, id),
+          FOREIGN KEY (organization_id, converted_by)
+            REFERENCES users (organization_id, id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_applications_org ON carrier_applications (organization_id)");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_applications_org_id ON carrier_applications (organization_id, id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_applications_org_phone ON carrier_applications (organization_id, phone_digits)");
+      // Partial on purpose: one *open* application per carrier per organisation, while
+      // converted and rejected ones accumulate freely. They are history — and a rejected
+      // applicant who fixed the problem must be able to apply again.
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_applications_open_usdot
+          ON carrier_applications (organization_id, usdot)
+        WHERE status IN ('draft', 'submitted')`);
+
+      // A second authentication realm. Deliberately not the `sessions` table: that one
+      // foreign-keys to `users`, and an applicant is not a user — it has no role, is
+      // assignable to nothing, and may reach exactly one application. Keeping them apart
+      // is what makes it impossible for one to be mistaken for the other.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS applicant_sessions (
+          id              TEXT PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          application_id  INTEGER NOT NULL,
+          created_at      TEXT NOT NULL,
+          expires_at      TEXT NOT NULL,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id),
+          FOREIGN KEY (organization_id, application_id)
+            REFERENCES carrier_applications (organization_id, id) ON DELETE CASCADE
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_applicant_sessions_app ON applicant_sessions (organization_id, application_id)");
+
+      // `code_hash` is SHA-256 of the code; the code itself is sent and never stored —
+      // the treatment password_resets gives its token (AI Rules §4).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS applicant_otps (
+          id              INTEGER PRIMARY KEY,
+          organization_id INTEGER NOT NULL,
+          phone_digits    TEXT NOT NULL,
+          code_hash       TEXT NOT NULL,
+          expires_at      TEXT NOT NULL,
+          attempts        INTEGER NOT NULL DEFAULT 0,
+          consumed_at     TEXT,
+          created_at      TEXT NOT NULL,
+          FOREIGN KEY (organization_id) REFERENCES organizations (id)
+        )`);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_applicant_otps_phone ON applicant_otps (organization_id, phone_digits)");
+    },
+  },
 ];
 
 export function addColumn(

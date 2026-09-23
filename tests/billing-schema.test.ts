@@ -66,7 +66,12 @@ test("every organisation that predates billing is comped, and keeps working", ()
   addOrg(db, "Bootstrap Admin");
 
   const { applied } = m.migrate(db);
-  assert.equal(applied.length, 1, "only migration 24 was pending");
+  // Named, not counted: what matters is that 24 ran against a pre-billing database, and
+  // a count breaks every time a later migration is added for unrelated reasons.
+  assert.ok(
+    applied.some((name) => name.includes("billing:")),
+    `migration 24 ran (applied: ${applied.join(", ")})`,
+  );
   assert.equal(modeOf(db, "Live Tenant"), "comped");
   assert.equal(modeOf(db, "Bootstrap Admin"), "comped");
   db.close();

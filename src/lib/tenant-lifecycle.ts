@@ -29,7 +29,7 @@ const REDACTED = ["password_hash", "mfa_secret"] as const;
 export const OWNED = [
   "users", "lookups", "app_settings", "announcements", "tasks",
   "channels", "messages", "channel_reads", "calendar_events", "leads",
-  "carriers", "carrier_notes",
+  "carrier_applications", "carriers", "carrier_notes",
   "carrier_activity", "offboarding_records", "saved_filters", "audit_log",
   "drivers", "brokers", "load_documents", "load_adjustments", "invoices",
   "invoice_lines", "loads", "load_stops",
@@ -169,6 +169,15 @@ export function deleteOrganization(orgId: number, opts: { exported: boolean }): 
       del("channels", "DELETE FROM channels WHERE organization_id = ?", [orgId]);
       del("calendar_events", "DELETE FROM calendar_events WHERE organization_id = ?", [orgId]);
       del("leads", "DELETE FROM leads WHERE organization_id = ?", [orgId]);
+
+      // Same reasoning as leads, one layer deeper: an application points at the carrier
+      // it became and at the staff member who converted it, and neither reference
+      // cascades. Its own children go first — applicant_sessions cascades from the
+      // application, but the OTP rows reference only the organisation and would outlive
+      // it. Neither is exported: they are session material, like `sessions`.
+      del("applicant_sessions", "DELETE FROM applicant_sessions WHERE organization_id = ?", [orgId]);
+      del("applicant_otps", "DELETE FROM applicant_otps WHERE organization_id = ?", [orgId]);
+      del("carrier_applications", "DELETE FROM carrier_applications WHERE organization_id = ?", [orgId]);
 
       // Cascades to carrier_notes, carrier_activity and offboarding_records.
       del("carriers", "DELETE FROM carriers WHERE organization_id = ?", [orgId]);
