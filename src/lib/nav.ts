@@ -51,6 +51,12 @@ export function navCounts(org: Org, user: SessionUser) {
       [org.id, ...LEAD_STATUS_OPEN],
     )!.n,
     carriers: get<{ n: number }>("SELECT COUNT(*) AS n FROM carriers WHERE organization_id = ?", [org.id])!.n,
+    // Open applications only. A converted or rejected one has stopped being work, the
+    // same rule as the leads and loads badges.
+    applications: get<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM carrier_applications WHERE organization_id = ? AND status IN ('draft', 'submitted')",
+      [org.id],
+    )!.n,
     loads: get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM loads WHERE organization_id = ? AND status IN (${open.map(() => "?").join(",")})`,
       [org.id, ...open],
@@ -124,6 +130,9 @@ const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Carriers",
     items: [
+      // Ahead of the carrier lists because that is the order the work happens in: an
+      // application becomes a carrier, the way a lead does.
+      { href: "/applications", label: "Applications", icon: "onboarding", count: "applications", action: "application:view" },
       { href: "/carriers", label: "All Carriers", icon: "carriers", count: "carriers", action: "carrier:view" },
       { href: "/active", label: "Active Carriers", icon: "active", count: "active", action: "carrier:view" },
       { href: "/onboarding", label: "Onboarding", icon: "onboarding", count: "onboarding", action: "carrier:view" },

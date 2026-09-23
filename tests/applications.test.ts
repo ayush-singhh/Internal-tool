@@ -20,6 +20,8 @@ process.env.CARRIER_DB_PATH = DB;
 
 let db: typeof import("../src/lib/db.ts");
 let apps: typeof import("../src/lib/applications.ts");
+let permissions: typeof import("../src/lib/permissions.ts");
+let ROLES: typeof import("../src/lib/constants.ts")["ROLES"];
 let STATUS: typeof import("../src/lib/constants.ts")["STATUS"];
 let alpha: TestOrg;
 let beta: TestOrg;
@@ -43,7 +45,8 @@ const input = (over: Record<string, unknown> = {}) => ({
 before(async () => {
   db = await import("../src/lib/db.ts");
   apps = await import("../src/lib/applications.ts");
-  ({ STATUS } = await import("../src/lib/constants.ts"));
+  permissions = await import("../src/lib/permissions.ts");
+  ({ STATUS, ROLES } = await import("../src/lib/constants.ts"));
   const { Org } = await import("../src/lib/tenant-db.ts");
   alpha = seedOrg(db, "Alpha Portal");
   beta = seedOrg(db, "Beta Portal");
@@ -192,4 +195,46 @@ test("the queue is oldest first, because the oldest is the one going cold", () =
   db.run("UPDATE carrier_applications SET created_at = ? WHERE organization_id = ? AND id = ?",
     ["2026-01-01T00:00:00.000Z", alpha.id, b]);
   assert.deepEqual(apps.listApplications(org).map((r) => r.id), [b, a]);
+});
+
+const asRole = (role: string) => ({
+  id: 1,
+  organization_id: alpha.id,
+  name: "Test",
+  email: "t@x.test",
+  role: role as never,
+  active: 1,
+});
+
+test("whoever reads the carrier database reads the queue of people asking to join it", () => {
+  const { can } = permissions;
+  for (const role of [ROLES.ADMIN, ROLES.OWNER, ROLES.DISPATCHER, ROLES.ACCOUNT_MANAGER, ROLES.VIEWER]) {
+    assert.equal(can(asRole(role), "application:view"), true, `${role} views applications`);
+  }
+  // Sales sees no carrier at all, and platform support holds nothing inside a tenant.
+  for (const role of [ROLES.SALES, ROLES.SUPPORT]) {
+    assert.equal(can(asRole(role), "application:view"), false, `${role} must not`);
+  }
+});
+
+test("converting an application is held by the roles that may convert a lead", () => {
+  const { can } = permissions;
+  // Conversion writes a carrier record, so it sits exactly where lead:convert sits.
+  for (const role of [ROLES.ADMIN, ROLES.OWNER]) {
+    assert.equal(can(asRole(role), "application:convert"), true, `${role} converts`);
+  }
+  for (const role of [ROLES.DISPATCHER, ROLES.ACCOUNT_MANAGER, ROLES.VIEWER, ROLES.SALES, ROLES.SUPPORT]) {
+    assert.equal(can(asRole(role), "application:convert"), false, `${role} must not convert`);
+    assert.equal(
+      can(asRole(role), "application:convert"),
+      can(asRole(role), "lead:convert"),
+      `${role} treats both conversions the same`,
+    );
+  }
+});
+
+test("a deactivated administrator converts nothing", () => {
+  const user = { ...asRole(ROLES.ADMIN), active: 0 };
+  assert.equal(permissions.can(user, "application:view"), false);
+  assert.equal(permissions.can(user, "application:convert"), false);
 });

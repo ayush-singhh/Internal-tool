@@ -323,7 +323,7 @@ test("sales may view and submit leads, and nothing else in the product", () => {
   assert.equal(can(user, "lead:view"), true);
   assert.equal(can(user, "lead:create"), true);
   assert.equal(can(user, "lead:edit"), true, "in the abstract — scoped below");
-  for (const action of ["lead:convert", "carrier:view", "carrier:create", "load:view", "load:rate", "invoice:view"] as const) {
+  for (const action of ["lead:convert", "carrier:view", "carrier:create", "load:view", "load:rate", "invoice:view", "application:view", "application:convert"] as const) {
     assert.equal(can(user, action), false, `sales must not have ${action}`);
   }
 });

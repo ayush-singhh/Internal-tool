@@ -65,6 +65,8 @@ export type Action =
   /** Turn a qualified lead into a carrier record. It writes a carrier, so it belongs to
    *  the people who may create one — which is never sales. */
   | "lead:convert"
+  | "application:view"
+  | "application:convert"
   // Carriers — the CRM half
   | "carrier:view"
   | "carrier:create"
@@ -176,6 +178,9 @@ export function can(
 
   switch (action) {
     case "carrier:view":
+    // Whoever may read the carrier database may read the queue of people asking to join
+    // it. Sales is refused above with everything else that is not theirs.
+    case "application:view":
     case "export:run":
     case "load:view":
     case "invoice:view":
@@ -223,6 +228,9 @@ export function can(
     case "lead:create":
     case "lead:edit":
     case "lead:convert":
+    // Converting an application writes a carrier record, so it is held by exactly the
+    // roles that may convert a lead — and for the same reason.
+    case "application:convert":
     // Handing work to another person, and writing to the whole organisation. Both are
     // management acts; a dispatcher who wants something from sales asks for it rather
     // than putting it on their list.
