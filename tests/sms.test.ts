@@ -5,25 +5,27 @@ let s: typeof import("../src/lib/sms.ts");
 before(async () => { s = await import("../src/lib/sms.ts"); });
 
 const ENV = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM", "NODE_ENV"] as const;
+// NODE_ENV is typed readonly, and these tests exist precisely to check both sides of it.
+const env = process.env as Record<string, string | undefined>;
 let saved: Record<string, string | undefined> = {};
 
-beforeEach(() => { saved = Object.fromEntries(ENV.map((k) => [k, process.env[k]])); });
+beforeEach(() => { saved = Object.fromEntries(ENV.map((k) => [k, env[k]])); });
 afterEach(() => {
   for (const k of ENV) {
-    if (saved[k] === undefined) delete process.env[k];
-    else process.env[k] = saved[k];
+    if (saved[k] === undefined) delete env[k];
+    else env[k] = saved[k];
   }
 });
 
 const configure = () => {
-  process.env.TWILIO_ACCOUNT_SID = "AC123";
-  process.env.TWILIO_AUTH_TOKEN = "secret-token";
-  process.env.TWILIO_FROM = "+15550000000";
+  env.TWILIO_ACCOUNT_SID = "AC123";
+  env.TWILIO_AUTH_TOKEN = "secret-token";
+  env.TWILIO_FROM = "+15550000000";
 };
 const unconfigure = () => {
-  delete process.env.TWILIO_ACCOUNT_SID;
-  delete process.env.TWILIO_AUTH_TOKEN;
-  delete process.env.TWILIO_FROM;
+  delete env.TWILIO_ACCOUNT_SID;
+  delete env.TWILIO_AUTH_TOKEN;
+  delete env.TWILIO_FROM;
 };
 
 /** Records the one request made, and answers with `status`. */
@@ -90,7 +92,7 @@ test("a refusal from Twilio is an error, not a silent drop", async () => {
 test("smsConfigured reflects whether all three variables are set", () => {
   configure();
   assert.equal(s.smsConfigured(), true);
-  delete process.env.TWILIO_FROM;
+  delete env.TWILIO_FROM;
   assert.equal(s.smsConfigured(), false, "a partial configuration is not a configuration");
   unconfigure();
   assert.equal(s.smsConfigured(), false);
@@ -98,7 +100,7 @@ test("smsConfigured reflects whether all three variables are set", () => {
 
 test("production refuses to start a sender it cannot send with", () => {
   unconfigure();
-  process.env.NODE_ENV = "production";
+  env.NODE_ENV = "production";
   // A portal that silently drops its verification code is a portal nobody can sign up
   // to — the same reasoning as mailer()'s production guard.
   assert.throws(() => s.sender(), /TWILIO_ACCOUNT_SID/);
@@ -106,7 +108,7 @@ test("production refuses to start a sender it cannot send with", () => {
 
 test("development logs the message instead, so the flow can be completed offline", async () => {
   unconfigure();
-  process.env.NODE_ENV = "development";
+  env.NODE_ENV = "development";
   const lines: string[] = [];
   const original = console.log;
   console.log = (...args: unknown[]) => { lines.push(args.join(" ")); };
