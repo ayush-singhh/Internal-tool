@@ -38,6 +38,14 @@ export const SIGNUP_RULE: ThrottleRule = { max: 3, windowMinutes: 60 };
  *  script quietly pulling the customer list on a loop. */
 export const EXPORT_RULE: ThrottleRule = { max: 20, windowMinutes: 60 };
 
+/** Verification codes cost real money to send and land on somebody else's phone, so the
+ *  limit is per number as well as per host — nobody may be buried in texts, and nobody
+ *  may use our Twilio account to send them. */
+export const OTP_RULE: Record<"phone" | "ip", ThrottleRule> = {
+  phone: { max: 5, windowMinutes: 60 },
+  ip: { max: 15, windowMinutes: 60 },
+};
+
 export const RESET_RULE: Record<"email" | "ip", ThrottleRule> = {
   email: { max: 3, windowMinutes: 60 },
   ip: { max: 10, windowMinutes: 60 },

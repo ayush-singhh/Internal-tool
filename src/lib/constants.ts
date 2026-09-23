@@ -434,6 +434,9 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   investigation_stale_days: "7",
   insurance_expiry_days: "30",
   company_name: "Carrier Management Hub",
+  // Closed until an administrator publishes it. An organisation acquires a public signup
+  // form deliberately, never by upgrading.
+  portal_open: "0",
 };
 
 /**

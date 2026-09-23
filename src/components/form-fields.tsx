@@ -48,7 +48,7 @@ export function FieldRow({
 
 export function Text({
   name, label, defaultValue, error, hint, required, type = "text",
-  placeholder, inputMode, maxLength, min, max, step, className = "",
+  placeholder, inputMode, maxLength, min, max, step, autoComplete, className = "",
 }: {
   name: string;
   label: string;
@@ -63,6 +63,9 @@ export function Text({
   min?: number;
   max?: number;
   step?: string;
+  /** Lets a phone offer the code straight from the SMS ("one-time-code"), and a browser
+   *  fill a name or email it already holds. */
+  autoComplete?: string;
   className?: string;
 }) {
   return (
@@ -78,6 +81,7 @@ export function Text({
         min={min}
         max={max}
         step={step}
+        autoComplete={autoComplete}
         required={required}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${name}-error` : undefined}

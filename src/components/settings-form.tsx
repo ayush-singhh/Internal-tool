@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { saveSettingsAction, resetSettingsAction, toggleLookupAction, setPasswordAction, type AdminState } from "@/lib/admin-actions";
 import type { SettingDef } from "@/lib/settings";
-import { Text } from "./form-fields";
+import { Select, Text } from "./form-fields";
 import { Badge } from "./ui";
 
 export function SettingsForm({
@@ -30,20 +30,33 @@ export function SettingsForm({
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {defs.map((def) => (
-          <Text
-            key={def.key}
-            name={def.key}
-            label={def.label}
-            hint={def.help}
-            error={state.errors?.[def.key]}
-            type={def.type === "number" ? "number" : "text"}
-            inputMode={def.type === "number" ? "numeric" : undefined}
-            min={def.min}
-            max={def.max}
-            defaultValue={v(def.key)}
-          />
-        ))}
+        {defs.map((def) =>
+          def.type === "toggle" ? (
+            <Select
+              key={def.key}
+              name={def.key}
+              label={def.label}
+              hint={def.help}
+              error={state.errors?.[def.key]}
+              options={[{ id: 1, label: "Open" }, { id: 0, label: "Closed" }]}
+              placeholder="Closed"
+              defaultValue={v(def.key)}
+            />
+          ) : (
+            <Text
+              key={def.key}
+              name={def.key}
+              label={def.label}
+              hint={def.help}
+              error={state.errors?.[def.key]}
+              type={def.type === "number" ? "number" : "text"}
+              inputMode={def.type === "number" ? "numeric" : undefined}
+              min={def.min}
+              max={def.max}
+              defaultValue={v(def.key)}
+            />
+          ),
+        )}
       </div>
 
       <div className="flex items-center gap-2 border-t border-line pt-3">

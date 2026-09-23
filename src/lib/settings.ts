@@ -7,7 +7,7 @@ export type SettingDef = {
   key: string;
   label: string;
   help: string;
-  type: "number" | "text";
+  type: "number" | "text" | "toggle";
   min?: number;
   max?: number;
 };
@@ -18,6 +18,7 @@ export const SETTING_DEFS: SettingDef[] = [
   { key: "missing_first_load_days", label: "Missing first load — overdue after", help: "Days after onboarding without a first load before an active carrier is flagged.", type: "number", min: 1, max: 365 },
   { key: "investigation_stale_days", label: "Investigation — stale after", help: "Days a carrier may stay under investigation before it is escalated.", type: "number", min: 1, max: 365 },
   { key: "insurance_expiry_days", label: "Insurance — warn before expiry", help: "Days ahead of a certificate of insurance expiring that the carrier reaches Needs Attention.", type: "number", min: 1, max: 365 },
+  { key: "portal_open", label: "Carrier onboarding portal", help: "When open, carriers can apply to you at /apply/<your-slug>. Closed looks identical to a URL that does not exist.", type: "toggle" },
 ];
 
 export type SettingsResult = { ok: true } | { ok: false; errors: Record<string, string> };
@@ -31,7 +32,12 @@ export function saveSettings(org: Org, values: Record<string, string>): Settings
     if (raw === undefined) continue;
     const value = raw.trim();
 
-    if (def.type === "number") {
+    if (def.type === "toggle") {
+      // Only the two values. A select always submits something, so an empty string here
+      // means the placeholder was chosen rather than an answer.
+      if (value !== "0" && value !== "1") { errors[def.key] = "Choose open or closed."; continue; }
+      clean[def.key] = value;
+    } else if (def.type === "number") {
       const n = Number(value);
       if (!Number.isInteger(n)) { errors[def.key] = "Enter a whole number of days."; continue; }
       if (def.min !== undefined && n < def.min) { errors[def.key] = `Must be at least ${def.min}.`; continue; }
