@@ -21,9 +21,9 @@ subsystems. Built as one unit, nothing is testable until all of it exists.
 | | Sub-project | Delivers | Blocked on |
 |---|---|---|---|
 | **G1** | **Portal spine** — USDOT lookup, company confirmation, phone-OTP account, resumable application, staff review and conversion | A carrier can onboard itself and appear in Carrier Hub | SMS account |
-| G2 | Fleet intake and uploads — drivers, trucks, trailers, equipment, selfie, CDL, truck/trailer photos, MC authority, insurance, NOA | The application carries everything staff need to approve | S3 (built) |
+| G2 | Fleet intake and uploads — drivers, trucks, trailers, equipment, selfie, CDL, truck/trailer photos, MC authority, insurance, NOA, **W-9** | The application carries everything staff need to approve | S3 (built) |
 | G3 | Commercial terms — truck-count pricing tiers, add-on services, the quote | The carrier picks and sees what it will pay | G1 |
-| G4 | E-signature — W-9 and the dispatch agreement | Signed, retained, auditable documents | **Legal review** |
+| G4 | E-signature — the dispatch service agreement | A signed, retained, auditable agreement | G3 |
 | G5 | Payment authorisation — card or ACH | Asterism can charge the carrier | Stripe account |
 | G6 | Welcome letter | Confirmation of authorised dispatcher | G4 |
 
@@ -268,18 +268,39 @@ wrapper (`AI Rules.md` §8).
 Fixed here only so G1 does not build something these must undo.
 
 - **G2 — fleet and documents.** Drivers, trucks, trailers, equipment and every upload,
-  including the selfie. Needs a repeating child table (`application_drivers`) and a
-  document table generalised from `load_documents`. **G1 must not** assume an application
-  has exactly one driver or a fixed document set.
+  including the selfie **and the W-9** (see the decision below). Needs a repeating child
+  table (`application_drivers`) and a document table generalised from `load_documents`.
+  **G1 must not** assume an application has exactly one driver or a fixed document set.
 - **G3 — pricing.** Tiers by truck count: 1–3 → 5%, 4–10 → 3.75%, 11+ → 2.75%. These are
   `lookups` rows (`AI Rules.md` §3), never hardcoded labels; the count→tier rule is code
   with a test. Add-ons: Safety & Compliance $50/truck/mo, After Hours $250 flat,
   IFTA/accounting $100/truck/mo. Truck count comes from G2, so G3 follows it.
-- **G4 — e-signature.** W-9 and the dispatch agreement. Hand-rolled: typed name, explicit
-  consent checkbox, IP, user-agent, timestamp, and a SHA-256 of the exact rendered
-  document, so what was signed can be proven later. **The W-9 is an IRS form certified
-  under penalty of perjury. This has had no legal review and must not go live without
-  one.**
+- **G4 — e-signature.** The dispatch service agreement, and nothing else. Hand-rolled:
+  typed name, explicit consent checkbox, IP, user-agent, timestamp, and a SHA-256 of the
+  exact rendered document, so what was signed can be proven later. An ordinary commercial
+  contract signed electronically is what the ESIGN Act exists for; this carries no special
+  compliance burden.
+
+### The W-9 is collected, not signed here — decided 2026-09-24
+
+The original design had the carrier e-sign a W-9 in the portal. **It no longer does.**
+
+A W-9 is certified *under penalty of perjury*, and the IRS attaches specific requirements
+to accepting one electronically — including being "reasonably certain the person
+submitting is the person named on the form". Phone OTP proves somebody holds a phone. It
+does not establish that the signer is an officer of the carrier authorised to certify a
+TIN, and closing that gap means buying identity verification.
+
+So the portal stops hosting the signature. Every carrier already has a W-9 its accountant
+prepared; G2 asks them to upload it alongside MC authority, insurance and the NOA. What is
+needed is the *information* and a retained copy — not a signature ceremony this product is
+responsible for. This removes the compliance surface rather than managing it, costs
+nothing, adds no vendor, and matches what a dispatcher does today.
+
+The alternatives, recorded so the decision is legible later: a vendor W-9 flow
+(Dropbox Sign, DocuSign — roughly $15-40/month, keeps the carrier inside the portal), or
+building to the IRS requirements directly, which needs identity verification and therefore
+collapses into paying a vendor anyway.
 - **G5 — payment authorisation.** Card or ACH, letting Asterism charge the carrier. This
   is a *different* Stripe integration from the parked subscription billing, which bills
   the organisation for using Carrier Hub. Different payer, different objects. They share

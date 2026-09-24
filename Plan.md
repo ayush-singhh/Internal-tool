@@ -916,13 +916,17 @@ Plan: `docs/superpowers/plans/2026-09-23-onboarding-portal-g1.md`
 ### What a carrier can and cannot do yet
 The portal takes a carrier as far as a verified phone number and an open application that
 staff can see and convert. **Fleet details, document uploads, the selfie, pricing tiers,
-the W-9, the service agreement and payment authorisation are specified and not built** —
+the service agreement and payment authorisation are specified and not built** —
 sub-projects G2 to G6 in the spec, each with its own boundary fixed so G1 did not build
 something they must undo.
 
-> **G4 carries an unresolved risk.** The W-9 is an IRS form certified under penalty of
-> perjury, and the e-signature design has had no legal review. It must not go live without
-> one.
+**The W-9 is collected, not signed here — decided 2026-09-24.** The original design had
+the carrier e-sign one in the portal. A W-9 is certified under penalty of perjury and the
+IRS requires being reasonably certain the signer is the person named on it, which phone
+verification does not establish. G2 now asks the carrier to upload the W-9 its accountant
+already prepared, alongside MC authority and insurance. G4 is the dispatch service
+agreement alone — an ordinary contract signed electronically, which is what the ESIGN Act
+is for. The risk was removed rather than managed.
 
 ## Deferred by design
 

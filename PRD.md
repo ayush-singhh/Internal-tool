@@ -210,8 +210,10 @@ record of how that carrier arrived. Two things are surfaced to the reviewer and 
 blocks: an FMCSA record saying the carrier may not operate, and an existing carrier
 already on that USDOT.
 
-Fleet details, documents, pricing, the W-9 and the service agreement are **specified and
-not built** — sub-projects G2 to G6 of the design.
+Fleet details, documents, pricing and the service agreement are **specified and not
+built** — sub-projects G2 to G6 of the design. The **W-9 is uploaded, never signed here**:
+it is certified under penalty of perjury, and collecting the copy a carrier's accountant
+already prepared avoids a compliance burden this product has no reason to carry.
 
 ### 4.2 Carrier Database
 Sortable, filterable, searchable table with user-selectable visible columns.
