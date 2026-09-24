@@ -18,6 +18,42 @@ conversation it was noticed in.
 
 ---
 
+## 2026-09-24 — `npm run restore` had the same defect as `npm run backup`, nineteen days later
+
+**Severity:** high · **Status:** fixed · **Reached users:** no — but the command you reach
+for after losing data was the one that did not run
+
+`package.json` ran `node scripts/restore.ts` with no `--conditions=react-server`.
+`scripts/restore.ts` imports `src/lib/backup.ts`, which reaches `db.ts` through
+`backup-log.ts`, so the command died on **"This module cannot be imported from a Client
+Component module"** before opening the backup file. The script's own usage block printed
+the same broken invocation twice, so copying it out of the documentation reproduced the
+fault.
+
+`npm run migrate` was missing the flag too. It happens to work — `scripts/migrate.ts`
+imports `migrations.ts` directly and never reaches `server-only` — so it was one import
+away from failing the same way, in the other command you run during an incident.
+
+**This is the 2026-09-05 bug, unfixed as a category.** That entry ends with the sentence
+*"the thing to test is the line someone actually types"*, and then the flag was added to
+the one script that had been noticed. The other two were never looked at. A fix applied to
+the instance rather than the class buys nineteen days.
+
+**Found by:** writing a backup runbook and checking that the restore command in it
+actually ran before recommending it.
+
+**Fixed:** the flag is on `restore` and `migrate`, and `restore.ts`'s usage block now says
+the flag is not optional and why.
+
+**Why it was missed:** the same reason as last time — tests import the library, operators
+run the command, and only one of those had ever been executed. The difference now is that
+the check is on the *manifest* rather than on any one script: `tests/scripts.test.ts`
+walks every `package.json` entry that runs a file under `scripts/` and fails if it cannot
+resolve `server-only`. It is three lines of logic and it covers every entry point that
+will ever be added, which is what the previous fix should have been.
+
+**Guarded by:** `tests/scripts.test.ts` — both cases fail without the fix.
+
 ## 2026-09-05 — `npm run backup` had never worked, and nothing took a copy before a migration
 
 **Severity:** high · **Status:** fixed · **Reached users:** no — no data was lost, but for

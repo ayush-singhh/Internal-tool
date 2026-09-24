@@ -1,8 +1,11 @@
 /**
  * Puts a backup back, having first proved it is worth putting back.
  *
- *   node scripts/restore.ts data/backups/carrier-hub-2026-08-29T08-16.db
- *   CARRIER_DB_PATH=/data/carrier-hub.db node scripts/restore.ts <file>
+ *   npm run restore -- data/backups/carrier-hub-2026-08-29T08-16.db
+ *   CARRIER_DB_PATH=/data/carrier-hub.db node --conditions=react-server scripts/restore.ts <file>
+ *
+ * The flag is not optional. This reaches `db.ts` through `backup-log.ts`, and without it
+ * the command dies on `server-only` before reading a byte (BUGS.md 2026-09-24).
  *
  * A backup nobody has restored is a hope, so this exists to be *rehearsed*, not only
  * used in an emergency. Stop the application first: it replaces the file the running
